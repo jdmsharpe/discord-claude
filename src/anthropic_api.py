@@ -45,7 +45,7 @@ def append_response_embeds(embeds: list[Embed], response_text: str) -> None:
             Embed(
                 title="Response" + (f" (Part {index})" if index > 1 else ""),
                 description=chunk,
-                color=Colour.brand_red(),
+                color=Colour.orange(),
             )
         )
 
@@ -360,7 +360,7 @@ class AnthropicAPI(commands.Cog):
     )
     @option(
         "model",
-        description="Choose from the following Claude models. (default: Claude Sonnet 4)",
+        description="Choose from the following Claude models. (default: Claude Opus 4.5)",
         required=False,
         choices=[
             OptionChoice(name="Claude Opus 4.5", value="claude-opus-4-5-20251101"),
@@ -409,7 +409,7 @@ class AnthropicAPI(commands.Cog):
         self,
         ctx: ApplicationContext,
         prompt: str,
-        model: str = "claude-sonnet-4-20250514",
+        model: str = "claude-opus-4-5-20251101",
         system: str | None = None,
         attachment: Attachment | None = None,
         max_tokens: int = 4096,
@@ -427,7 +427,7 @@ class AnthropicAPI(commands.Cog):
         Args:
             ctx: Discord application context
             prompt: Initial conversation prompt or question
-            model: Claude model variant (default: claude-sonnet-4-20250514)
+            model: Claude model variant (default: claude-opus-4-5-20251101)
             system: Optional system prompt to set Claude's behavior
             attachment: Optional image attachment for multimodal input
             max_tokens: Maximum tokens in the response (default: 4096)
