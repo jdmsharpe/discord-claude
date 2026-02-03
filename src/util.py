@@ -1,5 +1,5 @@
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, Union
+from typing import Any
 
 from discord import Member, User
 
@@ -24,20 +24,20 @@ class ChatCompletionParameters:
     """A dataclass to store the parameters for a chat completion."""
 
     model: str
-    system: Optional[str] = None
-    temperature: Optional[float] = None
-    top_p: Optional[float] = None
-    top_k: Optional[int] = None
+    system: str | None = None
+    temperature: float | None = None
+    top_p: float | None = None
+    top_k: int | None = None
     max_tokens: int = 4096
-    conversation_starter: Optional[Union[Member, User]] = None
-    conversation_id: Optional[int] = None
-    channel_id: Optional[int] = None
-    paused: Optional[bool] = False
-    messages: List[Dict[str, Any]] = field(default_factory=list)
+    conversation_starter: Member | User | None = None
+    conversation_id: int | None = None
+    channel_id: int | None = None
+    paused: bool | None = False
+    messages: list[dict[str, Any]] = field(default_factory=list)
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for API calls."""
-        payload: Dict[str, Any] = {
+        payload: dict[str, Any] = {
             "model": self.model,
             "max_tokens": self.max_tokens,
             "messages": self.messages,
@@ -58,10 +58,10 @@ class Conversation:
     """A dataclass to store conversation state."""
 
     params: ChatCompletionParameters
-    messages: List[Dict[str, Any]]
+    messages: list[dict[str, Any]]
 
 
-def chunk_text(text: str, chunk_size: int = CHUNK_TEXT_SIZE) -> List[str]:
+def chunk_text(text: str, chunk_size: int = CHUNK_TEXT_SIZE) -> list[str]:
     """
     Splits a string into chunks of a specified size.
 

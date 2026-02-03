@@ -6,6 +6,7 @@ python -m pip install --upgrade --no-deps --force-reinstall git+https://github.c
 """
 
 from discord import Bot, Intents
+
 from anthropic_api import AnthropicAPI
 from config.auth import BOT_TOKEN
 
