@@ -1,4 +1,5 @@
-from typing import Union, TYPE_CHECKING, cast
+import logging
+from typing import TYPE_CHECKING, cast
 
 from discord import (
     ButtonStyle,
@@ -7,8 +8,7 @@ from discord import (
     TextChannel,
     User,
 )
-from discord.ui import button, Button, View
-import logging
+from discord.ui import Button, View, button
 
 if TYPE_CHECKING:
     from anthropic_api import AnthropicAPI
@@ -18,7 +18,7 @@ class ButtonView(View):
     def __init__(
         self,
         cog: "AnthropicAPI",
-        conversation_starter: Union[Member, User],
+        conversation_starter: Member | User,
         conversation_id: int,
     ):
         """

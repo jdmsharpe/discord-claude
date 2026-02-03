@@ -2,13 +2,16 @@
 import asyncio
 import base64
 import logging
-from typing import Any, Dict, List, Optional, Union
+from typing import Any
 
 # Third-party imports
 import aiohttp
 
+# Anthropic imports
+from anthropic import AsyncAnthropic
+
 # Discord imports
-from discord import Attachment, Colour, Embed, File
+from discord import Attachment, Colour, Embed
 from discord.commands import (
     ApplicationContext,
     OptionChoice,
@@ -16,9 +19,6 @@ from discord.commands import (
     option,
 )
 from discord.ext import commands
-
-# Anthropic imports
-from anthropic import AsyncAnthropic
 
 # Local imports
 from button_view import ButtonView
@@ -32,7 +32,7 @@ from util import (
 )
 
 
-def append_response_embeds(embeds: List[Embed], response_text: str) -> None:
+def append_response_embeds(embeds: list[Embed], response_text: str) -> None:
     """Append response text as Discord embeds, handling chunking for long responses."""
     # If response is extremely long (>20000 chars), truncate it to prevent too many embeds
     if len(response_text) > 20000:
@@ -72,12 +72,12 @@ class AnthropicAPI(commands.Cog):
         self.logger = logging.getLogger(__name__)
 
         # Dictionary to store conversation state for each converse interaction
-        self.conversations: Dict[int, Conversation] = {}
+        self.conversations: dict[int, Conversation] = {}
         # Dictionary to map any message ID to the main conversation ID for tracking
-        self.message_to_conversation_id: Dict[int, int] = {}
+        self.message_to_conversation_id: dict[int, int] = {}
         # Dictionary to store UI views for each conversation
         self.views = {}
-        self._http_session: Optional[aiohttp.ClientSession] = None
+        self._http_session: aiohttp.ClientSession | None = None
         self._session_lock = asyncio.Lock()
 
     async def _get_http_session(self) -> aiohttp.ClientSession:
@@ -88,7 +88,7 @@ class AnthropicAPI(commands.Cog):
                 self._http_session = aiohttp.ClientSession()
             return self._http_session
 
-    async def _fetch_attachment_bytes(self, attachment: Attachment) -> Optional[bytes]:
+    async def _fetch_attachment_bytes(self, attachment: Attachment) -> bytes | None:
         session = await self._get_http_session()
         try:
             async with session.get(attachment.url) as response:
@@ -151,7 +151,7 @@ class AnthropicAPI(commands.Cog):
             typing_task = asyncio.create_task(self.keep_typing(message.channel))
 
             # Build user message content
-            user_content: List[Dict[str, Any]] = [{"type": "text", "text": message.content}]
+            user_content: list[dict[str, Any]] = [{"type": "text", "text": message.content}]
             if message.attachments:
                 for attachment in message.attachments:
                     if attachment.content_type and attachment.content_type.startswith(
@@ -177,7 +177,7 @@ class AnthropicAPI(commands.Cog):
             self.logger.debug(f"Sending messages to Claude: {len(messages)} messages")
 
             # Build API call parameters
-            api_params: Dict[str, Any] = {
+            api_params: dict[str, Any] = {
                 "model": params.model,
                 "max_tokens": params.max_tokens,
                 "messages": messages,
@@ -410,12 +410,12 @@ class AnthropicAPI(commands.Cog):
         ctx: ApplicationContext,
         prompt: str,
         model: str = "claude-sonnet-4-20250514",
-        system: Optional[str] = None,
-        attachment: Optional[Attachment] = None,
+        system: str | None = None,
+        attachment: Attachment | None = None,
         max_tokens: int = 4096,
-        temperature: Optional[float] = None,
-        top_p: Optional[float] = None,
-        top_k: Optional[int] = None,
+        temperature: float | None = None,
+        top_p: float | None = None,
+        top_k: int | None = None,
     ):
         """
         Creates a persistent conversation session with Claude.
@@ -463,7 +463,7 @@ class AnthropicAPI(commands.Cog):
             typing_task = asyncio.create_task(self.keep_typing(ctx.channel))
 
             # Build user content with optional image
-            user_content: List[Dict[str, Any]] = [{"type": "text", "text": prompt}]
+            user_content: list[dict[str, Any]] = [{"type": "text", "text": prompt}]
             if attachment:
                 if attachment.content_type and attachment.content_type.startswith(
                     "image/"
@@ -482,7 +482,7 @@ class AnthropicAPI(commands.Cog):
                         )
 
             # Build API call parameters
-            api_params: Dict[str, Any] = {
+            api_params: dict[str, Any] = {
                 "model": model,
                 "max_tokens": max_tokens,
                 "messages": [{"role": "user", "content": user_content}],
