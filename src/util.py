@@ -28,7 +28,7 @@ class ChatCompletionParameters:
     temperature: float | None = None
     top_p: float | None = None
     top_k: int | None = None
-    max_tokens: int = 4096
+    max_tokens: int = 65536
     conversation_starter: Member | User | None = None
     conversation_id: int | None = None
     channel_id: int | None = None

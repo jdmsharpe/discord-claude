@@ -33,7 +33,12 @@ from util import (
 
 # Supported attachment MIME types
 SUPPORTED_IMAGE_TYPES = {"image/jpeg", "image/png", "image/gif", "image/webp"}
-SUPPORTED_DOCUMENT_TYPES = {"application/pdf", "text/plain", "text/markdown", "text/csv"}
+SUPPORTED_DOCUMENT_TYPES = {
+    "application/pdf",
+    "text/plain",
+    "text/markdown",
+    "text/csv",
+}
 
 
 def build_attachment_content_block(
@@ -205,7 +210,9 @@ class AnthropicAPI(commands.Cog):
             typing_task = asyncio.create_task(self.keep_typing(message.channel))
 
             # Build user message content with support for multiple attachments
-            user_content: list[dict[str, Any]] = [{"type": "text", "text": message.content}]
+            user_content: list[dict[str, Any]] = [
+                {"type": "text", "text": message.content}
+            ]
             if message.attachments:
                 for attachment in message.attachments:
                     attachment_data = await self._fetch_attachment_bytes(attachment)
@@ -238,8 +245,12 @@ class AnthropicAPI(commands.Cog):
                 api_params["top_k"] = params.top_k
 
             response = await self.client.messages.create(**api_params)
-            response_text = response.content[0].text if response.content else "No response."
-            self.logger.debug(f"Received response from Claude: {response_text[:200]}...")
+            response_text = (
+                response.content[0].text if response.content else "No response."
+            )
+            self.logger.debug(
+                f"Received response from Claude: {response_text[:200]}..."
+            )
 
             # Stop typing indicator as soon as we have the response
             if typing_task:
@@ -458,7 +469,7 @@ class AnthropicAPI(commands.Cog):
         model: str = "claude-opus-4-5-20251101",
         system: str | None = None,
         attachment: Attachment | None = None,
-        max_tokens: int = 4096,
+        max_tokens: int = 65536,
         temperature: float | None = None,
         top_p: float | None = None,
         top_k: int | None = None,
@@ -476,10 +487,10 @@ class AnthropicAPI(commands.Cog):
             model: Claude model variant (default: claude-opus-4-5-20251101)
             system: Optional system prompt to set Claude's behavior
             attachment: Optional image attachment for multimodal input
-            max_tokens: Maximum tokens in the response (default: 4096)
-            temperature: Response creativity (0.0 conservative to 1.0 creative)
-            top_p: Nucleus sampling threshold
-            top_k: Limits sampling to top K tokens
+            max_tokens: Maximum tokens in the response (default: 65536)
+            temperature: Amount of randomness (0.0-1.0, default 1.0). Use lower for analytical tasks, higher for creative tasks
+            top_p: Nucleus sampling threshold (0.0-1.0). Use temperature OR top_p, not both. Advanced use only
+            top_k: Only sample from top K tokens. Use temperature OR top_k, not both. Advanced use only
 
         Returns:
             Discord response with initial AI message and interactive conversation controls
@@ -547,9 +558,13 @@ class AnthropicAPI(commands.Cog):
                 api_params["top_k"] = top_k
 
             response = await self.client.messages.create(**api_params)
-            response_text = response.content[0].text if response.content else "No response."
+            response_text = (
+                response.content[0].text if response.content else "No response."
+            )
 
-            self.logger.debug(f"Received response from Claude: {response_text[:200]}...")
+            self.logger.debug(
+                f"Received response from Claude: {response_text[:200]}..."
+            )
 
             # Update initial response description based on input parameters
             truncated_prompt = truncate_text(prompt, 2000)
