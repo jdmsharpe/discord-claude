@@ -440,7 +440,7 @@ class AnthropicAPI(commands.Cog):
     )
     @option(
         "max_tokens",
-        description="Maximum tokens in the response. (default: 65536)",
+        description="Maximum tokens in the response. (default: 16384)",
         required=False,
         type=int,
     )
@@ -469,7 +469,7 @@ class AnthropicAPI(commands.Cog):
         model: str = "claude-opus-4-5-20251101",
         system: str | None = None,
         attachment: Attachment | None = None,
-        max_tokens: int | None = None,
+        max_tokens: int = 16384,
         temperature: float | None = None,
         top_p: float | None = None,
         top_k: int | None = None,
@@ -487,7 +487,7 @@ class AnthropicAPI(commands.Cog):
             model: Claude model variant (default: claude-opus-4-5-20251101)
             system: Optional system prompt to set Claude's behavior
             attachment: Optional image attachment for multimodal input
-            max_tokens: Maximum tokens in the response (default: 65536)
+            max_tokens: Maximum tokens in the response (default: 16384)
             temperature: Amount of randomness (0.0-1.0, default 1.0). Use lower for analytical tasks, higher for creative tasks
             top_p: Nucleus sampling threshold (0.0-1.0). Use temperature OR top_p, not both. Advanced use only
             top_k: Only sample from top K tokens. Use temperature OR top_k, not both. Advanced use only
