@@ -115,7 +115,7 @@ class TestAnthropicAPICog:
             mock_client_class.return_value = mock_client
 
             # Import and create cog
-            from anthropic_api import AnthropicAPI
+            from src.anthropic_api import AnthropicAPI
 
             cog = AnthropicAPI(bot=mock_bot)
             cog.client = mock_client
@@ -160,7 +160,7 @@ class TestAnthropicAPICog:
     ):
         """Test that users can't start multiple conversations in the same channel."""
         # Pre-populate with existing conversation
-        from util import ChatCompletionParameters, Conversation
+        from src.util import ChatCompletionParameters, Conversation
 
         existing_params = ChatCompletionParameters(
             model="claude-sonnet-4-20250514",
@@ -221,8 +221,8 @@ class TestButtonView:
     async def button_view(self, mock_bot):
         """Create a ButtonView instance (async to have event loop available)."""
         with patch("anthropic.AsyncAnthropic"):
-            from anthropic_api import AnthropicAPI
-            from button_view import ButtonView
+            from src.anthropic_api import AnthropicAPI
+            from src.button_view import ButtonView
 
             cog = AnthropicAPI(bot=mock_bot)
             view = ButtonView(

@@ -75,7 +75,7 @@ def chunk_text(text: str, chunk_size: int = CHUNK_TEXT_SIZE) -> list[str]:
     return [text[i : i + chunk_size] for i in range(0, len(text), chunk_size)]
 
 
-def truncate_text(text: str, max_length: int, suffix: str = "...") -> str:
+def truncate_text(text: str | None, max_length: int, suffix: str = "...") -> str | None:
     """
     Truncate text to max_length, adding suffix if truncated.
 
