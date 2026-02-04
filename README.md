@@ -1,4 +1,4 @@
-# discord-claude
+# Discord Claude Bot
 
 A Discord bot that wraps Anthropic's Claude API, providing an easy-to-use interface for conversing with Claude models directly in Discord.
 
