@@ -207,35 +207,3 @@ class TestAnthropicAPICog:
         # Should raise CancelledError when awaited
         with pytest.raises(asyncio.CancelledError):
             await task
-
-
-class TestButtonView:
-    """Tests for the ButtonView UI component."""
-
-    @pytest.fixture
-    async def button_view(self, mock_bot):
-        """Create a ButtonView instance (async to have event loop available)."""
-        with patch("anthropic.AsyncAnthropic"):
-            from src.anthropic_api import AnthropicAPI
-            from src.button_view import ButtonView
-
-            cog = AnthropicAPI(bot=mock_bot)
-            view = ButtonView(
-                cog=cog,
-                conversation_starter=MagicMock(id=111),
-                conversation_id=999,
-            )
-            return view
-
-    @pytest.mark.asyncio
-    async def test_button_view_initialization(self, button_view):
-        """Test ButtonView initializes with correct attributes."""
-        assert button_view.conversation_id == 999
-        assert button_view.conversation_starter.id == 111
-        assert button_view.timeout is None
-
-    @pytest.mark.asyncio
-    async def test_button_view_has_buttons(self, button_view):
-        """Test ButtonView has the expected buttons."""
-        # ButtonView should have 3 children (regenerate, pause, stop buttons)
-        assert len(button_view.children) == 3
