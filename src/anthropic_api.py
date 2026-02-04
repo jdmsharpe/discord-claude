@@ -440,7 +440,7 @@ class AnthropicAPI(commands.Cog):
     )
     @option(
         "max_tokens",
-        description="Maximum tokens in the response. (default: 4096)",
+        description="Maximum tokens in the response. (default: 65536)",
         required=False,
         type=int,
     )
@@ -469,7 +469,7 @@ class AnthropicAPI(commands.Cog):
         model: str = "claude-opus-4-5-20251101",
         system: str | None = None,
         attachment: Attachment | None = None,
-        max_tokens: int = 65536,
+        max_tokens: int | None = None,
         temperature: float | None = None,
         top_p: float | None = None,
         top_k: int | None = None,
