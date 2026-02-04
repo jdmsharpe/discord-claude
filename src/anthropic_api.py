@@ -31,6 +31,65 @@ from util import (
     truncate_text,
 )
 
+# Supported attachment MIME types
+SUPPORTED_IMAGE_TYPES = {"image/jpeg", "image/png", "image/gif", "image/webp"}
+SUPPORTED_DOCUMENT_TYPES = {"application/pdf", "text/plain", "text/markdown", "text/csv"}
+
+
+def build_attachment_content_block(
+    content_type: str, data: bytes, filename: str | None = None
+) -> dict[str, Any] | None:
+    """
+    Build the appropriate content block for an attachment based on its MIME type.
+
+    Args:
+        content_type: The MIME type of the attachment
+        data: The raw bytes of the attachment
+        filename: Optional filename for context
+
+    Returns:
+        A content block dict for the Anthropic API, or None if unsupported
+    """
+    if content_type in SUPPORTED_IMAGE_TYPES:
+        return {
+            "type": "image",
+            "source": {
+                "type": "base64",
+                "media_type": content_type,
+                "data": base64.b64encode(data).decode("utf-8"),
+            },
+        }
+    elif content_type == "application/pdf":
+        return {
+            "type": "document",
+            "source": {
+                "type": "base64",
+                "media_type": "application/pdf",
+                "data": base64.b64encode(data).decode("utf-8"),
+            },
+        }
+    elif content_type in SUPPORTED_DOCUMENT_TYPES or (
+        content_type and content_type.startswith("text/")
+    ):
+        # For text files, decode and send as plain text document
+        try:
+            text_content = data.decode("utf-8")
+        except UnicodeDecodeError:
+            text_content = data.decode("latin-1")
+
+        # Include filename context if available
+        prefix = f"[File: {filename}]\n\n" if filename else ""
+        return {
+            "type": "text",
+            "text": f"{prefix}{text_content}",
+        }
+    return None
+
+
+def get_supported_types_description() -> str:
+    """Return a human-readable description of supported attachment types."""
+    return "Images (JPEG, PNG, GIF, WebP), PDFs, and text files (TXT, MD, CSV)"
+
 
 def append_response_embeds(embeds: list[Embed], response_text: str) -> None:
     """Append response text as Discord embeds, handling chunking for long responses."""
@@ -150,27 +209,19 @@ class AnthropicAPI(commands.Cog):
             )
             typing_task = asyncio.create_task(self.keep_typing(message.channel))
 
-            # Build user message content
+            # Build user message content with support for multiple attachments
             user_content: list[dict[str, Any]] = [{"type": "text", "text": message.content}]
             if message.attachments:
                 for attachment in message.attachments:
-                    if attachment.content_type and attachment.content_type.startswith(
-                        "image/"
-                    ):
-                        image_data = await self._fetch_attachment_bytes(attachment)
-                        if image_data is not None:
-                            user_content.append(
-                                {
-                                    "type": "image",
-                                    "source": {
-                                        "type": "base64",
-                                        "media_type": attachment.content_type,
-                                        "data": base64.b64encode(image_data).decode(
-                                            "utf-8"
-                                        ),
-                                    },
-                                }
-                            )
+                    attachment_data = await self._fetch_attachment_bytes(attachment)
+                    if attachment_data is not None:
+                        content_block = build_attachment_content_block(
+                            attachment.content_type or "",
+                            attachment_data,
+                            attachment.filename,
+                        )
+                        if content_block:
+                            user_content.append(content_block)
 
             messages.append({"role": "user", "content": user_content})
 
@@ -377,7 +428,7 @@ class AnthropicAPI(commands.Cog):
     )
     @option(
         "attachment",
-        description="Image attachment to append to the prompt. (default: not set)",
+        description="File attachment (images, PDFs, text files). (default: not set)",
         required=False,
         type=Attachment,
     )
@@ -462,24 +513,18 @@ class AnthropicAPI(commands.Cog):
         try:
             typing_task = asyncio.create_task(self.keep_typing(ctx.channel))
 
-            # Build user content with optional image
+            # Build user content with optional attachment (image, PDF, or text file)
             user_content: list[dict[str, Any]] = [{"type": "text", "text": prompt}]
             if attachment:
-                if attachment.content_type and attachment.content_type.startswith(
-                    "image/"
-                ):
-                    image_data = await self._fetch_attachment_bytes(attachment)
-                    if image_data is not None:
-                        user_content.append(
-                            {
-                                "type": "image",
-                                "source": {
-                                    "type": "base64",
-                                    "media_type": attachment.content_type,
-                                    "data": base64.b64encode(image_data).decode("utf-8"),
-                                },
-                            }
-                        )
+                attachment_data = await self._fetch_attachment_bytes(attachment)
+                if attachment_data is not None:
+                    content_block = build_attachment_content_block(
+                        attachment.content_type or "",
+                        attachment_data,
+                        attachment.filename,
+                    )
+                    if content_block:
+                        user_content.append(content_block)
 
             # Build API call parameters
             api_params: dict[str, Any] = {
