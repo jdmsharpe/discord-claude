@@ -115,7 +115,7 @@ class TestChatCompletionParameters:
         assert params.model == "claude-sonnet-4-20250514"
         assert params.system is None
         assert params.temperature is None
-        assert params.max_tokens == 65536
+        assert params.max_tokens is None
         assert params.paused is False
         assert params.messages == []
 
@@ -126,7 +126,6 @@ class TestChatCompletionParameters:
         result = params.to_dict()
 
         assert result["model"] == "claude-sonnet-4-20250514"
-        assert result["max_tokens"] == 65536
         assert result["messages"] == [{"role": "user", "content": "Hello"}]
         assert "system" not in result
         assert "temperature" not in result
