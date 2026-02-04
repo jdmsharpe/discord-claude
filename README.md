@@ -18,6 +18,7 @@ A Discord bot that wraps Anthropic's Claude API, providing an easy-to-use interf
 Start a conversation with Claude.
 
 **Parameters:**
+
 - `prompt` (required): Your initial message to Claude
 - `model`: Choose the Claude model (default: Claude Sonnet 4)
 - `system`: System prompt to set Claude's behavior
@@ -42,29 +43,34 @@ Check if the bot has the necessary permissions in the current channel.
 ### Installation
 
 1. Clone the repository:
+
    ```bash
    git clone https://github.com/yourusername/discord-claude.git
    cd discord-claude
    ```
 
 2. Create a virtual environment:
+
    ```bash
    python -m venv .venv
    source .venv/bin/activate  # On Windows: .venv\Scripts\activate
    ```
 
 3. Install dependencies:
+
    ```bash
    pip install -r requirements.txt
    ```
 
 4. Copy the environment example file and fill in your values:
+
    ```bash
    cp .env.example .env
    ```
 
 5. Edit `.env` with your credentials:
-   ```
+
+   ```ini
    BOT_TOKEN=your_discord_bot_token
    GUILD_IDS=your_guild_id_1,your_guild_id_2
    ANTHROPIC_API_KEY=your_anthropic_api_key
@@ -73,11 +79,13 @@ Check if the bot has the necessary permissions in the current channel.
 ### Running the Bot
 
 **Directly:**
+
 ```bash
 python src/bot.py
 ```
 
 **With Docker:**
+
 ```bash
 docker-compose up -d
 ```

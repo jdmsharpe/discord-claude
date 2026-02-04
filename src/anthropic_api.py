@@ -86,11 +86,6 @@ def build_attachment_content_block(
     return None
 
 
-def get_supported_types_description() -> str:
-    """Return a human-readable description of supported attachment types."""
-    return "Images (JPEG, PNG, GIF, WebP), PDFs, and text files (TXT, MD, CSV)"
-
-
 def append_response_embeds(embeds: list[Embed], response_text: str) -> None:
     """Append response text as Discord embeds, handling chunking for long responses."""
     # If response is extremely long (>20000 chars), truncate it to prevent too many embeds
@@ -428,7 +423,7 @@ class AnthropicAPI(commands.Cog):
     )
     @option(
         "attachment",
-        description="File attachment (images, PDFs, text files). (default: not set)",
+        description="Attach an image (JPEG, PNG, GIF, WEBP), a PDF, or a text file (TXT, MD, CSV).",
         required=False,
         type=Attachment,
     )
@@ -495,6 +490,16 @@ class AnthropicAPI(commands.Cog):
         """
         await ctx.defer()
         typing_task = None
+
+        if ctx.channel is None:
+            await ctx.send_followup(
+                embed=Embed(
+                    title="Error",
+                    description="Cannot start conversation: channel context is unavailable.",
+                    color=Colour.red(),
+                )
+            )
+            return
 
         for conv in self.conversations.values():
             if (
@@ -625,7 +630,16 @@ class AnthropicAPI(commands.Cog):
         description="Check if bot has necessary permissions in this channel",
     )
     async def check_permissions(self, ctx: ApplicationContext):
-        permissions = ctx.channel.permissions_for(ctx.guild.me)
+        if ctx.guild is None or ctx.channel is None:
+            await ctx.respond("This command can only be used in a guild channel.")
+            return
+
+        permissions_for = getattr(ctx.channel, "permissions_for", None)
+        if permissions_for is None:
+            await ctx.respond("Cannot check permissions for this channel type.")
+            return
+
+        permissions = permissions_for(ctx.guild.me)
         if permissions.read_messages and permissions.read_message_history:
             await ctx.respond(
                 "Bot has permission to read messages and message history."
