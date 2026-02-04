@@ -93,7 +93,7 @@ class TestFormatAnthropicError:
     def test_exception_with_status_code(self):
         """Exception with status_code attribute should include it."""
         error = Exception("API error")
-        error.status_code = 429
+        setattr(error, "status_code", 429)
         result = format_anthropic_error(error)
         assert "API error" in result
         assert "Status: 429" in result
@@ -101,7 +101,7 @@ class TestFormatAnthropicError:
     def test_exception_with_message_attribute(self):
         """Exception with message attribute should use it."""
         error = Exception()
-        error.message = "Custom message"
+        setattr(error, "message", "Custom message")
         result = format_anthropic_error(error)
         assert "Custom message" in result
 
