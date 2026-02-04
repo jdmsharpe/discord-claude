@@ -23,10 +23,10 @@ Start a conversation with Claude.
 - `model`: Choose the Claude model (default: Claude Sonnet 4)
 - `system`: System prompt to set Claude's behavior
 - `attachment`: Image attachment for multimodal input
-- `max_tokens`: Maximum tokens in the response (default: 4096)
-- `temperature`: Controls randomness (0.0 to 1.0)
-- `top_p`: Nucleus sampling threshold
-- `top_k`: Limits sampling to top K tokens
+- `max_tokens`: Maximum tokens in the response (default: 65536)
+- `temperature`: Amount of randomness (0.0-1.0, default 1.0). Lower for analytical tasks, higher for creative tasks
+- `top_p`: Nucleus sampling threshold (0.0-1.0). Use temperature OR top_p, not both (advanced)
+- `top_k`: Only sample from top K tokens, removing low probability responses. Use temperature OR top_k, not both (advanced)
 
 ### `/anthropic check_permissions`
 
