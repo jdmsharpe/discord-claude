@@ -119,7 +119,7 @@ class ButtonView(View):
                 )
 
     @button(emoji="⏯️", style=ButtonStyle.gray)
-    async def play_pause_button(self, button: Button, interaction: Interaction):
+    async def play_pause_button(self, _: Button, interaction: Interaction):
         """
         Pause or resume the conversation.
 
