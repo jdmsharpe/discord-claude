@@ -111,8 +111,8 @@ class TestChatCompletionParameters:
 
     def test_default_values(self):
         """Default values should be set correctly."""
-        params = ChatCompletionParameters(model="claude-sonnet-4-20250514")
-        assert params.model == "claude-sonnet-4-20250514"
+        params = ChatCompletionParameters(model="claude-sonnet-4")
+        assert params.model == "claude-sonnet-4"
         assert params.system is None
         assert params.temperature is None
         assert params.max_tokens == 16384
@@ -121,11 +121,11 @@ class TestChatCompletionParameters:
 
     def test_to_dict_minimal(self):
         """to_dict with minimal params should include required fields."""
-        params = ChatCompletionParameters(model="claude-sonnet-4-20250514")
+        params = ChatCompletionParameters(model="claude-sonnet-4")
         params.messages = [{"role": "user", "content": "Hello"}]
         result = params.to_dict()
 
-        assert result["model"] == "claude-sonnet-4-20250514"
+        assert result["model"] == "claude-sonnet-4"
         assert result["max_tokens"] == 16384
         assert result["messages"] == [{"role": "user", "content": "Hello"}]
         assert "system" not in result
@@ -134,7 +134,7 @@ class TestChatCompletionParameters:
     def test_to_dict_with_optional_params(self):
         """to_dict with optional params should include them."""
         params = ChatCompletionParameters(
-            model="claude-sonnet-4-20250514",
+            model="claude-sonnet-4",
             system="You are helpful.",
             temperature=0.7,
             top_p=0.9,
@@ -156,7 +156,7 @@ class TestConversation:
 
     def test_conversation_creation(self):
         """Conversation should store params and messages."""
-        params = ChatCompletionParameters(model="claude-sonnet-4-20250514")
+        params = ChatCompletionParameters(model="claude-sonnet-4")
         messages = [
             {"role": "user", "content": "Hello"},
             {"role": "assistant", "content": "Hi there!"},
