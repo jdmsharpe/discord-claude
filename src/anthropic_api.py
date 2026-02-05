@@ -24,6 +24,7 @@ from discord.ext import commands
 from button_view import ButtonView
 from config.auth import ANTHROPIC_API_KEY, GUILD_IDS
 from util import (
+    ADAPTIVE_THINKING_MODELS,
     ChatCompletionParameters,
     Conversation,
     chunk_text,
@@ -89,6 +90,43 @@ def build_attachment_content_block(
             "text": f"{prefix}{text_content}",
         }
     return None
+
+
+def extract_response_content(response) -> tuple[str, str]:
+    """Extract response text and thinking text from an API response.
+
+    Returns:
+        A tuple of (response_text, thinking_text).
+    """
+    text_parts: list[str] = []
+    thinking_parts: list[str] = []
+
+    for block in response.content:
+        if block.type == "thinking":
+            thinking_parts.append(block.thinking)
+        elif block.type == "text":
+            text_parts.append(block.text)
+
+    response_text = "\n\n".join(text_parts) if text_parts else "No response."
+    thinking_text = "\n\n".join(thinking_parts)
+    return response_text, thinking_text
+
+
+def append_thinking_embeds(embeds: list[Embed], thinking_text: str) -> None:
+    """Append thinking text as a spoilered Discord embed."""
+    if not thinking_text:
+        return
+
+    if len(thinking_text) > 3500:
+        thinking_text = thinking_text[:3450] + "\n\n... [thinking truncated]"
+
+    embeds.append(
+        Embed(
+            title="Thinking",
+            description=f"||{thinking_text}||",
+            color=Colour.light_grey(),
+        )
+    )
 
 
 def append_response_embeds(embeds: list[Embed], response_text: str) -> None:
@@ -235,6 +273,8 @@ class AnthropicAPI(commands.Cog):
                 "max_tokens": params.max_tokens,
                 "messages": messages,
             }
+            if params.model in ADAPTIVE_THINKING_MODELS:
+                api_params["thinking"] = {"type": "adaptive"}
             if params.system:
                 api_params["system"] = params.system
             if params.temperature is not None:
@@ -245,9 +285,7 @@ class AnthropicAPI(commands.Cog):
                 api_params["top_k"] = params.top_k
 
             response = await self.client.messages.create(**api_params)
-            response_text = (
-                response.content[0].text if response.content else "No response."
-            )
+            response_text, thinking_text = extract_response_content(response)
             self.logger.debug(
                 f"Received response from Claude: {response_text[:200]}..."
             )
@@ -263,6 +301,7 @@ class AnthropicAPI(commands.Cog):
             # Add assistant message to history
             messages.append({"role": "assistant", "content": response_text})
 
+            append_thinking_embeds(embeds, thinking_text)
             append_response_embeds(embeds, response_text)
 
             view = self.views.get(message.author)
@@ -549,6 +588,8 @@ class AnthropicAPI(commands.Cog):
                 "max_tokens": max_tokens,
                 "messages": [{"role": "user", "content": user_content}],
             }
+            if model in ADAPTIVE_THINKING_MODELS:
+                api_params["thinking"] = {"type": "adaptive"}
             if system:
                 api_params["system"] = system
             if temperature is not None:
@@ -559,9 +600,7 @@ class AnthropicAPI(commands.Cog):
                 api_params["top_k"] = top_k
 
             response = await self.client.messages.create(**api_params)
-            response_text = (
-                response.content[0].text if response.content else "No response."
-            )
+            response_text, thinking_text = extract_response_content(response)
 
             self.logger.debug(
                 f"Received response from Claude: {response_text[:200]}..."
@@ -589,6 +628,7 @@ class AnthropicAPI(commands.Cog):
                     color=Colour.green(),
                 )
             ]
+            append_thinking_embeds(embeds, thinking_text)
             append_response_embeds(embeds, response_text)
 
             if len(embeds) == 1:

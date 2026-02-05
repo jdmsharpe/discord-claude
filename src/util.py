@@ -5,6 +5,9 @@ from discord import Member, User
 
 CHUNK_TEXT_SIZE = 3500  # Maximum number of characters in each text chunk.
 
+# Models that support adaptive thinking
+ADAPTIVE_THINKING_MODELS = {"claude-opus-4-6"}
+
 # Claude models
 CLAUDE_MODELS = [
     "claude-opus-4-6",

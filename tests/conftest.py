@@ -28,7 +28,10 @@ def mock_anthropic_client():
 
         # Mock messages.create response
         mock_response = MagicMock()
-        mock_response.content = [MagicMock(text="Hello! How can I help you today?")]
+        text_block = MagicMock()
+        text_block.type = "text"
+        text_block.text = "Hello! How can I help you today?"
+        mock_response.content = [text_block]
         mock_response.id = "msg_01XFDUDYJgAACzvnptvVoYEL"
         mock_response.model = "claude-sonnet-4"
         mock_response.stop_reason = "end_turn"
