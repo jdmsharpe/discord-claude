@@ -30,7 +30,7 @@ def mock_anthropic_client():
         mock_response = MagicMock()
         mock_response.content = [MagicMock(text="Hello! How can I help you today?")]
         mock_response.id = "msg_01XFDUDYJgAACzvnptvVoYEL"
-        mock_response.model = "claude-sonnet-4-20250514"
+        mock_response.model = "claude-sonnet-4"
         mock_response.stop_reason = "end_turn"
         mock_response.usage = MagicMock(input_tokens=10, output_tokens=15)
 
@@ -99,7 +99,7 @@ def sample_api_response():
         "type": "message",
         "role": "assistant",
         "content": [{"type": "text", "text": "Hello! How can I help you today?"}],
-        "model": "claude-sonnet-4-20250514",
+        "model": "claude-sonnet-4",
         "stop_reason": "end_turn",
         "stop_sequence": None,
         "usage": {"input_tokens": 10, "output_tokens": 15},

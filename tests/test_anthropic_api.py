@@ -10,7 +10,7 @@ class TestAnthropicAPIIntegration:
     async def test_messages_create_basic(self, mock_anthropic_client):
         """Test basic message creation with the Anthropic API."""
         response = await mock_anthropic_client.messages.create(
-            model="claude-sonnet-4-20250514",
+            model="claude-sonnet-4",
             max_tokens=1024,
             messages=[{"role": "user", "content": "Hello, Claude!"}],
         )
@@ -23,7 +23,7 @@ class TestAnthropicAPIIntegration:
     async def test_messages_create_with_system(self, mock_anthropic_client):
         """Test message creation with system prompt."""
         await mock_anthropic_client.messages.create(
-            model="claude-sonnet-4-20250514",
+            model="claude-sonnet-4",
             max_tokens=1024,
             system="You are a helpful assistant.",
             messages=[{"role": "user", "content": "What is 2+2?"}],
@@ -36,7 +36,7 @@ class TestAnthropicAPIIntegration:
     async def test_messages_create_with_temperature(self, mock_anthropic_client):
         """Test message creation with temperature parameter."""
         await mock_anthropic_client.messages.create(
-            model="claude-sonnet-4-20250514",
+            model="claude-sonnet-4",
             max_tokens=1024,
             temperature=0.7,
             messages=[{"role": "user", "content": "Be creative!"}],
@@ -55,7 +55,7 @@ class TestAnthropicAPIIntegration:
         ]
 
         await mock_anthropic_client.messages.create(
-            model="claude-sonnet-4-20250514",
+            model="claude-sonnet-4",
             max_tokens=1024,
             messages=messages,
         )
@@ -84,7 +84,7 @@ class TestAnthropicAPIIntegration:
         ]
 
         await mock_anthropic_client.messages.create(
-            model="claude-sonnet-4-20250514",
+            model="claude-sonnet-4",
             max_tokens=1024,
             messages=messages,
         )
@@ -140,7 +140,7 @@ class TestAnthropicAPICog:
             cog,
             ctx=mock_discord_context,
             prompt="Hello Claude!",
-            model="claude-sonnet-4-20250514",
+            model="claude-sonnet-4",
         )
 
         # Verify API was called
@@ -158,7 +158,7 @@ class TestAnthropicAPICog:
         from src.util import ChatCompletionParameters, Conversation
 
         existing_params = ChatCompletionParameters(
-            model="claude-sonnet-4-20250514",
+            model="claude-sonnet-4",
             conversation_starter=mock_discord_context.author,
             channel_id=mock_discord_context.channel.id,
             conversation_id=123,
