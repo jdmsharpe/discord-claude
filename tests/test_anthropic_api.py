@@ -3,6 +3,101 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 
+class TestExtractResponseContent:
+    """Tests for the extract_response_content helper."""
+
+    def test_text_only(self):
+        """Response with only text blocks."""
+        from src.anthropic_api import extract_response_content
+
+        response = MagicMock()
+        text_block = MagicMock()
+        text_block.type = "text"
+        text_block.text = "Hello!"
+        response.content = [text_block]
+
+        response_text, thinking_text = extract_response_content(response)
+        assert response_text == "Hello!"
+        assert thinking_text == ""
+
+    def test_thinking_and_text(self):
+        """Response with thinking and text blocks."""
+        from src.anthropic_api import extract_response_content
+
+        response = MagicMock()
+        thinking_block = MagicMock()
+        thinking_block.type = "thinking"
+        thinking_block.thinking = "Let me reason about this..."
+        text_block = MagicMock()
+        text_block.type = "text"
+        text_block.text = "The answer is 42."
+        response.content = [thinking_block, text_block]
+
+        response_text, thinking_text = extract_response_content(response)
+        assert response_text == "The answer is 42."
+        assert thinking_text == "Let me reason about this..."
+
+    def test_redacted_thinking_ignored(self):
+        """Redacted thinking blocks should be skipped."""
+        from src.anthropic_api import extract_response_content
+
+        response = MagicMock()
+        redacted_block = MagicMock()
+        redacted_block.type = "redacted_thinking"
+        text_block = MagicMock()
+        text_block.type = "text"
+        text_block.text = "Response."
+        response.content = [redacted_block, text_block]
+
+        response_text, thinking_text = extract_response_content(response)
+        assert response_text == "Response."
+        assert thinking_text == ""
+
+    def test_empty_content(self):
+        """Response with no content blocks."""
+        from src.anthropic_api import extract_response_content
+
+        response = MagicMock()
+        response.content = []
+
+        response_text, thinking_text = extract_response_content(response)
+        assert response_text == "No response."
+        assert thinking_text == ""
+
+
+class TestAppendThinkingEmbeds:
+    """Tests for the append_thinking_embeds helper."""
+
+    def test_no_thinking(self):
+        """Empty thinking text should not add an embed."""
+        from src.anthropic_api import append_thinking_embeds
+
+        embeds = []
+        append_thinking_embeds(embeds, "")
+        assert len(embeds) == 0
+
+    def test_with_thinking(self):
+        """Thinking text should be wrapped in spoiler tags."""
+        from src.anthropic_api import append_thinking_embeds
+
+        embeds = []
+        append_thinking_embeds(embeds, "Some reasoning here")
+        assert len(embeds) == 1
+        assert embeds[0].title == "Thinking"
+        assert embeds[0].description == "||Some reasoning here||"
+
+    def test_long_thinking_truncated(self):
+        """Long thinking text should be truncated."""
+        from src.anthropic_api import append_thinking_embeds
+
+        embeds = []
+        long_text = "a" * 4000
+        append_thinking_embeds(embeds, long_text)
+        assert len(embeds) == 1
+        assert len(embeds[0].description) < 3600
+        assert "[thinking truncated]" in embeds[0].description
+
+
 class TestAnthropicAPIIntegration:
     """Integration tests for the Anthropic API client (mocked)."""
 
