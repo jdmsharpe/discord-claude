@@ -444,6 +444,22 @@ class AnthropicAPI(commands.Cog):
         self.logger.error(f"Error in event {event}: {args} {kwargs}", exc_info=True)
 
     @anthropic.command(
+        name="check_permissions",
+        description="Check if bot has necessary permissions in this channel",
+    )
+    async def check_permissions(self, ctx: ApplicationContext):
+        """
+        Checks and reports the bot's permissions in the current channel.
+        """
+        permissions = ctx.channel.permissions_for(ctx.guild.me)
+        if permissions.read_messages and permissions.read_message_history:
+            await ctx.respond(
+                "Bot has permission to read messages and message history."
+            )
+        else:
+            await ctx.respond("Bot is missing necessary permissions in this channel.")
+
+    @anthropic.command(
         name="converse",
         description="Starts a conversation with Claude.",
     )
@@ -680,25 +696,3 @@ class AnthropicAPI(commands.Cog):
         finally:
             if typing_task:
                 typing_task.cancel()
-
-    @anthropic.command(
-        name="check_permissions",
-        description="Check if bot has necessary permissions in this channel",
-    )
-    async def check_permissions(self, ctx: ApplicationContext):
-        if ctx.guild is None or ctx.channel is None:
-            await ctx.respond("This command can only be used in a guild channel.")
-            return
-
-        permissions_for = getattr(ctx.channel, "permissions_for", None)
-        if permissions_for is None:
-            await ctx.respond("Cannot check permissions for this channel type.")
-            return
-
-        permissions = permissions_for(ctx.guild.me)
-        if permissions.read_messages and permissions.read_message_history:
-            await ctx.respond(
-                "Bot has permission to read messages and message history."
-            )
-        else:
-            await ctx.respond("Bot is missing necessary permissions in this channel.")
