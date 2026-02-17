@@ -7,7 +7,7 @@ A Discord bot that wraps Anthropic's Claude API, providing an easy-to-use interf
 ## Features
 
 - **Multi-turn conversations**: Start conversations with Claude that maintain context across multiple messages
-- **Multiple Claude models**: Choose from Claude Opus 4.5, Sonnet 4.5, Sonnet 4, Haiku 3.5, and earlier Claude 3/3.5 models
+- **Multiple Claude models**: Choose from Claude Opus 4.6, Sonnet 4.6, Opus 4.5, Sonnet 4.5, Sonnet 4, Haiku 3.5, and earlier Claude 3/3.5 models
 - **Image support**: Attach images to your prompts for multimodal conversations
 - **Conversation controls**: Pause, resume, regenerate responses, and end conversations with interactive buttons
 - **System prompts**: Customize Claude's behavior with system prompts
@@ -22,7 +22,7 @@ Start a conversation with Claude.
 **Parameters:**
 
 - `prompt` (required): Your initial message to Claude
-- `model`: Choose the Claude model (default: Claude Sonnet 4)
+- `model`: Choose the Claude model (default: Claude Opus 4.6)
 - `system`: System prompt to set Claude's behavior
 - `attachment`: Image attachment for multimodal input
 - `max_tokens`: Maximum tokens in the response (default: 16384)
