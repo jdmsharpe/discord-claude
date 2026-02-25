@@ -118,6 +118,7 @@ class TestChatCompletionParameters:
         assert params.max_tokens == 16384
         assert params.paused is False
         assert params.messages == []
+        assert params.tools == []
 
     def test_to_dict_minimal(self):
         """to_dict with minimal params should include required fields."""
@@ -130,6 +131,7 @@ class TestChatCompletionParameters:
         assert result["messages"] == [{"role": "user", "content": "Hello"}]
         assert "system" not in result
         assert "temperature" not in result
+        assert "tools" not in result
 
     def test_to_dict_with_optional_params(self):
         """to_dict with optional params should include them."""
@@ -149,6 +151,40 @@ class TestChatCompletionParameters:
         assert result["top_p"] == 0.9
         assert result["top_k"] == 40
         assert result["max_tokens"] == 2048
+
+
+    def test_to_dict_with_tools(self):
+        """to_dict with tools should include tool definitions."""
+        params = ChatCompletionParameters(
+            model="claude-sonnet-4",
+            tools=["web_search", "memory"],
+        )
+        params.messages = [{"role": "user", "content": "Hello"}]
+        result = params.to_dict()
+
+        assert "tools" in result
+        assert len(result["tools"]) == 2
+        assert result["tools"][0]["type"] == "web_search_20250305"
+        assert result["tools"][1]["type"] == "memory_20250818"
+
+    def test_to_dict_ignores_invalid_tools(self):
+        """to_dict ignores tool keys not in AVAILABLE_TOOLS."""
+        params = ChatCompletionParameters(
+            model="claude-sonnet-4",
+            tools=["web_search", "nonexistent_tool"],
+        )
+        params.messages = [{"role": "user", "content": "Hello"}]
+        result = params.to_dict()
+
+        assert len(result["tools"]) == 1
+        assert result["tools"][0]["name"] == "web_search"
+
+    def test_tools_isolation_between_instances(self):
+        """Tools list should not be shared between instances."""
+        params1 = ChatCompletionParameters(model="claude-sonnet-4")
+        params2 = ChatCompletionParameters(model="claude-sonnet-4")
+        params1.tools.append("web_search")
+        assert params2.tools == []
 
 
 class TestConversation:
