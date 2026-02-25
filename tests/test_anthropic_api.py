@@ -14,11 +14,14 @@ class TestExtractResponseContent:
         text_block = MagicMock()
         text_block.type = "text"
         text_block.text = "Hello!"
+        text_block.citations = None
         response.content = [text_block]
 
-        response_text, thinking_text = extract_response_content(response)
-        assert response_text == "Hello!"
-        assert thinking_text == ""
+        parsed = extract_response_content(response)
+        assert parsed.text == "Hello!"
+        assert parsed.thinking == ""
+        assert parsed.citations == []
+        assert parsed.has_tool_use is False
 
     def test_thinking_and_text(self):
         """Response with thinking and text blocks."""
@@ -31,11 +34,12 @@ class TestExtractResponseContent:
         text_block = MagicMock()
         text_block.type = "text"
         text_block.text = "The answer is 42."
+        text_block.citations = None
         response.content = [thinking_block, text_block]
 
-        response_text, thinking_text = extract_response_content(response)
-        assert response_text == "The answer is 42."
-        assert thinking_text == "Let me reason about this..."
+        parsed = extract_response_content(response)
+        assert parsed.text == "The answer is 42."
+        assert parsed.thinking == "Let me reason about this..."
 
     def test_redacted_thinking_ignored(self):
         """Redacted thinking blocks should be skipped."""
@@ -47,11 +51,12 @@ class TestExtractResponseContent:
         text_block = MagicMock()
         text_block.type = "text"
         text_block.text = "Response."
+        text_block.citations = None
         response.content = [redacted_block, text_block]
 
-        response_text, thinking_text = extract_response_content(response)
-        assert response_text == "Response."
-        assert thinking_text == ""
+        parsed = extract_response_content(response)
+        assert parsed.text == "Response."
+        assert parsed.thinking == ""
 
     def test_empty_content(self):
         """Response with no content blocks."""
@@ -60,9 +65,102 @@ class TestExtractResponseContent:
         response = MagicMock()
         response.content = []
 
-        response_text, thinking_text = extract_response_content(response)
-        assert response_text == "No response."
-        assert thinking_text == ""
+        parsed = extract_response_content(response)
+        assert parsed.text == "No response."
+        assert parsed.thinking == ""
+
+    def test_with_citations(self):
+        """Response with text blocks containing citations."""
+        from src.anthropic_api import extract_response_content
+
+        response = MagicMock()
+        text_block = MagicMock()
+        text_block.type = "text"
+        text_block.text = "According to sources..."
+        citation1 = MagicMock()
+        citation1.url = "https://example.com/1"
+        citation1.title = "Source 1"
+        citation1.cited_text = "cited text 1"
+        citation2 = MagicMock()
+        citation2.url = "https://example.com/2"
+        citation2.title = "Source 2"
+        citation2.cited_text = "cited text 2"
+        text_block.citations = [citation1, citation2]
+        response.content = [text_block]
+
+        parsed = extract_response_content(response)
+        assert len(parsed.citations) == 2
+        assert parsed.citations[0]["url"] == "https://example.com/1"
+        assert parsed.citations[1]["title"] == "Source 2"
+
+    def test_citations_deduplicated(self):
+        """Duplicate citation URLs are deduplicated."""
+        from src.anthropic_api import extract_response_content
+
+        response = MagicMock()
+        text_block1 = MagicMock()
+        text_block1.type = "text"
+        text_block1.text = "Part 1"
+        citation1 = MagicMock()
+        citation1.url = "https://example.com/same"
+        citation1.title = "Same Source"
+        citation1.cited_text = "text"
+        text_block1.citations = [citation1]
+
+        text_block2 = MagicMock()
+        text_block2.type = "text"
+        text_block2.text = "Part 2"
+        citation2 = MagicMock()
+        citation2.url = "https://example.com/same"
+        citation2.title = "Same Source Again"
+        citation2.cited_text = "text"
+        text_block2.citations = [citation2]
+
+        response.content = [text_block1, text_block2]
+
+        parsed = extract_response_content(response)
+        assert len(parsed.citations) == 1
+
+    def test_tool_use_detected(self):
+        """Response with tool_use block is detected."""
+        from src.anthropic_api import extract_response_content
+
+        response = MagicMock()
+        text_block = MagicMock()
+        text_block.type = "text"
+        text_block.text = "Let me check."
+        text_block.citations = None
+        tool_block = MagicMock()
+        tool_block.type = "tool_use"
+        tool_block.id = "toolu_123"
+        tool_block.name = "memory"
+        tool_block.input = {"command": "view"}
+        response.content = [text_block, tool_block]
+
+        parsed = extract_response_content(response)
+        assert parsed.has_tool_use is True
+        assert len(parsed.tool_use_blocks) == 1
+        assert parsed.tool_use_blocks[0].name == "memory"
+
+    def test_server_tool_blocks_skipped(self):
+        """Server-side tool blocks don't appear in text but raw_content preserves them."""
+        from src.anthropic_api import extract_response_content
+
+        response = MagicMock()
+        server_block = MagicMock()
+        server_block.type = "server_tool_use"
+        result_block = MagicMock()
+        result_block.type = "web_search_tool_result"
+        text_block = MagicMock()
+        text_block.type = "text"
+        text_block.text = "Here are the results."
+        text_block.citations = None
+        response.content = [server_block, result_block, text_block]
+
+        parsed = extract_response_content(response)
+        assert parsed.text == "Here are the results."
+        assert parsed.has_tool_use is False
+        assert len(parsed.raw_content) == 3
 
 
 class TestAppendThinkingEmbeds:
@@ -96,6 +194,47 @@ class TestAppendThinkingEmbeds:
         assert len(embeds) == 1
         assert len(embeds[0].description) < 3600
         assert "[thinking truncated]" in embeds[0].description
+
+
+class TestAppendCitationsEmbed:
+    """Tests for the append_citations_embed helper."""
+
+    def test_no_citations(self):
+        """Empty citations list adds no embed."""
+        from src.anthropic_api import append_citations_embed
+
+        embeds = []
+        append_citations_embed(embeds, [])
+        assert len(embeds) == 0
+
+    def test_with_citations(self):
+        """Citations are rendered as a Sources embed with markdown links."""
+        from src.anthropic_api import append_citations_embed
+
+        embeds = []
+        citations = [
+            {"url": "https://example.com/1", "title": "First Source"},
+            {"url": "https://example.com/2", "title": "Second Source"},
+        ]
+        append_citations_embed(embeds, citations)
+        assert len(embeds) == 1
+        assert embeds[0].title == "Sources"
+        assert "[First Source](https://example.com/1)" in embeds[0].description
+        assert "[Second Source](https://example.com/2)" in embeds[0].description
+
+    def test_citations_capped_at_20(self):
+        """Only the first 20 citations are included."""
+        from src.anthropic_api import append_citations_embed
+
+        embeds = []
+        citations = [
+            {"url": f"https://example.com/{i}", "title": f"Source {i}"}
+            for i in range(25)
+        ]
+        append_citations_embed(embeds, citations)
+        assert len(embeds) == 1
+        assert "Source 19" in embeds[0].description
+        assert "Source 20" not in embeds[0].description
 
 
 class TestAnthropicAPIIntegration:
@@ -199,8 +338,13 @@ class TestAnthropicAPICog:
             # Set up mock client
             mock_client = AsyncMock()
             mock_response = MagicMock()
-            mock_response.content = [MagicMock(text="Test response")]
+            text_block = MagicMock()
+            text_block.type = "text"
+            text_block.text = "Test response"
+            text_block.citations = None
+            mock_response.content = [text_block]
             mock_response.id = "msg_test123"
+            mock_response.stop_reason = "end_turn"
             mock_client.messages.create = AsyncMock(return_value=mock_response)
             mock_client_class.return_value = mock_client
 
@@ -302,3 +446,147 @@ class TestAnthropicAPICog:
         # Should raise CancelledError when awaited
         with pytest.raises(asyncio.CancelledError):
             await task
+
+
+class TestCallApiWithToolLoop:
+    """Tests for the _call_api_with_tool_loop method."""
+
+    @pytest.fixture
+    def cog(self, mock_bot):
+        """Create an AnthropicAPI cog instance."""
+        with patch("anthropic.AsyncAnthropic") as mock_client_class:
+            mock_client = AsyncMock()
+            mock_client_class.return_value = mock_client
+
+            from src.anthropic_api import AnthropicAPI
+
+            cog = AnthropicAPI(bot=mock_bot)
+            cog.client = mock_client
+            return cog
+
+    @pytest.mark.asyncio
+    async def test_simple_end_turn(self, cog):
+        """Single API call with end_turn returns ParsedResponse."""
+        mock_response = MagicMock()
+        text_block = MagicMock()
+        text_block.type = "text"
+        text_block.text = "Hello!"
+        text_block.citations = None
+        mock_response.content = [text_block]
+        mock_response.stop_reason = "end_turn"
+        cog.client.messages.create = AsyncMock(return_value=mock_response)
+
+        messages = [{"role": "user", "content": "Hi"}]
+        api_params = {"model": "claude-sonnet-4", "max_tokens": 1024}
+
+        parsed = await cog._call_api_with_tool_loop(
+            api_params=api_params, messages=messages, user_id=123
+        )
+
+        assert parsed.text == "Hello!"
+        assert len(messages) == 2  # user + assistant
+        assert messages[1]["role"] == "assistant"
+        cog.client.messages.create.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_pause_turn_continues(self, cog):
+        """pause_turn response causes re-send, then end_turn completes."""
+        pause_response = MagicMock()
+        pause_text = MagicMock()
+        pause_text.type = "text"
+        pause_text.text = "Searching..."
+        pause_text.citations = None
+        pause_response.content = [pause_text]
+        pause_response.stop_reason = "pause_turn"
+
+        final_response = MagicMock()
+        final_text = MagicMock()
+        final_text.type = "text"
+        final_text.text = "Found it!"
+        final_text.citations = None
+        final_response.content = [final_text]
+        final_response.stop_reason = "end_turn"
+
+        cog.client.messages.create = AsyncMock(
+            side_effect=[pause_response, final_response]
+        )
+
+        messages = [{"role": "user", "content": "Search for something"}]
+        api_params = {"model": "claude-sonnet-4", "max_tokens": 1024}
+
+        parsed = await cog._call_api_with_tool_loop(
+            api_params=api_params, messages=messages, user_id=123
+        )
+
+        assert parsed.text == "Found it!"
+        assert cog.client.messages.create.call_count == 2
+
+    @pytest.mark.asyncio
+    async def test_tool_use_loop(self, cog):
+        """tool_use triggers execution and re-send."""
+        # First response: tool_use
+        tool_response = MagicMock()
+        tool_text = MagicMock()
+        tool_text.type = "text"
+        tool_text.text = "Let me check."
+        tool_text.citations = None
+        tool_block = MagicMock()
+        tool_block.type = "tool_use"
+        tool_block.id = "toolu_123"
+        tool_block.name = "memory"
+        tool_block.input = {"command": "view", "path": "/memories"}
+        tool_response.content = [tool_text, tool_block]
+        tool_response.stop_reason = "tool_use"
+
+        # Second response: end_turn
+        final_response = MagicMock()
+        final_text = MagicMock()
+        final_text.type = "text"
+        final_text.text = "No memories found."
+        final_text.citations = None
+        final_response.content = [final_text]
+        final_response.stop_reason = "end_turn"
+
+        cog.client.messages.create = AsyncMock(
+            side_effect=[tool_response, final_response]
+        )
+
+        messages = [{"role": "user", "content": "Check my memories"}]
+        api_params = {"model": "claude-sonnet-4", "max_tokens": 1024}
+
+        with patch("src.anthropic_api.execute_memory_operation") as mock_exec:
+            mock_exec.return_value = "No memory files found."
+
+            parsed = await cog._call_api_with_tool_loop(
+                api_params=api_params, messages=messages, user_id=123
+            )
+
+        assert parsed.text == "No memories found."
+        assert cog.client.messages.create.call_count == 2
+        # Messages should have: user, assistant (tool_use), user (tool_result), assistant (final)
+        assert len(messages) == 4
+
+    @pytest.mark.asyncio
+    async def test_max_iterations_safety(self, cog):
+        """Loop stops at max_iterations."""
+        pause_response = MagicMock()
+        pause_text = MagicMock()
+        pause_text.type = "text"
+        pause_text.text = "Still working..."
+        pause_text.citations = None
+        pause_response.content = [pause_text]
+        pause_response.stop_reason = "pause_turn"
+
+        cog.client.messages.create = AsyncMock(return_value=pause_response)
+
+        messages = [{"role": "user", "content": "Do something"}]
+        api_params = {"model": "claude-sonnet-4", "max_tokens": 1024}
+
+        parsed = await cog._call_api_with_tool_loop(
+            api_params=api_params,
+            messages=messages,
+            user_id=123,
+            max_iterations=3,
+        )
+
+        assert cog.client.messages.create.call_count == 3

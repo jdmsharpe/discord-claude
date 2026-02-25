@@ -1,17 +1,17 @@
 import logging
-from typing import TYPE_CHECKING, cast
+from typing import cast
 
 from discord import (
     ButtonStyle,
     Interaction,
     Member,
+    SelectOption,
     TextChannel,
     User,
 )
-from discord.ui import Button, View, button
+from discord.ui import Button, Select, View, button
 
-if TYPE_CHECKING:
-    from anthropic_api import AnthropicAPI
+from util import AVAILABLE_TOOLS
 
 
 class ButtonView(View):
@@ -20,6 +20,7 @@ class ButtonView(View):
         cog: "AnthropicAPI",
         conversation_starter: Member | User,
         conversation_id: int,
+        initial_tools: list[str] | None = None,
     ):
         """
         Initialize the ButtonView class.
@@ -28,8 +29,82 @@ class ButtonView(View):
         self.cog = cog
         self.conversation_starter = conversation_starter
         self.conversation_id = conversation_id
+        self._add_tool_select(initial_tools)
 
-    @button(emoji="🔄", style=ButtonStyle.green)
+    def _add_tool_select(self, initial_tools: list[str] | None = None) -> None:
+        """Add a Select Menu for toggling tools mid-conversation."""
+        selected_tools = set(initial_tools or [])
+
+        tool_select = Select(
+            placeholder="Tools",
+            options=[
+                SelectOption(
+                    label="Web Search",
+                    value="web_search",
+                    description="Search the web for current information.",
+                    default="web_search" in selected_tools,
+                ),
+                SelectOption(
+                    label="Web Fetch",
+                    value="web_fetch",
+                    description="Fetch full content from web pages.",
+                    default="web_fetch" in selected_tools,
+                ),
+                SelectOption(
+                    label="Code Execution",
+                    value="code_execution",
+                    description="Run code in a sandbox.",
+                    default="code_execution" in selected_tools,
+                ),
+                SelectOption(
+                    label="Memory",
+                    value="memory",
+                    description="Save and recall memories across conversations.",
+                    default="memory" in selected_tools,
+                ),
+            ],
+            min_values=0,
+            max_values=4,
+            row=1,
+        )
+
+        async def _tool_callback(interaction: Interaction) -> None:
+            await self.tool_select_callback(interaction, tool_select)
+
+        tool_select.callback = _tool_callback
+        self.add_item(tool_select)
+
+    async def tool_select_callback(
+        self, interaction: Interaction, tool_select: Select
+    ) -> None:
+        """Handle tool selection changes."""
+        if interaction.user != self.conversation_starter:
+            await interaction.response.send_message(
+                "You are not allowed to change tools for this conversation.",
+                ephemeral=True,
+            )
+            return
+
+        conversation = self.cog.conversations.get(self.conversation_id)
+        if conversation is None:
+            await interaction.response.send_message(
+                "No active conversation found.", ephemeral=True
+            )
+            return
+
+        selected_values = [
+            value for value in tool_select.values if value in AVAILABLE_TOOLS
+        ]
+        conversation.params.tools = selected_values
+
+        status = ", ".join(selected_values) if selected_values else "none"
+        await interaction.response.send_message(
+            f"Tools updated: {status}.",
+            ephemeral=True,
+            delete_after=3,
+        )
+
+    @button(emoji="🔄", style=ButtonStyle.green, row=0)
     async def regenerate_button(self, _: Button, interaction: Interaction):
         """
         Regenerate the last response for the current conversation.
@@ -118,7 +193,7 @@ class ButtonView(View):
                     "An error occurred while regenerating the response.", ephemeral=True
                 )
 
-    @button(emoji="⏯️", style=ButtonStyle.gray)
+    @button(emoji="⏯️", style=ButtonStyle.gray, row=0)
     async def play_pause_button(self, _: Button, interaction: Interaction):
         """
         Pause or resume the conversation.
@@ -148,7 +223,7 @@ class ButtonView(View):
                 "No active conversation found.", ephemeral=True
             )
 
-    @button(emoji="⏹️", style=ButtonStyle.blurple)
+    @button(emoji="⏹️", style=ButtonStyle.blurple, row=0)
     async def stop_button(self, button: Button, interaction: Interaction):
         """
         End the conversation.

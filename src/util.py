@@ -8,6 +8,28 @@ CHUNK_TEXT_SIZE = 3500  # Maximum number of characters in each text chunk.
 # Models that support adaptive thinking
 ADAPTIVE_THINKING_MODELS = {"claude-opus-4-6", "claude-sonnet-4-6"}
 
+# Tool definitions for the Anthropic API
+AVAILABLE_TOOLS: dict[str, dict[str, Any]] = {
+    "web_search": {
+        "type": "web_search_20250305",
+        "name": "web_search",
+        "max_uses": 5,
+    },
+    "web_fetch": {
+        "type": "web_fetch_20250910",
+        "name": "web_fetch",
+        "max_uses": 5,
+    },
+    "code_execution": {
+        "type": "code_execution_20250825",
+        "name": "code_execution",
+    },
+    "memory": {
+        "type": "memory_20250818",
+        "name": "memory",
+    },
+}
+
 # Claude models
 CLAUDE_MODELS = [
     "claude-opus-4-6",
@@ -39,6 +61,7 @@ class ChatCompletionParameters:
     channel_id: int | None = None
     paused: bool | None = False
     messages: list[dict[str, Any]] = field(default_factory=list)
+    tools: list[str] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for API calls."""
@@ -55,6 +78,10 @@ class ChatCompletionParameters:
             payload["top_p"] = self.top_p
         if self.top_k is not None:
             payload["top_k"] = self.top_k
+        if self.tools:
+            payload["tools"] = [
+                AVAILABLE_TOOLS[t] for t in self.tools if t in AVAILABLE_TOOLS
+            ]
         return payload
 
 

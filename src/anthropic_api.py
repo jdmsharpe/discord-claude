@@ -2,6 +2,7 @@
 import asyncio
 import base64
 import logging
+from dataclasses import dataclass, field
 from typing import Any
 
 # Third-party imports
@@ -23,8 +24,10 @@ from discord.ext import commands
 # Local imports
 from button_view import ButtonView
 from config.auth import ANTHROPIC_API_KEY, GUILD_IDS
+from memory import execute_memory_operation
 from util import (
     ADAPTIVE_THINKING_MODELS,
+    AVAILABLE_TOOLS,
     ChatCompletionParameters,
     Conversation,
     chunk_text,
@@ -92,24 +95,66 @@ def build_attachment_content_block(
     return None
 
 
-def extract_response_content(response) -> tuple[str, str]:
-    """Extract response text and thinking text from an API response.
+@dataclass
+class ParsedResponse:
+    """Structured result from parsing an API response."""
+
+    text: str = ""
+    thinking: str = ""
+    citations: list[dict[str, str]] = field(default_factory=list)
+    has_tool_use: bool = False
+    tool_use_blocks: list[Any] = field(default_factory=list)
+    raw_content: list[Any] = field(default_factory=list)
+
+
+def extract_response_content(response) -> ParsedResponse:
+    """Extract response text, thinking, citations, and tool use from an API response.
 
     Returns:
-        A tuple of (response_text, thinking_text).
+        A ParsedResponse with text, thinking, citations, tool use blocks, and raw content.
     """
     text_parts: list[str] = []
     thinking_parts: list[str] = []
+    citations: list[dict[str, str]] = []
+    tool_use_blocks: list[Any] = []
+    seen_urls: set[str] = set()
 
     for block in response.content:
         if block.type == "thinking":
             thinking_parts.append(block.thinking)
         elif block.type == "text":
             text_parts.append(block.text)
+            # Extract citations from text blocks
+            block_citations = getattr(block, "citations", None)
+            if block_citations:
+                for citation in block_citations:
+                    url = getattr(citation, "url", None)
+                    if url and url not in seen_urls:
+                        seen_urls.add(url)
+                        citations.append(
+                            {
+                                "url": url,
+                                "title": getattr(citation, "title", url),
+                                "cited_text": getattr(citation, "cited_text", ""),
+                            }
+                        )
+        elif block.type == "tool_use":
+            tool_use_blocks.append(block)
+        # Skip server-side blocks: server_tool_use, web_search_tool_result,
+        # web_fetch_tool_result, bash_code_execution_tool_result,
+        # text_editor_code_execution_tool_result, redacted_thinking
 
     response_text = "\n\n".join(text_parts) if text_parts else "No response."
     thinking_text = "\n\n".join(thinking_parts)
-    return response_text, thinking_text
+
+    return ParsedResponse(
+        text=response_text,
+        thinking=thinking_text,
+        citations=citations,
+        has_tool_use=len(tool_use_blocks) > 0,
+        tool_use_blocks=tool_use_blocks,
+        raw_content=response.content,
+    )
 
 
 def append_thinking_embeds(embeds: list[Embed], thinking_text: str) -> None:
@@ -145,6 +190,43 @@ def append_response_embeds(embeds: list[Embed], response_text: str) -> None:
                 color=Colour.orange(),
             )
         )
+
+
+def append_citations_embed(
+    embeds: list[Embed], citations: list[dict[str, str]]
+) -> None:
+    """Append a Sources embed listing citation URLs from web search."""
+    if not citations:
+        return
+
+    lines = []
+    for i, citation in enumerate(citations[:20], start=1):
+        title = citation.get("title", citation["url"])
+        url = citation["url"]
+        lines.append(f"{i}. [{title}]({url})")
+
+    description = "\n".join(lines)
+
+    # Respect Discord's embed limits
+    current_total = sum(
+        len(embed.description or "") + len(embed.title or "") for embed in embeds
+    )
+    remaining_chars = 6000 - current_total - len("Sources")
+
+    if remaining_chars < 50:
+        return
+
+    max_description_length = min(4000, remaining_chars)
+    if len(description) > max_description_length:
+        description = description[: max_description_length - 3] + "..."
+
+    embeds.append(
+        Embed(
+            title="Sources",
+            description=description,
+            color=Colour.blue(),
+        )
+    )
 
 
 class AnthropicAPI(commands.Cog):
@@ -218,6 +300,99 @@ class AnthropicAPI(commands.Cog):
                     new_loop.close()
         self._http_session = None
 
+    async def _call_api_with_tool_loop(
+        self,
+        api_params: dict[str, Any],
+        messages: list[dict[str, Any]],
+        user_id: int,
+        max_iterations: int = 10,
+    ) -> ParsedResponse:
+        """Call the Anthropic API, handling tool use loops.
+
+        For server-side tools (web_search, web_fetch, code_execution), the API
+        handles execution internally. We only need to handle:
+        1. stop_reason == "pause_turn": re-send to continue the turn
+        2. stop_reason == "tool_use": execute client-side tools (memory),
+           append tool_result, re-send
+
+        The messages list is mutated in place. On completion, the final assistant
+        message (with full content blocks) is appended to messages.
+
+        Args:
+            api_params: The API parameters dict (model, max_tokens, tools, etc.)
+            messages: The conversation messages list (mutated in place)
+            user_id: The Discord user ID (for memory tool file paths)
+            max_iterations: Safety limit on loop iterations
+
+        Returns:
+            The final ParsedResponse after all tool loops complete.
+        """
+        for iteration in range(max_iterations):
+            api_params["messages"] = messages
+            response = await self.client.messages.create(**api_params)
+            parsed = extract_response_content(response)
+
+            if response.stop_reason == "end_turn":
+                messages.append(
+                    {"role": "assistant", "content": response.content}
+                )
+                return parsed
+
+            elif response.stop_reason == "pause_turn":
+                messages.append(
+                    {"role": "assistant", "content": response.content}
+                )
+                self.logger.info(
+                    f"pause_turn received, continuing (iteration {iteration + 1})"
+                )
+                continue
+
+            elif response.stop_reason == "tool_use":
+                messages.append(
+                    {"role": "assistant", "content": response.content}
+                )
+
+                tool_results = []
+                for tool_block in parsed.tool_use_blocks:
+                    result_text = self._execute_tool(
+                        tool_block.name, tool_block.input, user_id
+                    )
+                    tool_results.append(
+                        {
+                            "type": "tool_result",
+                            "tool_use_id": tool_block.id,
+                            "content": result_text,
+                        }
+                    )
+
+                messages.append({"role": "user", "content": tool_results})
+                self.logger.info(
+                    f"tool_use handled, re-sending (iteration {iteration + 1})"
+                )
+                continue
+
+            else:
+                self.logger.warning(
+                    f"Unknown stop_reason: {response.stop_reason}"
+                )
+                messages.append(
+                    {"role": "assistant", "content": response.content}
+                )
+                return parsed
+
+        self.logger.warning(
+            f"Tool loop hit max_iterations ({max_iterations})"
+        )
+        return parsed
+
+    def _execute_tool(
+        self, tool_name: str, tool_input: dict[str, Any], user_id: int
+    ) -> str:
+        """Execute a client-side tool and return the result string."""
+        if tool_name == "memory":
+            return execute_memory_operation(user_id=user_id, tool_input=tool_input)
+        return f"Error: Unknown tool '{tool_name}'"
+
     async def handle_new_message_in_conversation(
         self, message, conversation: Conversation
     ):
@@ -283,9 +458,20 @@ class AnthropicAPI(commands.Cog):
                 api_params["top_p"] = params.top_p
             if params.top_k is not None:
                 api_params["top_k"] = params.top_k
+            if params.tools:
+                api_params["tools"] = [
+                    AVAILABLE_TOOLS[t]
+                    for t in params.tools
+                    if t in AVAILABLE_TOOLS
+                ]
 
-            response = await self.client.messages.create(**api_params)
-            response_text, thinking_text = extract_response_content(response)
+            parsed = await self._call_api_with_tool_loop(
+                api_params=api_params,
+                messages=messages,
+                user_id=message.author.id,
+            )
+            response_text = parsed.text
+            thinking_text = parsed.thinking
             self.logger.debug(
                 f"Received response from Claude: {response_text[:200]}..."
             )
@@ -298,11 +484,9 @@ class AnthropicAPI(commands.Cog):
                 typing_task.cancel()
                 typing_task = None
 
-            # Add assistant message to history
-            messages.append({"role": "assistant", "content": response_text})
-
             append_thinking_embeds(embeds, thinking_text)
             append_response_embeds(embeds, response_text)
+            append_citations_embed(embeds, parsed.citations)
 
             view = self.views.get(message.author)
             main_conversation_id = conversation.params.conversation_id
@@ -519,6 +703,30 @@ class AnthropicAPI(commands.Cog):
         required=False,
         type=int,
     )
+    @option(
+        "web_search",
+        description="Enable web search to find current information. (default: false)",
+        required=False,
+        type=bool,
+    )
+    @option(
+        "web_fetch",
+        description="Enable web fetch to retrieve full web page content. (default: false)",
+        required=False,
+        type=bool,
+    )
+    @option(
+        "code_execution",
+        description="Enable code execution to run code in a sandbox. (default: false)",
+        required=False,
+        type=bool,
+    )
+    @option(
+        "memory",
+        description="Enable memory to save and recall information across conversations. (default: false)",
+        required=False,
+        type=bool,
+    )
     async def converse(
         self,
         ctx: ApplicationContext,
@@ -530,6 +738,10 @@ class AnthropicAPI(commands.Cog):
         temperature: float | None = None,
         top_p: float | None = None,
         top_k: int | None = None,
+        web_search: bool = False,
+        web_fetch: bool = False,
+        code_execution: bool = False,
+        memory: bool = False,
     ):
         """
         Creates a persistent conversation session with Claude.
@@ -586,6 +798,17 @@ class AnthropicAPI(commands.Cog):
         try:
             typing_task = asyncio.create_task(self.keep_typing(ctx.channel))
 
+            # Build enabled tools list from boolean options
+            enabled_tools: list[str] = []
+            if web_search:
+                enabled_tools.append("web_search")
+            if web_fetch:
+                enabled_tools.append("web_fetch")
+            if code_execution:
+                enabled_tools.append("code_execution")
+            if memory:
+                enabled_tools.append("memory")
+
             # Build user content with optional attachment (image, PDF, or text file)
             user_content: list[dict[str, Any]] = [{"type": "text", "text": prompt}]
             if attachment:
@@ -599,11 +822,16 @@ class AnthropicAPI(commands.Cog):
                     if content_block:
                         user_content.append(content_block)
 
+            # Build initial messages list (will be mutated by tool loop)
+            conversation_messages: list[dict[str, Any]] = [
+                {"role": "user", "content": user_content}
+            ]
+
             # Build API call parameters
             api_params: dict[str, Any] = {
                 "model": model,
                 "max_tokens": max_tokens,
-                "messages": [{"role": "user", "content": user_content}],
+                "messages": conversation_messages,
             }
             if model in ADAPTIVE_THINKING_MODELS:
                 api_params["thinking"] = {"type": "adaptive"}
@@ -615,9 +843,18 @@ class AnthropicAPI(commands.Cog):
                 api_params["top_p"] = top_p
             if top_k is not None:
                 api_params["top_k"] = top_k
+            if enabled_tools:
+                api_params["tools"] = [
+                    AVAILABLE_TOOLS[t] for t in enabled_tools
+                ]
 
-            response = await self.client.messages.create(**api_params)
-            response_text, thinking_text = extract_response_content(response)
+            parsed = await self._call_api_with_tool_loop(
+                api_params=api_params,
+                messages=conversation_messages,
+                user_id=ctx.author.id,
+            )
+            response_text = parsed.text
+            thinking_text = parsed.thinking
 
             self.logger.debug(
                 f"Received response from Claude: {response_text[:200]}..."
@@ -636,6 +873,8 @@ class AnthropicAPI(commands.Cog):
                 description += f"**Top P:** {top_p}\n"
             if top_k is not None:
                 description += f"**Top K:** {top_k}\n"
+            if enabled_tools:
+                description += f"**Tools:** {', '.join(enabled_tools)}\n"
 
             # Assemble all embeds for a single message
             embeds = [
@@ -647,17 +886,19 @@ class AnthropicAPI(commands.Cog):
             ]
             append_thinking_embeds(embeds, thinking_text)
             append_response_embeds(embeds, response_text)
+            append_citations_embed(embeds, parsed.citations)
 
             if len(embeds) == 1:
                 await ctx.send_followup("No response generated.")
                 return
 
-            # Create the view with buttons
+            # Create the view with buttons and tool select menu
             main_conversation_id = ctx.interaction.id
             view = ButtonView(
                 cog=self,
                 conversation_starter=ctx.author,
                 conversation_id=main_conversation_id,
+                initial_tools=enabled_tools,
             )
             self.views[ctx.author] = view
 
@@ -666,6 +907,7 @@ class AnthropicAPI(commands.Cog):
             self.message_to_conversation_id[message.id] = main_conversation_id
 
             # Store the conversation details
+            # conversation_messages already contains all turns from the tool loop
             params = ChatCompletionParameters(
                 model=model,
                 system=system,
@@ -676,12 +918,11 @@ class AnthropicAPI(commands.Cog):
                 conversation_starter=ctx.author,
                 channel_id=ctx.channel.id,
                 conversation_id=main_conversation_id,
+                tools=enabled_tools,
             )
-            messages = [
-                {"role": "user", "content": user_content},
-                {"role": "assistant", "content": response_text},
-            ]
-            conversation = Conversation(params=params, messages=messages)
+            conversation = Conversation(
+                params=params, messages=conversation_messages
+            )
             self.conversations[main_conversation_id] = conversation
 
         except Exception as e:

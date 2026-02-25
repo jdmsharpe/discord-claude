@@ -107,3 +107,48 @@ def sample_api_response():
         "stop_sequence": None,
         "usage": {"input_tokens": 10, "output_tokens": 15},
     }
+
+
+@pytest.fixture
+def mock_tool_use_response():
+    """Mock response with a client-side tool_use block (memory)."""
+    response = MagicMock()
+    text_block = MagicMock()
+    text_block.type = "text"
+    text_block.text = "Let me check your memories."
+    text_block.citations = None
+    tool_block = MagicMock()
+    tool_block.type = "tool_use"
+    tool_block.id = "toolu_01abc123"
+    tool_block.name = "memory"
+    tool_block.input = {"command": "view", "path": "/memories"}
+    response.content = [text_block, tool_block]
+    response.stop_reason = "tool_use"
+    return response
+
+
+@pytest.fixture
+def mock_web_search_response():
+    """Mock response with server-side web search results and citations."""
+    response = MagicMock()
+
+    server_block = MagicMock()
+    server_block.type = "server_tool_use"
+    server_block.id = "srvtoolu_01xyz"
+    server_block.name = "web_search"
+
+    result_block = MagicMock()
+    result_block.type = "web_search_tool_result"
+
+    text_block = MagicMock()
+    text_block.type = "text"
+    text_block.text = "According to recent sources..."
+    citation = MagicMock()
+    citation.url = "https://example.com/article"
+    citation.title = "Example Article"
+    citation.cited_text = "some cited text"
+    text_block.citations = [citation]
+
+    response.content = [server_block, result_block, text_block]
+    response.stop_reason = "end_turn"
+    return response
