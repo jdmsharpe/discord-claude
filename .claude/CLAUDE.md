@@ -7,7 +7,7 @@ A Discord bot wrapping Anthropic's Claude API using py-cord for Discord integrat
 ## Architecture
 
 - `src/bot.py` - Entry point; creates the Discord bot and loads the cog
-- `src/anthropic_api.py` - Main cog with slash commands (`/anthropic chat`, `/anthropic check_permissions`), conversation handling, and tool call loop
+- `src/anthropic_api.py` - Main cog with slash commands (`/claude chat`, `/claude check_permissions`), conversation handling, and tool call loop
 - `src/util.py` - Shared constants (`CLAUDE_MODELS`, `ADAPTIVE_THINKING_MODELS`, `AVAILABLE_TOOLS`), dataclasses (`ChatCompletionParameters`, `Conversation`), and helpers
 - `src/button_view.py` - Discord UI buttons (regenerate, pause/resume, end) and tool Select Menu for mid-conversation tool toggling
 - `src/memory.py` - Client-side memory tool handler (view, create, str_replace, insert, delete, rename)

@@ -230,9 +230,9 @@ def append_citations_embed(
 
 
 class AnthropicAPI(commands.Cog):
-    # Slash command group for all Anthropic commands: /anthropic <subcommand>
-    anthropic = SlashCommandGroup(
-        "anthropic", "Anthropic Claude commands", guild_ids=GUILD_IDS
+    # Slash command group for all Claude commands: /claude <subcommand>
+    claude = SlashCommandGroup(
+        "claude", "Claude AI commands", guild_ids=GUILD_IDS
     )
 
     def __init__(self, bot):
@@ -627,7 +627,7 @@ class AnthropicAPI(commands.Cog):
         """
         self.logger.error(f"Error in event {event}: {args} {kwargs}", exc_info=True)
 
-    @anthropic.command(
+    @claude.command(
         name="check_permissions",
         description="Check if bot has necessary permissions in this channel",
     )
@@ -643,7 +643,7 @@ class AnthropicAPI(commands.Cog):
         else:
             await ctx.respond("Bot is missing necessary permissions in this channel.")
 
-    @anthropic.command(
+    @claude.command(
         name="chat",
         description="Starts a conversation with Claude.",
     )
