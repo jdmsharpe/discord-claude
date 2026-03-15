@@ -15,7 +15,7 @@ A Discord bot that wraps Anthropic's Claude API, providing an easy-to-use interf
 
 ## Commands
 
-### `/anthropic chat`
+### `/claude chat`
 
 Start a conversation with Claude.
 
@@ -30,7 +30,7 @@ Start a conversation with Claude.
 - `top_p`: Nucleus sampling threshold (0.0-1.0). Use temperature OR top_p, not both (advanced)
 - `top_k`: Only sample from top K tokens, removing low probability responses. Use temperature OR top_k, not both (advanced)
 
-### `/anthropic check_permissions`
+### `/claude check_permissions`
 
 Check if the bot has the necessary permissions in the current channel.
 
@@ -108,7 +108,7 @@ docker-compose up -d
 
 ## Usage
 
-1. Use `/anthropic chat` to start a conversation with Claude
+1. Use `/claude chat` to start a conversation with Claude
 2. Once a conversation is started, simply type messages in the same channel to continue the conversation
 3. Use the interactive buttons:
    - 🔄 Regenerate the last response
