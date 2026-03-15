@@ -164,7 +164,7 @@ class TestChatCompletionParameters:
 
         assert "tools" in result
         assert len(result["tools"]) == 2
-        assert result["tools"][0]["type"] == "web_search_20250305"
+        assert result["tools"][0]["type"] == "web_search_20260209"
         assert result["tools"][1]["type"] == "memory_20250818"
 
     def test_to_dict_ignores_invalid_tools(self):
