@@ -250,7 +250,7 @@ class AnthropicAPI(commands.Cog):
         )
         self.logger = logging.getLogger(__name__)
 
-        # Dictionary to store conversation state for each converse interaction
+        # Dictionary to store conversation state for each chat interaction
         self.conversations: dict[int, Conversation] = {}
         # Dictionary to map any message ID to the main conversation ID for tracking
         self.message_to_conversation_id: dict[int, int] = {}
@@ -644,7 +644,7 @@ class AnthropicAPI(commands.Cog):
             await ctx.respond("Bot is missing necessary permissions in this channel.")
 
     @anthropic.command(
-        name="converse",
+        name="chat",
         description="Starts a conversation with Claude.",
     )
     @option("prompt", description="Prompt", required=True, type=str)
@@ -727,7 +727,7 @@ class AnthropicAPI(commands.Cog):
         required=False,
         type=bool,
     )
-    async def converse(
+    async def chat(
         self,
         ctx: ApplicationContext,
         prompt: str,
@@ -928,7 +928,7 @@ class AnthropicAPI(commands.Cog):
         except Exception as e:
             description = format_anthropic_error(e)
             self.logger.error(
-                f"Error in converse: {description}",
+                f"Error in chat: {description}",
                 exc_info=True,
             )
             await ctx.send_followup(

@@ -15,7 +15,7 @@ A Discord bot that wraps Anthropic's Claude API, providing an easy-to-use interf
 
 ## Commands
 
-### `/anthropic converse`
+### `/anthropic chat`
 
 Start a conversation with Claude.
 
@@ -108,7 +108,7 @@ docker-compose up -d
 
 ## Usage
 
-1. Use `/anthropic converse` to start a conversation with Claude
+1. Use `/anthropic chat` to start a conversation with Claude
 2. Once a conversation is started, simply type messages in the same channel to continue the conversation
 3. Use the interactive buttons:
    - 🔄 Regenerate the last response
