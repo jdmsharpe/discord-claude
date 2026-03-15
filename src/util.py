@@ -36,13 +36,8 @@ CLAUDE_MODELS = [
     "claude-sonnet-4-6",
     "claude-opus-4-5",
     "claude-sonnet-4-5",
-    "claude-sonnet-4",
-    "claude-haiku-3-5",
-    "claude-3-5-sonnet",
-    "claude-3-5-haiku",
-    "claude-3-opus",
-    "claude-3-sonnet",
-    "claude-3-haiku",
+    "claude-opus-4-1",
+    "claude-haiku-4-5",
 ]
 
 
