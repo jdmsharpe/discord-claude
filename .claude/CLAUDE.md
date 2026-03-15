@@ -7,7 +7,7 @@ A Discord bot wrapping Anthropic's Claude API using py-cord for Discord integrat
 ## Architecture
 
 - `src/bot.py` - Entry point; creates the Discord bot and loads the cog
-- `src/anthropic_api.py` - Main cog with slash commands (`/anthropic converse`, `/anthropic check_permissions`), conversation handling, and tool call loop
+- `src/anthropic_api.py` - Main cog with slash commands (`/anthropic chat`, `/anthropic check_permissions`), conversation handling, and tool call loop
 - `src/util.py` - Shared constants (`CLAUDE_MODELS`, `ADAPTIVE_THINKING_MODELS`, `AVAILABLE_TOOLS`), dataclasses (`ChatCompletionParameters`, `Conversation`), and helpers
 - `src/button_view.py` - Discord UI buttons (regenerate, pause/resume, end) and tool Select Menu for mid-conversation tool toggling
 - `src/memory.py` - Client-side memory tool handler (view, create, str_replace, insert, delete, rename)
@@ -17,14 +17,14 @@ A Discord bot wrapping Anthropic's Claude API using py-cord for Discord integrat
 ## Key Patterns
 
 - **Model updates**: When adding a new Claude model, update three places:
-  1. `src/anthropic_api.py` - `OptionChoice` list in the `converse` command's `model` option
+  1. `src/anthropic_api.py` - `OptionChoice` list in the `chat` command's `model` option
   2. `src/util.py` - `CLAUDE_MODELS` list
   3. `src/util.py` - `ADAPTIVE_THINKING_MODELS` set (if the model supports adaptive thinking)
 - **Adaptive thinking**: Models in `ADAPTIVE_THINKING_MODELS` get `thinking: {"type": "adaptive"}` in API calls
-- **Default model**: Set in `converse()` function signature and described in the `model` option description
+- **Default model**: Set in `chat()` function signature and described in the `model` option description
 - **Tool updates**: When adding a new tool, update five places:
   1. `src/util.py` - `AVAILABLE_TOOLS` dict with the tool definition
-  2. `src/anthropic_api.py` - Add `@option` decorator (bool) and parameter to `converse()`, append to `enabled_tools`
+  2. `src/anthropic_api.py` - Add `@option` decorator (bool) and parameter to `chat()`, append to `enabled_tools`
   3. `src/button_view.py` - `SelectOption` in `_add_tool_select()`
   4. `src/memory.py` or new handler module (for client-side tools)
   5. `src/anthropic_api.py` - `_execute_tool()` dispatch (for client-side tools)

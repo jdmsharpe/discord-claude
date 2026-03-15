@@ -363,10 +363,10 @@ class TestAnthropicAPICog:
         assert cog.views == {}
 
     @pytest.mark.asyncio
-    async def test_converse_creates_conversation(
+    async def test_chat_creates_conversation(
         self, cog, mock_discord_context, mock_anthropic_client
     ):
-        """Test that converse command creates a conversation entry."""
+        """Test that chat command creates a conversation entry."""
         cog.client = mock_anthropic_client
 
         # Mock the channel typing context manager
@@ -375,7 +375,7 @@ class TestAnthropicAPICog:
         mock_discord_context.channel.typing.return_value.__aexit__ = AsyncMock()
 
         # Call the callback directly (bypassing the command decorator)
-        await cog.converse.callback(
+        await cog.chat.callback(
             cog,
             ctx=mock_discord_context,
             prompt="Hello Claude!",
@@ -389,7 +389,7 @@ class TestAnthropicAPICog:
         assert len(cog.conversations) == 1
 
     @pytest.mark.asyncio
-    async def test_converse_prevents_duplicate_conversations(
+    async def test_chat_prevents_duplicate_conversations(
         self, cog, mock_discord_context
     ):
         """Test that users can't start multiple conversations in the same channel."""
@@ -405,7 +405,7 @@ class TestAnthropicAPICog:
         cog.conversations[123] = Conversation(params=existing_params, messages=[])
 
         # Call the callback directly (bypassing the command decorator)
-        await cog.converse.callback(
+        await cog.chat.callback(
             cog,
             ctx=mock_discord_context,
             prompt="Hello again!",
