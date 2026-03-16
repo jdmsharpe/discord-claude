@@ -732,9 +732,7 @@ class AnthropicAPI(commands.Cog):
             append_response_embeds(embeds, response_text)
             append_stop_reason_embed(embeds, parsed.stop_reason)
 
-            # Auxiliary embeds (sources, cost) sent separately so view stays with response
-            aux_embeds: list[Embed] = []
-            append_citations_embed(aux_embeds, parsed.citations)
+            append_citations_embed(embeds, parsed.citations)
             daily_cost = self._track_daily_cost(
                 message.author.id, params.model,
                 parsed.input_tokens, parsed.output_tokens,
@@ -742,7 +740,7 @@ class AnthropicAPI(commands.Cog):
             )
             if SHOW_COST_EMBEDS:
                 append_pricing_embed(
-                    aux_embeds, params.model,
+                    embeds, params.model,
                     parsed.input_tokens, parsed.output_tokens, daily_cost,
                     parsed.cache_creation_tokens, parsed.cache_read_tokens,
                 )
@@ -786,8 +784,6 @@ class AnthropicAPI(commands.Cog):
                 )
                 self.last_view_messages[message.author] = reply_message
 
-            if aux_embeds:
-                await message.channel.send(embeds=aux_embeds)
 
         except Exception as e:
             description = format_anthropic_error(e)
@@ -1173,9 +1169,7 @@ class AnthropicAPI(commands.Cog):
             append_response_embeds(embeds, response_text)
             append_stop_reason_embed(embeds, parsed.stop_reason)
 
-            # Auxiliary embeds (sources, cost) sent separately so view stays with response
-            aux_embeds: list[Embed] = []
-            append_citations_embed(aux_embeds, parsed.citations)
+            append_citations_embed(embeds, parsed.citations)
             daily_cost = self._track_daily_cost(
                 ctx.author.id, model,
                 parsed.input_tokens, parsed.output_tokens,
@@ -1183,7 +1177,7 @@ class AnthropicAPI(commands.Cog):
             )
             if SHOW_COST_EMBEDS:
                 append_pricing_embed(
-                    aux_embeds, model,
+                    embeds, model,
                     parsed.input_tokens, parsed.output_tokens, daily_cost,
                     parsed.cache_creation_tokens, parsed.cache_read_tokens,
                 )
@@ -1205,12 +1199,9 @@ class AnthropicAPI(commands.Cog):
             )
             self.views[ctx.author] = view
 
-            # Send response embeds with buttons, then auxiliary embeds separately
             message = await ctx.send_followup(embeds=embeds, view=view)
             self.message_to_conversation_id[message.id] = main_conversation_id
             self.last_view_messages[ctx.author] = message
-            if aux_embeds:
-                await ctx.send_followup(embeds=aux_embeds)
 
             # Store the conversation details
             # conversation_messages already contains all turns from the tool loop
