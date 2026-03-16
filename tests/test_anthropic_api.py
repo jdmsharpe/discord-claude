@@ -543,6 +543,38 @@ class TestAnthropicAPICog:
         assert cog.bot == mock_bot
         assert cog.conversations == {}
         assert cog.views == {}
+        assert cog.last_view_messages == {}
+
+    @pytest.mark.asyncio
+    async def test_strip_previous_view_removes_buttons(self, cog):
+        """_strip_previous_view edits the old message to remove its view."""
+        user = MagicMock()
+        old_message = AsyncMock()
+        cog.last_view_messages[user] = old_message
+
+        await cog._strip_previous_view(user)
+
+        old_message.edit.assert_awaited_once_with(view=None)
+        assert user not in cog.last_view_messages
+
+    @pytest.mark.asyncio
+    async def test_strip_previous_view_no_previous(self, cog):
+        """_strip_previous_view is a no-op when there's no previous message."""
+        user = MagicMock()
+        await cog._strip_previous_view(user)
+        assert user not in cog.last_view_messages
+
+    @pytest.mark.asyncio
+    async def test_strip_previous_view_handles_edit_error(self, cog):
+        """_strip_previous_view swallows errors when the old message can't be edited."""
+        user = MagicMock()
+        old_message = AsyncMock()
+        old_message.edit.side_effect = Exception("Message deleted")
+        cog.last_view_messages[user] = old_message
+
+        await cog._strip_previous_view(user)
+
+        assert user not in cog.last_view_messages
 
     @pytest.mark.asyncio
     async def test_chat_creates_conversation(

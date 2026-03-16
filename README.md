@@ -10,9 +10,9 @@ A Discord bot that wraps Anthropic's Claude API, providing an easy-to-use interf
 - **Multiple Claude models**: Choose from Claude Opus 4.6, Sonnet 4.6, Opus 4.5, Sonnet 4.5, Opus 4.1, and Haiku 4.5
 - **Multimodal input**: Attach images (JPEG, PNG, GIF, WEBP), PDFs, or text files (TXT, MD, CSV)
 - **Tools**: Enable web search, web fetch, code execution, and memory — toggleable mid-conversation
-- **Citations**: Web search and document citations displayed as a Sources embed
-- **Pricing display**: Per-request cost, token counts, and daily spend shown after each response (configurable via `SHOW_COST_EMBEDS`)
-- **Conversation controls**: Pause, resume, regenerate responses, and end conversations with interactive buttons
+- **Citations**: Web search and document citations displayed as a separate Sources embed
+- **Pricing display**: Per-request cost, token counts, and daily spend shown as a separate embed after each response (configurable via `SHOW_COST_EMBEDS`)
+- **Conversation controls**: Pause, resume, regenerate responses, and end conversations with interactive buttons (previous turn's buttons are automatically removed)
 - **System prompts**: Customize Claude's behavior with system prompts
 - **Advanced parameters**: Fine-tune responses with temperature, top_p, top_k, effort, thinking budget, and max_tokens
 

@@ -370,6 +370,8 @@ class AnthropicAPI(commands.Cog):
         self.message_to_conversation_id: dict[int, int] = {}
         # Dictionary to store UI views for each conversation
         self.views = {}
+        # Last message with a ButtonView attached, keyed by user — used to strip old buttons
+        self.last_view_messages = {}
         # Daily cost tracking: (user_id, date_iso) -> cumulative cost
         self.daily_costs: dict[tuple[int, str], float] = {}
         self._http_session: aiohttp.ClientSession | None = None
@@ -382,6 +384,15 @@ class AnthropicAPI(commands.Cog):
             if self._http_session is None or self._http_session.closed:
                 self._http_session = aiohttp.ClientSession()
             return self._http_session
+
+    async def _strip_previous_view(self, user) -> None:
+        """Edit the last message that had buttons to remove its view."""
+        prev = self.last_view_messages.pop(user, None)
+        if prev is not None:
+            try:
+                await prev.edit(view=None)
+            except Exception:
+                pass
 
     def _track_daily_cost(
         self, user_id: int, model: str, input_tokens: int, output_tokens: int
@@ -656,29 +667,37 @@ class AnthropicAPI(commands.Cog):
 
             append_thinking_embeds(embeds, thinking_text)
             append_response_embeds(embeds, response_text)
-            append_citations_embed(embeds, parsed.citations)
             append_stop_reason_embed(embeds, parsed.stop_reason)
+
+            # Auxiliary embeds (sources, cost) sent separately so view stays with response
+            aux_embeds: list[Embed] = []
+            append_citations_embed(aux_embeds, parsed.citations)
             if SHOW_COST_EMBEDS:
                 daily_cost = self._track_daily_cost(
                     message.author.id, params.model, parsed.input_tokens, parsed.output_tokens
                 )
                 append_pricing_embed(
-                    embeds, params.model, parsed.input_tokens, parsed.output_tokens, daily_cost
+                    aux_embeds, params.model, parsed.input_tokens, parsed.output_tokens, daily_cost
                 )
 
-            view = self.views.get(message.author)
             main_conversation_id = conversation.params.conversation_id
 
             if main_conversation_id is None:
                 self.logger.error("Conversation ID is None, cannot track message")
                 return
 
+            # Strip buttons from previous turn's message
+            await self._strip_previous_view(message.author)
+
+            view = self.views.get(message.author)
+
             if embeds:
                 try:
-                    reply_message = await message.reply(embed=embeds[0], view=view)
+                    reply_message = await message.reply(embeds=embeds, view=view)
                     self.message_to_conversation_id[reply_message.id] = (
                         main_conversation_id
                     )
+                    self.last_view_messages[message.author] = reply_message
                 except Exception as embed_error:
                     self.logger.warning(f"Embed failed, sending as text: {embed_error}")
                     safe_response_text = response_text or "No response text available"
@@ -689,31 +708,19 @@ class AnthropicAPI(commands.Cog):
                     self.message_to_conversation_id[reply_message.id] = (
                         main_conversation_id
                     )
-
-                for embed in embeds[1:]:
-                    try:
-                        followup_message = await message.channel.send(
-                            embed=embed
-                        )
-                        self.message_to_conversation_id[followup_message.id] = (
-                            main_conversation_id
-                        )
-                    except Exception as embed_error:
-                        self.logger.warning(f"Followup embed failed: {embed_error}")
-                        followup_message = await message.channel.send(
-                            content=f"**Response (continued):**\n{embed.description[:1900]}{'...' if len(embed.description) > 1900 else ''}",
-                        )
-                        self.message_to_conversation_id[followup_message.id] = (
-                            main_conversation_id
-                        )
+                    self.last_view_messages[message.author] = reply_message
 
                 self.logger.debug("Replied with generated response.")
             else:
                 self.logger.warning("No embeds to send in the reply.")
-                await message.reply(
+                reply_message = await message.reply(
                     content="An error occurred: No content to send.",
                     view=view,
                 )
+                self.last_view_messages[message.author] = reply_message
+
+            if aux_embeds:
+                await message.channel.send(embeds=aux_embeds)
 
         except Exception as e:
             description = format_anthropic_error(e)
@@ -1088,19 +1095,25 @@ class AnthropicAPI(commands.Cog):
             ]
             append_thinking_embeds(embeds, thinking_text)
             append_response_embeds(embeds, response_text)
-            append_citations_embed(embeds, parsed.citations)
             append_stop_reason_embed(embeds, parsed.stop_reason)
+
+            # Auxiliary embeds (sources, cost) sent separately so view stays with response
+            aux_embeds: list[Embed] = []
+            append_citations_embed(aux_embeds, parsed.citations)
             if SHOW_COST_EMBEDS:
                 daily_cost = self._track_daily_cost(
                     ctx.author.id, model, parsed.input_tokens, parsed.output_tokens
                 )
                 append_pricing_embed(
-                    embeds, model, parsed.input_tokens, parsed.output_tokens, daily_cost
+                    aux_embeds, model, parsed.input_tokens, parsed.output_tokens, daily_cost
                 )
 
             if len(embeds) == 1:
                 await ctx.send_followup("No response generated.")
                 return
+
+            # Strip buttons from any prior conversation's last message
+            await self._strip_previous_view(ctx.author)
 
             # Create the view with buttons and tool select menu
             main_conversation_id = ctx.interaction.id
@@ -1112,9 +1125,12 @@ class AnthropicAPI(commands.Cog):
             )
             self.views[ctx.author] = view
 
-            # Send all embeds as a single message with buttons
+            # Send response embeds with buttons, then auxiliary embeds separately
             message = await ctx.send_followup(embeds=embeds, view=view)
             self.message_to_conversation_id[message.id] = main_conversation_id
+            self.last_view_messages[ctx.author] = message
+            if aux_embeds:
+                await ctx.send_followup(embeds=aux_embeds)
 
             # Store the conversation details
             # conversation_messages already contains all turns from the tool loop
