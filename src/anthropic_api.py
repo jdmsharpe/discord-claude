@@ -28,6 +28,7 @@ from memory import execute_memory_operation
 from util import (
     ADAPTIVE_THINKING_MODELS,
     AVAILABLE_TOOLS,
+    COMPACTION_MODELS,
     EXTENDED_THINKING_MODELS,
     ChatCompletionParameters,
     Conversation,
@@ -180,7 +181,8 @@ def extract_response_content(response) -> ParsedResponse:
             tool_use_blocks.append(block)
         # Skip server-side blocks: server_tool_use, web_search_tool_result,
         # web_fetch_tool_result, bash_code_execution_tool_result,
-        # text_editor_code_execution_tool_result, redacted_thinking
+        # text_editor_code_execution_tool_result, redacted_thinking,
+        # compaction (context summary from server-side compaction)
 
     response_text = "\n\n".join(text_parts) if text_parts else "No response."
     thinking_text = "\n\n".join(thinking_parts)
@@ -419,9 +421,22 @@ class AnthropicAPI(commands.Cog):
         Returns:
             The final ParsedResponse after all tool loops complete.
         """
+        # Use beta API with compaction for supported models
+        model = api_params.get("model", "")
+        use_compaction = model in COMPACTION_MODELS
+
         for iteration in range(max_iterations):
             api_params["messages"] = messages
-            response = await self.client.messages.create(**api_params)
+            if use_compaction:
+                response = await self.client.beta.messages.create(
+                    **api_params,
+                    betas=["compact-2026-01-12"],
+                    context_management={
+                        "edits": [{"type": "compact_20260112"}]
+                    },
+                )
+            else:
+                response = await self.client.messages.create(**api_params)
             parsed = extract_response_content(response)
             parsed.stop_reason = response.stop_reason
 

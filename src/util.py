@@ -8,6 +8,9 @@ CHUNK_TEXT_SIZE = 3500  # Maximum number of characters in each text chunk.
 # Models that support adaptive thinking
 ADAPTIVE_THINKING_MODELS = {"claude-opus-4-6", "claude-sonnet-4-6"}
 
+# Models that support server-side compaction (beta)
+COMPACTION_MODELS = {"claude-opus-4-6", "claude-sonnet-4-6"}
+
 # Models that support manual extended thinking (type: "enabled" with budget_tokens)
 EXTENDED_THINKING_MODELS = {
     "claude-opus-4-5",
