@@ -11,7 +11,7 @@ A Discord bot wrapping Anthropic's Claude API using py-cord for Discord integrat
 - `src/util.py` - Shared constants (`CLAUDE_MODELS`, `ADAPTIVE_THINKING_MODELS`, `COMPACTION_MODELS`, `AVAILABLE_TOOLS`), dataclasses (`ChatCompletionParameters`, `Conversation`), and helpers
 - `src/button_view.py` - Discord UI buttons (regenerate, pause/resume, end) and tool Select Menu for mid-conversation tool toggling
 - `src/memory.py` - Client-side memory tool handler (view, create, str_replace, insert, delete, rename)
-- `src/config/auth.py` - Loads secrets from `.env` via python-dotenv
+- `src/config/auth.py` - Loads secrets and config from `.env` via python-dotenv (`SHOW_COST_EMBEDS` toggles pricing embeds)
 - `tests/` - pytest tests with mocked Discord and Anthropic clients
 
 ## Key Patterns

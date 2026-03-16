@@ -24,7 +24,7 @@ from discord.ext import commands
 
 # Local imports
 from button_view import ButtonView
-from config.auth import ANTHROPIC_API_KEY, GUILD_IDS
+from config.auth import ANTHROPIC_API_KEY, GUILD_IDS, SHOW_COST_EMBEDS
 from memory import execute_memory_operation
 from util import (
     ADAPTIVE_THINKING_MODELS,
@@ -658,12 +658,13 @@ class AnthropicAPI(commands.Cog):
             append_response_embeds(embeds, response_text)
             append_citations_embed(embeds, parsed.citations)
             append_stop_reason_embed(embeds, parsed.stop_reason)
-            daily_cost = self._track_daily_cost(
-                message.author.id, params.model, parsed.input_tokens, parsed.output_tokens
-            )
-            append_pricing_embed(
-                embeds, params.model, parsed.input_tokens, parsed.output_tokens, daily_cost
-            )
+            if SHOW_COST_EMBEDS:
+                daily_cost = self._track_daily_cost(
+                    message.author.id, params.model, parsed.input_tokens, parsed.output_tokens
+                )
+                append_pricing_embed(
+                    embeds, params.model, parsed.input_tokens, parsed.output_tokens, daily_cost
+                )
 
             view = self.views.get(message.author)
             main_conversation_id = conversation.params.conversation_id
@@ -876,6 +877,23 @@ class AnthropicAPI(commands.Cog):
         type=int,
     )
     @option(
+        "effort",
+        description="Control response effort: low (fast, concise), medium (balanced), high (thorough). (default: not set)",
+        required=False,
+        choices=[
+            OptionChoice(name="Low", value="low"),
+            OptionChoice(name="Medium", value="medium"),
+            OptionChoice(name="High", value="high"),
+        ],
+        type=str,
+    )
+    @option(
+        "thinking_budget",
+        description="Token budget for extended thinking on non-4.6 models. (default: not set)",
+        required=False,
+        type=int,
+    )
+    @option(
         "web_search",
         description="Enable web search to find current information. (default: false)",
         required=False,
@@ -899,23 +917,6 @@ class AnthropicAPI(commands.Cog):
         required=False,
         type=bool,
     )
-    @option(
-        "effort",
-        description="Control response effort: low (fast, concise), medium (balanced), high (thorough). (default: not set)",
-        required=False,
-        choices=[
-            OptionChoice(name="Low", value="low"),
-            OptionChoice(name="Medium", value="medium"),
-            OptionChoice(name="High", value="high"),
-        ],
-        type=str,
-    )
-    @option(
-        "thinking_budget",
-        description="Token budget for extended thinking on non-4.6 models. (default: not set)",
-        required=False,
-        type=int,
-    )
     async def chat(
         self,
         ctx: ApplicationContext,
@@ -927,12 +928,12 @@ class AnthropicAPI(commands.Cog):
         temperature: float | None = None,
         top_p: float | None = None,
         top_k: int | None = None,
+        effort: str | None = None,
+        thinking_budget: int | None = None,
         web_search: bool = False,
         web_fetch: bool = False,
         code_execution: bool = False,
         memory: bool = False,
-        effort: str | None = None,
-        thinking_budget: int | None = None,
     ):
         """
         Creates a persistent conversation session with Claude.
@@ -1090,12 +1091,13 @@ class AnthropicAPI(commands.Cog):
             append_response_embeds(embeds, response_text)
             append_citations_embed(embeds, parsed.citations)
             append_stop_reason_embed(embeds, parsed.stop_reason)
-            daily_cost = self._track_daily_cost(
-                ctx.author.id, model, parsed.input_tokens, parsed.output_tokens
-            )
-            append_pricing_embed(
-                embeds, model, parsed.input_tokens, parsed.output_tokens, daily_cost
-            )
+            if SHOW_COST_EMBEDS:
+                daily_cost = self._track_daily_cost(
+                    ctx.author.id, model, parsed.input_tokens, parsed.output_tokens
+                )
+                append_pricing_embed(
+                    embeds, model, parsed.input_tokens, parsed.output_tokens, daily_cost
+                )
 
             if len(embeds) == 1:
                 await ctx.send_followup("No response generated.")
