@@ -3,6 +3,7 @@ import asyncio
 import base64
 import logging
 from dataclasses import dataclass, field
+from datetime import date
 from typing import Any
 
 # Third-party imports
@@ -30,8 +31,10 @@ from util import (
     AVAILABLE_TOOLS,
     COMPACTION_MODELS,
     EXTENDED_THINKING_MODELS,
+    MODEL_PRICING,
     ChatCompletionParameters,
     Conversation,
+    calculate_cost,
     chunk_text,
     format_anthropic_error,
     truncate_text,
@@ -118,6 +121,8 @@ class ParsedResponse:
     tool_use_blocks: list[Any] = field(default_factory=list)
     raw_content: list[Any] = field(default_factory=list)
     stop_reason: str = "end_turn"
+    input_tokens: int = 0
+    output_tokens: int = 0
 
 
 def extract_response_content(response) -> ParsedResponse:
@@ -323,6 +328,21 @@ def append_stop_reason_embed(embeds: list[Embed], stop_reason: str) -> None:
         )
 
 
+def append_pricing_embed(
+    embeds: list[Embed],
+    model: str,
+    input_tokens: int,
+    output_tokens: int,
+    daily_cost: float,
+) -> None:
+    """Append a compact pricing embed showing cost and token usage."""
+    cost = calculate_cost(model, input_tokens, output_tokens)
+    description = (
+        f"${cost:.4f} · {input_tokens:,} in / {output_tokens:,} out · daily ${daily_cost:.2f}"
+    )
+    embeds.append(Embed(description=description, color=Colour.orange()))
+
+
 class AnthropicAPI(commands.Cog):
     # Slash command group for all Claude commands: /claude <subcommand>
     claude = SlashCommandGroup(
@@ -350,6 +370,8 @@ class AnthropicAPI(commands.Cog):
         self.message_to_conversation_id: dict[int, int] = {}
         # Dictionary to store UI views for each conversation
         self.views = {}
+        # Daily cost tracking: (user_id, date_iso) -> cumulative cost
+        self.daily_costs: dict[tuple[int, str], float] = {}
         self._http_session: aiohttp.ClientSession | None = None
         self._session_lock = asyncio.Lock()
 
@@ -360,6 +382,15 @@ class AnthropicAPI(commands.Cog):
             if self._http_session is None or self._http_session.closed:
                 self._http_session = aiohttp.ClientSession()
             return self._http_session
+
+    def _track_daily_cost(
+        self, user_id: int, model: str, input_tokens: int, output_tokens: int
+    ) -> float:
+        """Add this request's cost to the user's daily total and return the new daily total."""
+        cost = calculate_cost(model, input_tokens, output_tokens)
+        key = (user_id, date.today().isoformat())
+        self.daily_costs[key] = self.daily_costs.get(key, 0.0) + cost
+        return self.daily_costs[key]
 
     async def _fetch_attachment_bytes(self, attachment: Attachment) -> bytes | None:
         session = await self._get_http_session()
@@ -425,6 +456,9 @@ class AnthropicAPI(commands.Cog):
         model = api_params.get("model", "")
         use_compaction = model in COMPACTION_MODELS
 
+        total_input_tokens = 0
+        total_output_tokens = 0
+
         for iteration in range(max_iterations):
             api_params["messages"] = messages
             if use_compaction:
@@ -440,10 +474,18 @@ class AnthropicAPI(commands.Cog):
             parsed = extract_response_content(response)
             parsed.stop_reason = response.stop_reason
 
+            # Accumulate token usage across iterations
+            usage = getattr(response, "usage", None)
+            if usage:
+                total_input_tokens += getattr(usage, "input_tokens", 0)
+                total_output_tokens += getattr(usage, "output_tokens", 0)
+
             if response.stop_reason == "end_turn":
                 messages.append(
                     {"role": "assistant", "content": response.content}
                 )
+                parsed.input_tokens = total_input_tokens
+                parsed.output_tokens = total_output_tokens
                 return parsed
 
             elif response.stop_reason == "pause_turn":
@@ -492,11 +534,15 @@ class AnthropicAPI(commands.Cog):
                     self.logger.warning(
                         f"Unknown stop_reason: {response.stop_reason}"
                     )
+                parsed.input_tokens = total_input_tokens
+                parsed.output_tokens = total_output_tokens
                 return parsed
 
         self.logger.warning(
             f"Tool loop hit max_iterations ({max_iterations})"
         )
+        parsed.input_tokens = total_input_tokens
+        parsed.output_tokens = total_output_tokens
         return parsed
 
     def _execute_tool(
@@ -612,6 +658,12 @@ class AnthropicAPI(commands.Cog):
             append_response_embeds(embeds, response_text)
             append_citations_embed(embeds, parsed.citations)
             append_stop_reason_embed(embeds, parsed.stop_reason)
+            daily_cost = self._track_daily_cost(
+                message.author.id, params.model, parsed.input_tokens, parsed.output_tokens
+            )
+            append_pricing_embed(
+                embeds, params.model, parsed.input_tokens, parsed.output_tokens, daily_cost
+            )
 
             view = self.views.get(message.author)
             main_conversation_id = conversation.params.conversation_id
@@ -781,7 +833,7 @@ class AnthropicAPI(commands.Cog):
     )
     @option(
         "model",
-        description="Choose from the following Claude models. (default: Claude Opus 4.6)",
+        description="Choose from the following Claude models. (default: Claude Sonnet 4.6)",
         required=False,
         choices=[
             OptionChoice(name="Claude Opus 4.6", value="claude-opus-4-6"),
@@ -868,7 +920,7 @@ class AnthropicAPI(commands.Cog):
         self,
         ctx: ApplicationContext,
         prompt: str,
-        model: str = "claude-opus-4-6",
+        model: str = "claude-sonnet-4-6",
         system: str | None = None,
         attachment: Attachment | None = None,
         max_tokens: int = 16384,
@@ -892,7 +944,7 @@ class AnthropicAPI(commands.Cog):
         Args:
             ctx: Discord application context
             prompt: Initial conversation prompt or question
-            model: Claude model variant (default: claude-opus-4-5-20251101)
+            model: Claude model variant (default: claude-sonnet-4-6)
             system: Optional system prompt to set Claude's behavior
             attachment: Optional image attachment for multimodal input
             max_tokens: Maximum tokens in the response (default: 16384)
@@ -1038,6 +1090,12 @@ class AnthropicAPI(commands.Cog):
             append_response_embeds(embeds, response_text)
             append_citations_embed(embeds, parsed.citations)
             append_stop_reason_embed(embeds, parsed.stop_reason)
+            daily_cost = self._track_daily_cost(
+                ctx.author.id, model, parsed.input_tokens, parsed.output_tokens
+            )
+            append_pricing_embed(
+                embeds, model, parsed.input_tokens, parsed.output_tokens, daily_cost
+            )
 
             if len(embeds) == 1:
                 await ctx.send_followup("No response generated.")
