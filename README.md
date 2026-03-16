@@ -11,7 +11,9 @@ A Discord bot that wraps Anthropic's Claude API, providing an easy-to-use interf
 - **Multimodal input**: Attach images (JPEG, PNG, GIF, WEBP), PDFs, or text files (TXT, MD, CSV)
 - **Tools**: Enable web search, web fetch, code execution, memory, and bash — toggleable mid-conversation
 - **Citations**: Web search and document citations displayed as a separate Sources embed
-- **Pricing display**: Per-request cost, token counts, and daily spend shown as a separate embed after each response (configurable via `SHOW_COST_EMBEDS`)
+- **Prompt caching**: Automatic prompt caching reduces costs (cache reads at 10% of input price) and latency on multi-turn conversations
+- **Context editing**: Server-side clearing of old tool results and thinking blocks to manage context growth in long conversations
+- **Pricing display**: Per-request cost, token counts, cache hits, and daily spend shown as a separate embed after each response (configurable via `SHOW_COST_EMBEDS`)
 - **Conversation controls**: Pause, resume, regenerate responses, and end conversations with interactive buttons (previous turn's buttons are automatically removed)
 - **System prompts**: Customize Claude's behavior with system prompts
 - **Advanced parameters**: Fine-tune responses with temperature, top_p, top_k, effort, thinking budget, and max_tokens
