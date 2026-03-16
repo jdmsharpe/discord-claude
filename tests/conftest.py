@@ -35,7 +35,12 @@ def mock_anthropic_client():
         mock_response.id = "msg_01XFDUDYJgAACzvnptvVoYEL"
         mock_response.model = "claude-sonnet-4"
         mock_response.stop_reason = "end_turn"
-        mock_response.usage = MagicMock(input_tokens=10, output_tokens=15)
+        mock_response.usage = MagicMock(
+            input_tokens=10,
+            output_tokens=15,
+            cache_creation_input_tokens=0,
+            cache_read_input_tokens=0,
+        )
 
         client.messages.create = AsyncMock(return_value=mock_response)
 
