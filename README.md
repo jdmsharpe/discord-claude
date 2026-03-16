@@ -9,7 +9,7 @@ A Discord bot that wraps Anthropic's Claude API, providing an easy-to-use interf
 - **Multi-turn conversations**: Start conversations with Claude that maintain context across multiple messages
 - **Multiple Claude models**: Choose from Claude Opus 4.6, Sonnet 4.6, Opus 4.5, Sonnet 4.5, Opus 4.1, and Haiku 4.5
 - **Multimodal input**: Attach images (JPEG, PNG, GIF, WEBP), PDFs, or text files (TXT, MD, CSV)
-- **Tools**: Enable web search, web fetch, code execution, and memory — toggleable mid-conversation
+- **Tools**: Enable web search, web fetch, code execution, memory, and bash — toggleable mid-conversation
 - **Citations**: Web search and document citations displayed as a separate Sources embed
 - **Pricing display**: Per-request cost, token counts, and daily spend shown as a separate embed after each response (configurable via `SHOW_COST_EMBEDS`)
 - **Conversation controls**: Pause, resume, regenerate responses, and end conversations with interactive buttons (previous turn's buttons are automatically removed)
@@ -33,6 +33,7 @@ Start a conversation with Claude.
 - `web_fetch`: Enable web fetch to retrieve full web page content (default: false)
 - `code_execution`: Enable code execution in a sandbox (default: false)
 - `memory`: Enable memory to save and recall information across conversations (default: false)
+- `bash`: Enable bash to execute shell commands (default: false)
 - `effort`: Control response effort — low (fast), medium (balanced), high (thorough)
 - `thinking_budget`: Token budget for extended thinking on non-4.6 models
 - `temperature`: Amount of randomness (0.0-1.0). Lower for analytical tasks, higher for creative (advanced)

@@ -39,6 +39,10 @@ AVAILABLE_TOOLS: dict[str, dict[str, Any]] = {
         "type": "memory_20250818",
         "name": "memory",
     },
+    "bash": {
+        "type": "bash_20250124",
+        "name": "bash",
+    },
 }
 
 # Per-million-token pricing: (input_cost, output_cost)
@@ -52,10 +56,24 @@ MODEL_PRICING: dict[str, tuple[float, float]] = {
 }
 
 
-def calculate_cost(model: str, input_tokens: int, output_tokens: int) -> float:
-    """Calculate the cost in dollars for a given model and token usage."""
+def calculate_cost(
+    model: str,
+    input_tokens: int,
+    output_tokens: int,
+    cache_creation_tokens: int = 0,
+    cache_read_tokens: int = 0,
+) -> float:
+    """Calculate the cost in dollars for a given model and token usage.
+
+    Cache write tokens cost 1.25x base input price; cache read tokens cost 0.1x.
+    """
     input_price, output_price = MODEL_PRICING.get(model, (15.0, 75.0))
-    return (input_tokens / 1_000_000) * input_price + (output_tokens / 1_000_000) * output_price
+    return (
+        (input_tokens / 1_000_000) * input_price
+        + (output_tokens / 1_000_000) * output_price
+        + (cache_creation_tokens / 1_000_000) * input_price * 1.25
+        + (cache_read_tokens / 1_000_000) * input_price * 0.10
+    )
 
 
 # Claude models

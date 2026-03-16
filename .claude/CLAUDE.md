@@ -11,6 +11,7 @@ A Discord bot wrapping Anthropic's Claude API using py-cord for Discord integrat
 - `src/util.py` - Shared constants (`CLAUDE_MODELS`, `ADAPTIVE_THINKING_MODELS`, `COMPACTION_MODELS`, `AVAILABLE_TOOLS`), dataclasses (`ChatCompletionParameters`, `Conversation`), and helpers
 - `src/button_view.py` - Discord UI buttons (regenerate, pause/resume, end) and tool Select Menu for mid-conversation tool toggling
 - `src/memory.py` - Client-side memory tool handler (view, create, str_replace, insert, delete, rename)
+- `src/bash_tool.py` - Client-side bash tool handler (execute shell commands with timeout and output truncation)
 - `src/config/auth.py` - Loads secrets and config from `.env` via python-dotenv (`SHOW_COST_EMBEDS` toggles pricing embeds)
 - `tests/` - pytest tests with mocked Discord and Anthropic clients
 
@@ -32,6 +33,7 @@ A Discord bot wrapping Anthropic's Claude API using py-cord for Discord integrat
 - **Auxiliary embeds**: Citations and cost embeds are sent as a separate message (`aux_embeds`) so the ButtonView stays attached to the response. On each new turn, `_strip_previous_view()` removes buttons from the previous turn's message via `last_view_messages` tracking
 - **Multi-turn with tools**: Assistant messages are stored as full `response.content` blocks (not plain text) to preserve encrypted server tool data for citations across turns
 - **Memory tool**: Client-side tool storing files in `./memories/{user_discord_id}/` with path traversal protection
+- **Bash tool**: Client-side tool executing shell commands via `asyncio.create_subprocess_shell` with 30s timeout and 100-line output truncation
 - **Document citations**: PDF and text file attachments are sent as document blocks with `citations: {enabled: true}`. Response citations use a `kind` field to distinguish types:
   - `kind: "web"` — web search citations with `url`, `title`, `cited_text`
   - `kind: "document"` — document citations with `cited_text`, `document_title`, `location` (page info for PDFs)

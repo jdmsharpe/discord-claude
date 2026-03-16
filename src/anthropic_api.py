@@ -25,6 +25,7 @@ from discord.ext import commands
 # Local imports
 from button_view import ButtonView
 from config.auth import ANTHROPIC_API_KEY, GUILD_IDS, SHOW_COST_EMBEDS
+from bash_tool import execute_bash_command
 from memory import execute_memory_operation
 from util import (
     ADAPTIVE_THINKING_MODELS,
@@ -123,6 +124,8 @@ class ParsedResponse:
     stop_reason: str = "end_turn"
     input_tokens: int = 0
     output_tokens: int = 0
+    cache_creation_tokens: int = 0
+    cache_read_tokens: int = 0
 
 
 def extract_response_content(response) -> ParsedResponse:
@@ -334,13 +337,18 @@ def append_pricing_embed(
     input_tokens: int,
     output_tokens: int,
     daily_cost: float,
+    cache_creation_tokens: int = 0,
+    cache_read_tokens: int = 0,
 ) -> None:
     """Append a compact pricing embed showing cost and token usage."""
-    cost = calculate_cost(model, input_tokens, output_tokens)
-    description = (
-        f"${cost:.4f} · {input_tokens:,} tokens in / {output_tokens:,} tokens out · daily ${daily_cost:.2f}"
+    cost = calculate_cost(
+        model, input_tokens, output_tokens, cache_creation_tokens, cache_read_tokens
     )
-    embeds.append(Embed(description=description, color=Colour.orange()))
+    parts = [f"${cost:.4f} · {input_tokens:,} tokens in / {output_tokens:,} tokens out"]
+    if cache_read_tokens:
+        parts.append(f"{cache_read_tokens:,} cached")
+    parts.append(f"daily ${daily_cost:.2f}")
+    embeds.append(Embed(description=" · ".join(parts), color=Colour.orange()))
 
 
 class AnthropicAPI(commands.Cog):
@@ -395,10 +403,18 @@ class AnthropicAPI(commands.Cog):
                 pass
 
     def _track_daily_cost(
-        self, user_id: int, model: str, input_tokens: int, output_tokens: int
+        self,
+        user_id: int,
+        model: str,
+        input_tokens: int,
+        output_tokens: int,
+        cache_creation_tokens: int = 0,
+        cache_read_tokens: int = 0,
     ) -> float:
         """Add this request's cost to the user's daily total and return the new daily total."""
-        cost = calculate_cost(model, input_tokens, output_tokens)
+        cost = calculate_cost(
+            model, input_tokens, output_tokens, cache_creation_tokens, cache_read_tokens
+        )
         key = (user_id, date.today().isoformat())
         self.daily_costs[key] = self.daily_costs.get(key, 0.0) + cost
         return self.daily_costs[key]
@@ -463,25 +479,55 @@ class AnthropicAPI(commands.Cog):
         Returns:
             The final ParsedResponse after all tool loops complete.
         """
-        # Use beta API with compaction for supported models
         model = api_params.get("model", "")
         use_compaction = model in COMPACTION_MODELS
+        has_tools = bool(api_params.get("tools"))
+        has_thinking = bool(api_params.get("thinking"))
+
+        # Build context_management edits and betas
+        betas: list[str] = []
+        edits: list[dict[str, Any]] = []
+
+        # Thinking clearing must come first when combining strategies
+        if has_thinking:
+            edits.append({
+                "type": "clear_thinking_20251015",
+                "keep": {"type": "thinking_turns", "value": 2},
+            })
+
+        if has_tools:
+            edits.append({
+                "type": "clear_tool_uses_20250919",
+                "trigger": {"type": "input_tokens", "value": 50000},
+                "keep": {"type": "tool_uses", "value": 5},
+            })
+
+        if use_compaction:
+            betas.append("compact-2026-01-12")
+            edits.append({"type": "compact_20260112"})
+
+        if edits:
+            betas.append("context-management-2025-06-27")
 
         total_input_tokens = 0
         total_output_tokens = 0
+        total_cache_creation_tokens = 0
+        total_cache_read_tokens = 0
 
         for iteration in range(max_iterations):
             api_params["messages"] = messages
-            if use_compaction:
+            if betas:
                 response = await self.client.beta.messages.create(
                     **api_params,
-                    betas=["compact-2026-01-12"],
-                    context_management={
-                        "edits": [{"type": "compact_20260112"}]
-                    },
+                    betas=betas,
+                    context_management={"edits": edits} if edits else None,
+                    cache_control={"type": "ephemeral"},
                 )
             else:
-                response = await self.client.messages.create(**api_params)
+                response = await self.client.messages.create(
+                    **api_params,
+                    cache_control={"type": "ephemeral"},
+                )
             parsed = extract_response_content(response)
             parsed.stop_reason = response.stop_reason
 
@@ -490,6 +536,8 @@ class AnthropicAPI(commands.Cog):
             if usage:
                 total_input_tokens += getattr(usage, "input_tokens", 0)
                 total_output_tokens += getattr(usage, "output_tokens", 0)
+                total_cache_creation_tokens += getattr(usage, "cache_creation_input_tokens", 0) or 0
+                total_cache_read_tokens += getattr(usage, "cache_read_input_tokens", 0) or 0
 
             if response.stop_reason == "end_turn":
                 messages.append(
@@ -497,6 +545,8 @@ class AnthropicAPI(commands.Cog):
                 )
                 parsed.input_tokens = total_input_tokens
                 parsed.output_tokens = total_output_tokens
+                parsed.cache_creation_tokens = total_cache_creation_tokens
+                parsed.cache_read_tokens = total_cache_read_tokens
                 return parsed
 
             elif response.stop_reason == "pause_turn":
@@ -515,7 +565,7 @@ class AnthropicAPI(commands.Cog):
 
                 tool_results = []
                 for tool_block in parsed.tool_use_blocks:
-                    result_text = self._execute_tool(
+                    result_text = await self._execute_tool(
                         tool_block.name, tool_block.input, user_id
                     )
                     tool_results.append(
@@ -547,6 +597,8 @@ class AnthropicAPI(commands.Cog):
                     )
                 parsed.input_tokens = total_input_tokens
                 parsed.output_tokens = total_output_tokens
+                parsed.cache_creation_tokens = total_cache_creation_tokens
+                parsed.cache_read_tokens = total_cache_read_tokens
                 return parsed
 
         self.logger.warning(
@@ -554,14 +606,23 @@ class AnthropicAPI(commands.Cog):
         )
         parsed.input_tokens = total_input_tokens
         parsed.output_tokens = total_output_tokens
+        parsed.cache_creation_tokens = total_cache_creation_tokens
+        parsed.cache_read_tokens = total_cache_read_tokens
         return parsed
 
-    def _execute_tool(
+    async def _execute_tool(
         self, tool_name: str, tool_input: dict[str, Any], user_id: int
     ) -> str:
         """Execute a client-side tool and return the result string."""
         if tool_name == "memory":
             return execute_memory_operation(user_id=user_id, tool_input=tool_input)
+        if tool_name == "bash":
+            if tool_input.get("restart"):
+                return "Bash session restarted."
+            command = tool_input.get("command", "")
+            if not command:
+                return "Error: No command provided."
+            return await execute_bash_command(command)
         return f"Error: Unknown tool '{tool_name}'"
 
     async def handle_new_message_in_conversation(
@@ -923,6 +984,12 @@ class AnthropicAPI(commands.Cog):
         required=False,
         type=bool,
     )
+    @option(
+        "bash",
+        description="Enable bash to execute shell commands. (default: false)",
+        required=False,
+        type=bool,
+    )
     async def chat(
         self,
         ctx: ApplicationContext,
@@ -940,6 +1007,7 @@ class AnthropicAPI(commands.Cog):
         web_fetch: bool = False,
         code_execution: bool = False,
         memory: bool = False,
+        bash: bool = False,
     ):
         """
         Creates a persistent conversation session with Claude.
@@ -1006,6 +1074,8 @@ class AnthropicAPI(commands.Cog):
                 enabled_tools.append("code_execution")
             if memory:
                 enabled_tools.append("memory")
+            if bash:
+                enabled_tools.append("bash")
 
             # Build user content with optional attachment (image, PDF, or text file)
             user_content: list[dict[str, Any]] = [{"type": "text", "text": prompt}]

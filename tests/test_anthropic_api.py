@@ -781,6 +781,55 @@ class TestCallApiWithToolLoop:
         assert len(messages) == 4
 
     @pytest.mark.asyncio
+    async def test_bash_tool_use_loop(self, cog):
+        """bash tool_use triggers command execution and re-send."""
+        # First response: bash tool_use
+        tool_response = MagicMock()
+        tool_text = MagicMock()
+        tool_text.type = "text"
+        tool_text.text = "Let me run that."
+        tool_text.citations = None
+        tool_block = MagicMock()
+        tool_block.type = "tool_use"
+        tool_block.id = "toolu_456"
+        tool_block.name = "bash"
+        tool_block.input = {"command": "echo hello"}
+        tool_response.content = [tool_text, tool_block]
+        tool_response.stop_reason = "tool_use"
+
+        # Second response: end_turn
+        final_response = MagicMock()
+        final_text = MagicMock()
+        final_text.type = "text"
+        final_text.text = "The output was hello."
+        final_text.citations = None
+        final_response.content = [final_text]
+        final_response.stop_reason = "end_turn"
+
+        cog.client.messages.create = AsyncMock(
+            side_effect=[tool_response, final_response]
+        )
+
+        messages = [{"role": "user", "content": "Run echo hello"}]
+        api_params = {"model": "claude-sonnet-4", "max_tokens": 1024}
+
+        with patch("src.anthropic_api.execute_bash_command", new_callable=AsyncMock) as mock_bash:
+            mock_bash.return_value = "hello\n"
+
+            parsed = await cog._call_api_with_tool_loop(
+                api_params=api_params, messages=messages, user_id=123
+            )
+
+        assert parsed.text == "The output was hello."
+        assert cog.client.messages.create.call_count == 2
+        assert len(messages) == 4
+        # Verify the tool result was sent back
+        tool_result_msg = messages[2]
+        assert tool_result_msg["role"] == "user"
+        assert tool_result_msg["content"][0]["type"] == "tool_result"
+        assert tool_result_msg["content"][0]["content"] == "hello\n"
+
+    @pytest.mark.asyncio
     async def test_max_iterations_safety(self, cog):
         """Loop stops at max_iterations."""
         pause_response = MagicMock()
