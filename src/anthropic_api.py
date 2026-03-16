@@ -28,6 +28,7 @@ from memory import execute_memory_operation
 from util import (
     ADAPTIVE_THINKING_MODELS,
     AVAILABLE_TOOLS,
+    EXTENDED_THINKING_MODELS,
     ChatCompletionParameters,
     Conversation,
     chunk_text,
@@ -105,6 +106,7 @@ class ParsedResponse:
     has_tool_use: bool = False
     tool_use_blocks: list[Any] = field(default_factory=list)
     raw_content: list[Any] = field(default_factory=list)
+    stop_reason: str = "end_turn"
 
 
 def extract_response_content(response) -> ParsedResponse:
@@ -229,6 +231,34 @@ def append_citations_embed(
     )
 
 
+def append_stop_reason_embed(embeds: list[Embed], stop_reason: str) -> None:
+    """Append a warning embed for non-standard stop reasons."""
+    if stop_reason == "max_tokens":
+        embeds.append(
+            Embed(
+                title="Response Truncated",
+                description="The response reached the maximum token limit and was cut short.",
+                color=Colour.yellow(),
+            )
+        )
+    elif stop_reason == "model_context_window_exceeded":
+        embeds.append(
+            Embed(
+                title="Context Limit Reached",
+                description="This conversation has exceeded the model's context window. Please start a new conversation.",
+                color=Colour.yellow(),
+            )
+        )
+    elif stop_reason == "refusal":
+        embeds.append(
+            Embed(
+                title="Request Declined",
+                description="Claude was unable to fulfill this request.",
+                color=Colour.yellow(),
+            )
+        )
+
+
 class AnthropicAPI(commands.Cog):
     # Slash command group for all Claude commands: /claude <subcommand>
     claude = SlashCommandGroup(
@@ -331,6 +361,7 @@ class AnthropicAPI(commands.Cog):
             api_params["messages"] = messages
             response = await self.client.messages.create(**api_params)
             parsed = extract_response_content(response)
+            parsed.stop_reason = response.stop_reason
 
             if response.stop_reason == "end_turn":
                 messages.append(
@@ -372,12 +403,18 @@ class AnthropicAPI(commands.Cog):
                 continue
 
             else:
-                self.logger.warning(
-                    f"Unknown stop_reason: {response.stop_reason}"
-                )
+                # max_tokens, refusal, model_context_window_exceeded, or unknown
                 messages.append(
                     {"role": "assistant", "content": response.content}
                 )
+                if response.stop_reason not in (
+                    "max_tokens",
+                    "refusal",
+                    "model_context_window_exceeded",
+                ):
+                    self.logger.warning(
+                        f"Unknown stop_reason: {response.stop_reason}"
+                    )
                 return parsed
 
         self.logger.warning(
@@ -450,6 +487,16 @@ class AnthropicAPI(commands.Cog):
             }
             if params.model in ADAPTIVE_THINKING_MODELS:
                 api_params["thinking"] = {"type": "adaptive"}
+            elif (
+                params.thinking_budget is not None
+                and params.model in EXTENDED_THINKING_MODELS
+            ):
+                api_params["thinking"] = {
+                    "type": "enabled",
+                    "budget_tokens": params.thinking_budget,
+                }
+            if params.effort is not None:
+                api_params["effort"] = params.effort
             if params.system:
                 api_params["system"] = params.system
             if params.temperature is not None:
@@ -487,6 +534,7 @@ class AnthropicAPI(commands.Cog):
             append_thinking_embeds(embeds, thinking_text)
             append_response_embeds(embeds, response_text)
             append_citations_embed(embeds, parsed.citations)
+            append_stop_reason_embed(embeds, parsed.stop_reason)
 
             view = self.views.get(message.author)
             main_conversation_id = conversation.params.conversation_id
@@ -722,6 +770,23 @@ class AnthropicAPI(commands.Cog):
         required=False,
         type=bool,
     )
+    @option(
+        "effort",
+        description="Control response effort: low (fast, concise), medium (balanced), high (thorough). (default: not set)",
+        required=False,
+        choices=[
+            OptionChoice(name="Low", value="low"),
+            OptionChoice(name="Medium", value="medium"),
+            OptionChoice(name="High", value="high"),
+        ],
+        type=str,
+    )
+    @option(
+        "thinking_budget",
+        description="Token budget for extended thinking on non-4.6 models. (default: not set)",
+        required=False,
+        type=int,
+    )
     async def chat(
         self,
         ctx: ApplicationContext,
@@ -737,6 +802,8 @@ class AnthropicAPI(commands.Cog):
         web_fetch: bool = False,
         code_execution: bool = False,
         memory: bool = False,
+        effort: str | None = None,
+        thinking_budget: int | None = None,
     ):
         """
         Creates a persistent conversation session with Claude.
@@ -830,6 +897,13 @@ class AnthropicAPI(commands.Cog):
             }
             if model in ADAPTIVE_THINKING_MODELS:
                 api_params["thinking"] = {"type": "adaptive"}
+            elif thinking_budget is not None and model in EXTENDED_THINKING_MODELS:
+                api_params["thinking"] = {
+                    "type": "enabled",
+                    "budget_tokens": thinking_budget,
+                }
+            if effort is not None:
+                api_params["effort"] = effort
             if system:
                 api_params["system"] = system
             if temperature is not None:
@@ -868,6 +942,10 @@ class AnthropicAPI(commands.Cog):
                 description += f"**Top P:** {top_p}\n"
             if top_k is not None:
                 description += f"**Top K:** {top_k}\n"
+            if effort is not None:
+                description += f"**Effort:** {effort}\n"
+            if thinking_budget is not None:
+                description += f"**Thinking Budget:** {thinking_budget} tokens\n"
             if enabled_tools:
                 description += f"**Tools:** {', '.join(enabled_tools)}\n"
 
@@ -882,6 +960,7 @@ class AnthropicAPI(commands.Cog):
             append_thinking_embeds(embeds, thinking_text)
             append_response_embeds(embeds, response_text)
             append_citations_embed(embeds, parsed.citations)
+            append_stop_reason_embed(embeds, parsed.stop_reason)
 
             if len(embeds) == 1:
                 await ctx.send_followup("No response generated.")
@@ -910,6 +989,8 @@ class AnthropicAPI(commands.Cog):
                 temperature=temperature,
                 top_p=top_p,
                 top_k=top_k,
+                effort=effort,
+                thinking_budget=thinking_budget,
                 conversation_starter=ctx.author,
                 channel_id=ctx.channel.id,
                 conversation_id=main_conversation_id,
