@@ -1,7 +1,10 @@
+import pytest
+
 from src.util import (
     CHUNK_TEXT_SIZE,
     ChatCompletionParameters,
     Conversation,
+    calculate_cost,
     chunk_text,
     format_anthropic_error,
     truncate_text,
@@ -222,3 +225,46 @@ class TestConversation:
         assert conv.params == params
         assert conv.messages == messages
         assert len(conv.messages) == 2
+
+
+class TestCalculateCost:
+    """Tests for the calculate_cost function."""
+
+    def test_basic_cost(self):
+        """Basic cost calculation with input and output tokens."""
+        # claude-sonnet-4-6: $3/MTok input, $15/MTok output
+        cost = calculate_cost("claude-sonnet-4-6", 1_000_000, 1_000_000)
+        assert cost == 18.0  # $3 + $15
+
+    def test_zero_tokens(self):
+        """Zero tokens should return zero cost."""
+        cost = calculate_cost("claude-sonnet-4-6", 0, 0)
+        assert cost == 0.0
+
+    def test_cache_write_tokens(self):
+        """Cache write tokens cost 1.25x base input price."""
+        # claude-sonnet-4-6: $3/MTok input, so cache write = $3.75/MTok
+        cost = calculate_cost("claude-sonnet-4-6", 0, 0, cache_creation_tokens=1_000_000)
+        assert cost == 3.75
+
+    def test_cache_read_tokens(self):
+        """Cache read tokens cost 0.1x base input price."""
+        # claude-sonnet-4-6: $3/MTok input, so cache read = $0.30/MTok
+        cost = calculate_cost("claude-sonnet-4-6", 0, 0, cache_read_tokens=1_000_000)
+        assert cost == pytest.approx(0.30)
+
+    def test_all_token_types(self):
+        """Cost with all token types combined."""
+        cost = calculate_cost(
+            "claude-sonnet-4-6",
+            input_tokens=500_000,       # $1.50
+            output_tokens=100_000,      # $1.50
+            cache_creation_tokens=200_000,  # $0.75
+            cache_read_tokens=1_000_000,    # $0.30
+        )
+        assert cost == pytest.approx(4.05)
+
+    def test_unknown_model_uses_default(self):
+        """Unknown model should use default pricing."""
+        cost = calculate_cost("unknown-model", 1_000_000, 0)
+        assert cost == 15.0  # Default input price

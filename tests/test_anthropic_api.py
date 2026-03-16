@@ -941,14 +941,13 @@ class TestCallApiWithToolLoop:
         assert parsed.text == "Hello!"
         cog.client.beta.messages.create.assert_called_once()
         call_kwargs = cog.client.beta.messages.create.call_args[1]
-        assert call_kwargs["betas"] == ["compact-2026-01-12"]
-        assert call_kwargs["context_management"] == {
-            "edits": [{"type": "compact_20260112"}]
-        }
+        assert "compact-2026-01-12" in call_kwargs["betas"]
+        assert {"type": "compact_20260112"} in call_kwargs["context_management"]["edits"]
+        assert call_kwargs["cache_control"] == {"type": "ephemeral"}
 
     @pytest.mark.asyncio
     async def test_non_compaction_model_uses_regular_api(self, cog):
-        """Non-compaction models use client.messages.create without compaction."""
+        """Non-compaction models without tools/thinking use client.messages.create."""
         mock_response = MagicMock()
         text_block = MagicMock()
         text_block.type = "text"
@@ -967,3 +966,109 @@ class TestCallApiWithToolLoop:
 
         assert parsed.text == "Hello!"
         cog.client.messages.create.assert_called_once()
+        call_kwargs = cog.client.messages.create.call_args[1]
+        assert call_kwargs["cache_control"] == {"type": "ephemeral"}
+
+    @pytest.mark.asyncio
+    async def test_context_editing_with_tools(self, cog):
+        """Models with tools get context editing via beta API."""
+        mock_response = MagicMock()
+        text_block = MagicMock()
+        text_block.type = "text"
+        text_block.text = "Hello!"
+        text_block.citations = None
+        mock_response.content = [text_block]
+        mock_response.stop_reason = "end_turn"
+        cog.client.beta.messages.create = AsyncMock(return_value=mock_response)
+
+        messages = [{"role": "user", "content": "Hi"}]
+        api_params = {
+            "model": "claude-haiku-4-5",
+            "max_tokens": 1024,
+            "tools": [{"type": "web_search_20260209", "name": "web_search"}],
+        }
+
+        await cog._call_api_with_tool_loop(
+            api_params=api_params, messages=messages, user_id=123
+        )
+
+        cog.client.beta.messages.create.assert_called_once()
+        call_kwargs = cog.client.beta.messages.create.call_args[1]
+        assert "context-management-2025-06-27" in call_kwargs["betas"]
+        edits = call_kwargs["context_management"]["edits"]
+        tool_edits = [e for e in edits if e["type"] == "clear_tool_uses_20250919"]
+        assert len(tool_edits) == 1
+
+    @pytest.mark.asyncio
+    async def test_context_editing_with_thinking(self, cog):
+        """Models with thinking get thinking block clearing."""
+        mock_response = MagicMock()
+        text_block = MagicMock()
+        text_block.type = "text"
+        text_block.text = "Hello!"
+        text_block.citations = None
+        mock_response.content = [text_block]
+        mock_response.stop_reason = "end_turn"
+        cog.client.beta.messages.create = AsyncMock(return_value=mock_response)
+
+        messages = [{"role": "user", "content": "Hi"}]
+        api_params = {
+            "model": "claude-haiku-4-5",
+            "max_tokens": 1024,
+            "thinking": {"type": "enabled", "budget_tokens": 5000},
+        }
+
+        await cog._call_api_with_tool_loop(
+            api_params=api_params, messages=messages, user_id=123
+        )
+
+        cog.client.beta.messages.create.assert_called_once()
+        call_kwargs = cog.client.beta.messages.create.call_args[1]
+        edits = call_kwargs["context_management"]["edits"]
+        thinking_edits = [e for e in edits if e["type"] == "clear_thinking_20251015"]
+        assert len(thinking_edits) == 1
+        # Thinking clearing must come before any other edits
+        assert edits[0]["type"] == "clear_thinking_20251015"
+
+    @pytest.mark.asyncio
+    async def test_cache_tokens_accumulated(self, cog):
+        """Cache creation and read tokens are accumulated across iterations."""
+        pause_response = MagicMock()
+        pause_text = MagicMock()
+        pause_text.type = "text"
+        pause_text.text = "Searching..."
+        pause_text.citations = None
+        pause_response.content = [pause_text]
+        pause_response.stop_reason = "pause_turn"
+        pause_response.usage = MagicMock(
+            input_tokens=100, output_tokens=50,
+            cache_creation_input_tokens=200, cache_read_input_tokens=0,
+        )
+
+        final_response = MagicMock()
+        final_text = MagicMock()
+        final_text.type = "text"
+        final_text.text = "Done!"
+        final_text.citations = None
+        final_response.content = [final_text]
+        final_response.stop_reason = "end_turn"
+        final_response.usage = MagicMock(
+            input_tokens=50, output_tokens=30,
+            cache_creation_input_tokens=0, cache_read_input_tokens=200,
+        )
+
+        cog.client.messages.create = AsyncMock(
+            side_effect=[pause_response, final_response]
+        )
+
+        messages = [{"role": "user", "content": "Hi"}]
+        api_params = {"model": "claude-haiku-4-5", "max_tokens": 1024}
+
+        parsed = await cog._call_api_with_tool_loop(
+            api_params=api_params, messages=messages, user_id=123
+        )
+
+        assert parsed.input_tokens == 150
+        assert parsed.output_tokens == 80
+        assert parsed.cache_creation_tokens == 200
+        assert parsed.cache_read_tokens == 200

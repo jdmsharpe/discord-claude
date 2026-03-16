@@ -488,7 +488,7 @@ class AnthropicAPI(commands.Cog):
         betas: list[str] = []
         edits: list[dict[str, Any]] = []
 
-        # Thinking clearing must come first when combining strategies
+        # Context editing strategies (thinking clearing must come first)
         if has_thinking:
             edits.append({
                 "type": "clear_thinking_20251015",
@@ -502,12 +502,14 @@ class AnthropicAPI(commands.Cog):
                 "keep": {"type": "tool_uses", "value": 5},
             })
 
+        # Context editing beta only needed for tool/thinking clearing
+        if edits:
+            betas.append("context-management-2025-06-27")
+
+        # Compaction has its own beta
         if use_compaction:
             betas.append("compact-2026-01-12")
             edits.append({"type": "compact_20260112"})
-
-        if edits:
-            betas.append("context-management-2025-06-27")
 
         total_input_tokens = 0
         total_output_tokens = 0
@@ -734,11 +736,15 @@ class AnthropicAPI(commands.Cog):
             aux_embeds: list[Embed] = []
             append_citations_embed(aux_embeds, parsed.citations)
             daily_cost = self._track_daily_cost(
-                message.author.id, params.model, parsed.input_tokens, parsed.output_tokens
+                message.author.id, params.model,
+                parsed.input_tokens, parsed.output_tokens,
+                parsed.cache_creation_tokens, parsed.cache_read_tokens,
             )
             if SHOW_COST_EMBEDS:
                 append_pricing_embed(
-                    aux_embeds, params.model, parsed.input_tokens, parsed.output_tokens, daily_cost
+                    aux_embeds, params.model,
+                    parsed.input_tokens, parsed.output_tokens, daily_cost,
+                    parsed.cache_creation_tokens, parsed.cache_read_tokens,
                 )
 
             main_conversation_id = conversation.params.conversation_id
@@ -1171,11 +1177,15 @@ class AnthropicAPI(commands.Cog):
             aux_embeds: list[Embed] = []
             append_citations_embed(aux_embeds, parsed.citations)
             daily_cost = self._track_daily_cost(
-                ctx.author.id, model, parsed.input_tokens, parsed.output_tokens
+                ctx.author.id, model,
+                parsed.input_tokens, parsed.output_tokens,
+                parsed.cache_creation_tokens, parsed.cache_read_tokens,
             )
             if SHOW_COST_EMBEDS:
                 append_pricing_embed(
-                    aux_embeds, model, parsed.input_tokens, parsed.output_tokens, daily_cost
+                    aux_embeds, model,
+                    parsed.input_tokens, parsed.output_tokens, daily_cost,
+                    parsed.cache_creation_tokens, parsed.cache_read_tokens,
                 )
 
             if len(embeds) == 1:
