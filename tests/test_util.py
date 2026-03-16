@@ -115,6 +115,7 @@ class TestChatCompletionParameters:
         assert params.model == "claude-sonnet-4"
         assert params.system is None
         assert params.temperature is None
+        assert params.effort is None
         assert params.max_tokens == 16384
         assert params.paused is False
         assert params.messages == []
@@ -152,6 +153,25 @@ class TestChatCompletionParameters:
         assert result["top_k"] == 40
         assert result["max_tokens"] == 2048
 
+
+    def test_to_dict_with_effort(self):
+        """to_dict with effort should include it."""
+        params = ChatCompletionParameters(
+            model="claude-opus-4-6",
+            effort="high",
+        )
+        params.messages = [{"role": "user", "content": "Hello"}]
+        result = params.to_dict()
+
+        assert result["effort"] == "high"
+
+    def test_to_dict_without_effort(self):
+        """to_dict without effort should not include it."""
+        params = ChatCompletionParameters(model="claude-sonnet-4")
+        params.messages = [{"role": "user", "content": "Hello"}]
+        result = params.to_dict()
+
+        assert "effort" not in result
 
     def test_to_dict_with_tools(self):
         """to_dict with tools should include tool definitions."""

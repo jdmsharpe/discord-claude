@@ -237,6 +237,53 @@ class TestAppendCitationsEmbed:
         assert "Source 20" not in embeds[0].description
 
 
+class TestAppendStopReasonEmbed:
+    """Tests for the append_stop_reason_embed helper."""
+
+    def test_end_turn_no_embed(self):
+        """end_turn should not add any embed."""
+        from src.anthropic_api import append_stop_reason_embed
+
+        embeds = []
+        append_stop_reason_embed(embeds, "end_turn")
+        assert len(embeds) == 0
+
+    def test_max_tokens(self):
+        """max_tokens should add a truncation warning."""
+        from src.anthropic_api import append_stop_reason_embed
+
+        embeds = []
+        append_stop_reason_embed(embeds, "max_tokens")
+        assert len(embeds) == 1
+        assert embeds[0].title == "Response Truncated"
+
+    def test_model_context_window_exceeded(self):
+        """model_context_window_exceeded should add a context limit warning."""
+        from src.anthropic_api import append_stop_reason_embed
+
+        embeds = []
+        append_stop_reason_embed(embeds, "model_context_window_exceeded")
+        assert len(embeds) == 1
+        assert embeds[0].title == "Context Limit Reached"
+
+    def test_refusal(self):
+        """refusal should add a declined warning."""
+        from src.anthropic_api import append_stop_reason_embed
+
+        embeds = []
+        append_stop_reason_embed(embeds, "refusal")
+        assert len(embeds) == 1
+        assert embeds[0].title == "Request Declined"
+
+    def test_pause_turn_no_embed(self):
+        """pause_turn should not add any embed."""
+        from src.anthropic_api import append_stop_reason_embed
+
+        embeds = []
+        append_stop_reason_embed(embeds, "pause_turn")
+        assert len(embeds) == 0
+
+
 class TestAnthropicAPIIntegration:
     """Integration tests for the Anthropic API client (mocked)."""
 
@@ -590,3 +637,68 @@ class TestCallApiWithToolLoop:
         )
 
         assert cog.client.messages.create.call_count == 3
+
+    @pytest.mark.asyncio
+    async def test_max_tokens_stop_reason(self, cog):
+        """max_tokens stop reason is propagated on ParsedResponse."""
+        mock_response = MagicMock()
+        text_block = MagicMock()
+        text_block.type = "text"
+        text_block.text = "Truncated response..."
+        text_block.citations = None
+        mock_response.content = [text_block]
+        mock_response.stop_reason = "max_tokens"
+        cog.client.messages.create = AsyncMock(return_value=mock_response)
+
+        messages = [{"role": "user", "content": "Write a long essay"}]
+        api_params = {"model": "claude-sonnet-4", "max_tokens": 10}
+
+        parsed = await cog._call_api_with_tool_loop(
+            api_params=api_params, messages=messages, user_id=123
+        )
+
+        assert parsed.stop_reason == "max_tokens"
+        assert parsed.text == "Truncated response..."
+        assert len(messages) == 2
+
+    @pytest.mark.asyncio
+    async def test_refusal_stop_reason(self, cog):
+        """refusal stop reason is propagated on ParsedResponse."""
+        mock_response = MagicMock()
+        text_block = MagicMock()
+        text_block.type = "text"
+        text_block.text = "I can't help with that."
+        text_block.citations = None
+        mock_response.content = [text_block]
+        mock_response.stop_reason = "refusal"
+        cog.client.messages.create = AsyncMock(return_value=mock_response)
+
+        messages = [{"role": "user", "content": "Bad request"}]
+        api_params = {"model": "claude-sonnet-4", "max_tokens": 1024}
+
+        parsed = await cog._call_api_with_tool_loop(
+            api_params=api_params, messages=messages, user_id=123
+        )
+
+        assert parsed.stop_reason == "refusal"
+
+    @pytest.mark.asyncio
+    async def test_context_window_exceeded_stop_reason(self, cog):
+        """model_context_window_exceeded stop reason is propagated."""
+        mock_response = MagicMock()
+        text_block = MagicMock()
+        text_block.type = "text"
+        text_block.text = "Partial response..."
+        text_block.citations = None
+        mock_response.content = [text_block]
+        mock_response.stop_reason = "model_context_window_exceeded"
+        cog.client.messages.create = AsyncMock(return_value=mock_response)
+
+        messages = [{"role": "user", "content": "Very long conversation"}]
+        api_params = {"model": "claude-sonnet-4", "max_tokens": 64000}
+
+        parsed = await cog._call_api_with_tool_loop(
+            api_params=api_params, messages=messages, user_id=123
+        )
+
+        assert parsed.stop_reason == "model_context_window_exceeded"

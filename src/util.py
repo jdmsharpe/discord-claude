@@ -8,6 +8,14 @@ CHUNK_TEXT_SIZE = 3500  # Maximum number of characters in each text chunk.
 # Models that support adaptive thinking
 ADAPTIVE_THINKING_MODELS = {"claude-opus-4-6", "claude-sonnet-4-6"}
 
+# Models that support manual extended thinking (type: "enabled" with budget_tokens)
+EXTENDED_THINKING_MODELS = {
+    "claude-opus-4-5",
+    "claude-sonnet-4-5",
+    "claude-opus-4-1",
+    "claude-haiku-4-5",
+}
+
 # Tool definitions for the Anthropic API
 AVAILABLE_TOOLS: dict[str, dict[str, Any]] = {
     "web_search": {
@@ -54,6 +62,8 @@ class ChatCompletionParameters:
     conversation_starter: Member | User | None = None
     conversation_id: int | None = None
     channel_id: int | None = None
+    effort: str | None = None
+    thinking_budget: int | None = None
     paused: bool | None = False
     messages: list[dict[str, Any]] = field(default_factory=list)
     tools: list[str] = field(default_factory=list)
@@ -73,6 +83,8 @@ class ChatCompletionParameters:
             payload["top_p"] = self.top_p
         if self.top_k is not None:
             payload["top_k"] = self.top_k
+        if self.effort is not None:
+            payload["effort"] = self.effort
         if self.tools:
             payload["tools"] = [
                 AVAILABLE_TOOLS[t] for t in self.tools if t in AVAILABLE_TOOLS
