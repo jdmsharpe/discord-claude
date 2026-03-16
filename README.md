@@ -8,10 +8,13 @@ A Discord bot that wraps Anthropic's Claude API, providing an easy-to-use interf
 
 - **Multi-turn conversations**: Start conversations with Claude that maintain context across multiple messages
 - **Multiple Claude models**: Choose from Claude Opus 4.6, Sonnet 4.6, Opus 4.5, Sonnet 4.5, Opus 4.1, and Haiku 4.5
-- **Image support**: Attach images to your prompts for multimodal conversations
+- **Multimodal input**: Attach images (JPEG, PNG, GIF, WEBP), PDFs, or text files (TXT, MD, CSV)
+- **Tools**: Enable web search, web fetch, code execution, and memory — toggleable mid-conversation
+- **Citations**: Web search and document citations displayed as a Sources embed
+- **Pricing display**: Per-request cost, token counts, and daily spend shown after each response
 - **Conversation controls**: Pause, resume, regenerate responses, and end conversations with interactive buttons
 - **System prompts**: Customize Claude's behavior with system prompts
-- **Advanced parameters**: Fine-tune responses with temperature, top_p, top_k, and max_tokens settings
+- **Advanced parameters**: Fine-tune responses with temperature, top_p, top_k, effort, thinking budget, and max_tokens
 
 ## Commands
 
@@ -24,11 +27,17 @@ Start a conversation with Claude.
 - `prompt` (required): Your initial message to Claude
 - `model`: Choose the Claude model (default: Claude Sonnet 4.6)
 - `system`: System prompt to set Claude's behavior
-- `attachment`: Image attachment for multimodal input
+- `attachment`: Attach an image (JPEG, PNG, GIF, WEBP), a PDF, or a text file (TXT, MD, CSV)
 - `max_tokens`: Maximum tokens in the response (default: 16384)
-- `temperature`: Amount of randomness (0.0-1.0, default 1.0). Lower for analytical tasks, higher for creative tasks
+- `web_search`: Enable web search for current information (default: false)
+- `web_fetch`: Enable web fetch to retrieve full web page content (default: false)
+- `code_execution`: Enable code execution in a sandbox (default: false)
+- `memory`: Enable memory to save and recall information across conversations (default: false)
+- `effort`: Control response effort — low (fast), medium (balanced), high (thorough)
+- `thinking_budget`: Token budget for extended thinking on non-4.6 models
+- `temperature`: Amount of randomness (0.0-1.0). Lower for analytical tasks, higher for creative (advanced)
 - `top_p`: Nucleus sampling threshold (0.0-1.0). Use temperature OR top_p, not both (advanced)
-- `top_k`: Only sample from top K tokens, removing low probability responses. Use temperature OR top_k, not both (advanced)
+- `top_k`: Only sample from top K tokens. Use temperature OR top_k, not both (advanced)
 
 ### `/claude check_permissions`
 
@@ -110,10 +119,11 @@ docker-compose up -d
 
 1. Use `/claude chat` to start a conversation with Claude
 2. Once a conversation is started, simply type messages in the same channel to continue the conversation
-3. Use the interactive buttons:
+3. Use the interactive controls:
    - 🔄 Regenerate the last response
    - ⏯️ Pause/resume the conversation
    - ⏹️ End the conversation
+   - 🔧 Toggle tools on/off mid-conversation via the select menu
 
 ## License
 
