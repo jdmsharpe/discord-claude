@@ -22,7 +22,7 @@ Start a conversation with Claude.
 **Parameters:**
 
 - `prompt` (required): Your initial message to Claude
-- `model`: Choose the Claude model (default: Claude Opus 4.6)
+- `model`: Choose the Claude model (default: Claude Sonnet 4.6)
 - `system`: System prompt to set Claude's behavior
 - `attachment`: Image attachment for multimodal input
 - `max_tokens`: Maximum tokens in the response (default: 16384)

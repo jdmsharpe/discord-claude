@@ -157,7 +157,7 @@ class TestChatCompletionParameters:
     def test_to_dict_with_effort(self):
         """to_dict with effort should include it."""
         params = ChatCompletionParameters(
-            model="claude-opus-4-6",
+            model="claude-sonnet-4-6",
             effort="high",
         )
         params.messages = [{"role": "user", "content": "Hello"}]

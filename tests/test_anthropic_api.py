@@ -851,7 +851,7 @@ class TestCallApiWithToolLoop:
         cog.client.beta.messages.create = AsyncMock(return_value=mock_response)
 
         messages = [{"role": "user", "content": "Hi"}]
-        api_params = {"model": "claude-opus-4-6", "max_tokens": 1024}
+        api_params = {"model": "claude-sonnet-4-6", "max_tokens": 1024}
 
         parsed = await cog._call_api_with_tool_loop(
             api_params=api_params, messages=messages, user_id=123

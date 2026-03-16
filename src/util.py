@@ -41,6 +41,23 @@ AVAILABLE_TOOLS: dict[str, dict[str, Any]] = {
     },
 }
 
+# Per-million-token pricing: (input_cost, output_cost)
+MODEL_PRICING: dict[str, tuple[float, float]] = {
+    "claude-opus-4-6": (15.0, 75.0),
+    "claude-opus-4-5": (15.0, 75.0),
+    "claude-opus-4-1": (15.0, 75.0),
+    "claude-sonnet-4-6": (3.0, 15.0),
+    "claude-sonnet-4-5": (3.0, 15.0),
+    "claude-haiku-4-5": (0.80, 4.0),
+}
+
+
+def calculate_cost(model: str, input_tokens: int, output_tokens: int) -> float:
+    """Calculate the cost in dollars for a given model and token usage."""
+    input_price, output_price = MODEL_PRICING.get(model, (15.0, 75.0))
+    return (input_tokens / 1_000_000) * input_price + (output_tokens / 1_000_000) * output_price
+
+
 # Claude models
 CLAUDE_MODELS = [
     "claude-opus-4-6",
