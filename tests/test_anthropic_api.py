@@ -69,8 +69,8 @@ class TestExtractResponseContent:
         assert parsed.text == "No response."
         assert parsed.thinking == ""
 
-    def test_with_citations(self):
-        """Response with text blocks containing citations."""
+    def test_with_web_citations(self):
+        """Response with text blocks containing web search citations."""
         from src.anthropic_api import extract_response_content
 
         response = MagicMock()
@@ -90,11 +90,102 @@ class TestExtractResponseContent:
 
         parsed = extract_response_content(response)
         assert len(parsed.citations) == 2
+        assert parsed.citations[0]["kind"] == "web"
         assert parsed.citations[0]["url"] == "https://example.com/1"
         assert parsed.citations[1]["title"] == "Source 2"
 
-    def test_citations_deduplicated(self):
-        """Duplicate citation URLs are deduplicated."""
+    def test_with_document_citations(self):
+        """Response with document citations (char_location, page_location)."""
+        from src.anthropic_api import extract_response_content
+
+        response = MagicMock()
+        text_block = MagicMock()
+        text_block.type = "text"
+        text_block.text = "The document says..."
+
+        char_citation = MagicMock()
+        char_citation.url = None
+        char_citation.type = "char_location"
+        char_citation.cited_text = "The grass is green."
+        char_citation.document_title = "My Document"
+        char_citation.document_index = 0
+        char_citation.start_char_index = 0
+        char_citation.end_char_index = 19
+
+        page_citation = MagicMock()
+        page_citation.url = None
+        page_citation.type = "page_location"
+        page_citation.cited_text = "Water is essential."
+        page_citation.document_title = "PDF Report"
+        page_citation.document_index = 1
+        page_citation.start_page_number = 5
+        page_citation.end_page_number = 6
+
+        text_block.citations = [char_citation, page_citation]
+        response.content = [text_block]
+
+        parsed = extract_response_content(response)
+        assert len(parsed.citations) == 2
+        assert parsed.citations[0]["kind"] == "document"
+        assert parsed.citations[0]["cited_text"] == "The grass is green."
+        assert parsed.citations[0]["document_title"] == "My Document"
+        assert parsed.citations[0]["location"] == ""
+        assert parsed.citations[1]["kind"] == "document"
+        assert parsed.citations[1]["cited_text"] == "Water is essential."
+        assert parsed.citations[1]["location"] == "p. 5"
+
+    def test_document_citations_multi_page(self):
+        """Page citations spanning multiple pages show page range."""
+        from src.anthropic_api import extract_response_content
+
+        response = MagicMock()
+        text_block = MagicMock()
+        text_block.type = "text"
+        text_block.text = "Spanning pages..."
+        citation = MagicMock()
+        citation.url = None
+        citation.type = "page_location"
+        citation.cited_text = "A long passage."
+        citation.document_title = "Report"
+        citation.start_page_number = 3
+        citation.end_page_number = 6
+        text_block.citations = [citation]
+        response.content = [text_block]
+
+        parsed = extract_response_content(response)
+        assert parsed.citations[0]["location"] == "pp. 3\u20135"
+
+    def test_document_citations_deduplicated(self):
+        """Duplicate document cited_text values are deduplicated."""
+        from src.anthropic_api import extract_response_content
+
+        response = MagicMock()
+        block1 = MagicMock()
+        block1.type = "text"
+        block1.text = "Part 1"
+        cite1 = MagicMock()
+        cite1.url = None
+        cite1.type = "char_location"
+        cite1.cited_text = "Same passage."
+        cite1.document_title = "Doc"
+        block1.citations = [cite1]
+
+        block2 = MagicMock()
+        block2.type = "text"
+        block2.text = "Part 2"
+        cite2 = MagicMock()
+        cite2.url = None
+        cite2.type = "char_location"
+        cite2.cited_text = "Same passage."
+        cite2.document_title = "Doc"
+        block2.citations = [cite2]
+
+        response.content = [block1, block2]
+        parsed = extract_response_content(response)
+        assert len(parsed.citations) == 1
+
+    def test_web_citations_deduplicated(self):
+        """Duplicate web citation URLs are deduplicated."""
         from src.anthropic_api import extract_response_content
 
         response = MagicMock()
@@ -207,14 +298,14 @@ class TestAppendCitationsEmbed:
         append_citations_embed(embeds, [])
         assert len(embeds) == 0
 
-    def test_with_citations(self):
-        """Citations are rendered as a Sources embed with markdown links."""
+    def test_with_web_citations(self):
+        """Web citations are rendered as a Sources embed with markdown links."""
         from src.anthropic_api import append_citations_embed
 
         embeds = []
         citations = [
-            {"url": "https://example.com/1", "title": "First Source"},
-            {"url": "https://example.com/2", "title": "Second Source"},
+            {"kind": "web", "url": "https://example.com/1", "title": "First Source"},
+            {"kind": "web", "url": "https://example.com/2", "title": "Second Source"},
         ]
         append_citations_embed(embeds, citations)
         assert len(embeds) == 1
@@ -222,19 +313,63 @@ class TestAppendCitationsEmbed:
         assert "[First Source](https://example.com/1)" in embeds[0].description
         assert "[Second Source](https://example.com/2)" in embeds[0].description
 
-    def test_citations_capped_at_20(self):
-        """Only the first 20 citations are included."""
+    def test_web_citations_capped_at_20(self):
+        """Only the first 20 web citations are included."""
         from src.anthropic_api import append_citations_embed
 
         embeds = []
         citations = [
-            {"url": f"https://example.com/{i}", "title": f"Source {i}"}
+            {"kind": "web", "url": f"https://example.com/{i}", "title": f"Source {i}"}
             for i in range(25)
         ]
         append_citations_embed(embeds, citations)
         assert len(embeds) == 1
         assert "Source 19" in embeds[0].description
         assert "Source 20" not in embeds[0].description
+
+    def test_with_document_citations(self):
+        """Document citations are rendered as quoted text with source info."""
+        from src.anthropic_api import append_citations_embed
+
+        embeds = []
+        citations = [
+            {
+                "kind": "document",
+                "cited_text": "The grass is green.",
+                "document_title": "Nature Doc",
+                "location": "",
+            },
+            {
+                "kind": "document",
+                "cited_text": "Water is essential.",
+                "document_title": "Science PDF",
+                "location": "p. 5",
+            },
+        ]
+        append_citations_embed(embeds, citations)
+        assert len(embeds) == 1
+        assert "The grass is green." in embeds[0].description
+        assert "Nature Doc" in embeds[0].description
+        assert "Science PDF, p. 5" in embeds[0].description
+
+    def test_mixed_web_and_document_citations(self):
+        """Both web and document citations appear in the same embed."""
+        from src.anthropic_api import append_citations_embed
+
+        embeds = []
+        citations = [
+            {"kind": "web", "url": "https://example.com", "title": "Web Source"},
+            {
+                "kind": "document",
+                "cited_text": "Document text.",
+                "document_title": "My Doc",
+                "location": "p. 2",
+            },
+        ]
+        append_citations_embed(embeds, citations)
+        assert len(embeds) == 1
+        assert "[Web Source](https://example.com)" in embeds[0].description
+        assert "Document text." in embeds[0].description
 
 
 class TestAppendStopReasonEmbed:
