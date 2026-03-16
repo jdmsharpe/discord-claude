@@ -295,7 +295,7 @@ def append_citations_embed(
         Embed(
             title="Sources",
             description=description,
-            color=Colour.blue(),
+            color=Colour.orange(),
         )
     )
 
@@ -672,10 +672,10 @@ class AnthropicAPI(commands.Cog):
             # Auxiliary embeds (sources, cost) sent separately so view stays with response
             aux_embeds: list[Embed] = []
             append_citations_embed(aux_embeds, parsed.citations)
+            daily_cost = self._track_daily_cost(
+                message.author.id, params.model, parsed.input_tokens, parsed.output_tokens
+            )
             if SHOW_COST_EMBEDS:
-                daily_cost = self._track_daily_cost(
-                    message.author.id, params.model, parsed.input_tokens, parsed.output_tokens
-                )
                 append_pricing_embed(
                     aux_embeds, params.model, parsed.input_tokens, parsed.output_tokens, daily_cost
                 )
@@ -1100,10 +1100,10 @@ class AnthropicAPI(commands.Cog):
             # Auxiliary embeds (sources, cost) sent separately so view stays with response
             aux_embeds: list[Embed] = []
             append_citations_embed(aux_embeds, parsed.citations)
+            daily_cost = self._track_daily_cost(
+                ctx.author.id, model, parsed.input_tokens, parsed.output_tokens
+            )
             if SHOW_COST_EMBEDS:
-                daily_cost = self._track_daily_cost(
-                    ctx.author.id, model, parsed.input_tokens, parsed.output_tokens
-                )
                 append_pricing_embed(
                     aux_embeds, model, parsed.input_tokens, parsed.output_tokens, daily_cost
                 )
