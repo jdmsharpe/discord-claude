@@ -11,7 +11,7 @@ A Discord bot that wraps Anthropic's Claude API, providing an easy-to-use interf
 - **Multimodal input**: Attach images (JPEG, PNG, GIF, WEBP), PDFs, or text files (TXT, MD, CSV)
 - **Tools**: Enable web search, web fetch, code execution, and memory — toggleable mid-conversation
 - **Citations**: Web search and document citations displayed as a Sources embed
-- **Pricing display**: Per-request cost, token counts, and daily spend shown after each response
+- **Pricing display**: Per-request cost, token counts, and daily spend shown after each response (configurable via `SHOW_COST_EMBEDS`)
 - **Conversation controls**: Pause, resume, regenerate responses, and end conversations with interactive buttons
 - **System prompts**: Customize Claude's behavior with system prompts
 - **Advanced parameters**: Fine-tune responses with temperature, top_p, top_k, effort, thinking budget, and max_tokens
@@ -85,6 +85,7 @@ Check if the bot has the necessary permissions in the current channel.
    BOT_TOKEN=your_discord_bot_token
    GUILD_IDS=your_guild_id_1,your_guild_id_2
    ANTHROPIC_API_KEY=your_anthropic_api_key
+   SHOW_COST_EMBEDS=true
    ```
 
 ### Running the Bot
