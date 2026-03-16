@@ -8,7 +8,7 @@ A Discord bot wrapping Anthropic's Claude API using py-cord for Discord integrat
 
 - `src/bot.py` - Entry point; creates the Discord bot and loads the cog
 - `src/anthropic_api.py` - Main cog with slash commands (`/claude chat`, `/claude check_permissions`), conversation handling, and tool call loop
-- `src/util.py` - Shared constants (`CLAUDE_MODELS`, `ADAPTIVE_THINKING_MODELS`, `AVAILABLE_TOOLS`), dataclasses (`ChatCompletionParameters`, `Conversation`), and helpers
+- `src/util.py` - Shared constants (`CLAUDE_MODELS`, `ADAPTIVE_THINKING_MODELS`, `COMPACTION_MODELS`, `AVAILABLE_TOOLS`), dataclasses (`ChatCompletionParameters`, `Conversation`), and helpers
 - `src/button_view.py` - Discord UI buttons (regenerate, pause/resume, end) and tool Select Menu for mid-conversation tool toggling
 - `src/memory.py` - Client-side memory tool handler (view, create, str_replace, insert, delete, rename)
 - `src/config/auth.py` - Loads secrets from `.env` via python-dotenv
@@ -28,7 +28,7 @@ A Discord bot wrapping Anthropic's Claude API using py-cord for Discord integrat
   3. `src/button_view.py` - `SelectOption` in `_add_tool_select()`
   4. `src/memory.py` or new handler module (for client-side tools)
   5. `src/anthropic_api.py` - `_execute_tool()` dispatch (for client-side tools)
-- **Tool call flow**: `_call_api_with_tool_loop()` handles the response loop: `end_turn` = done, `pause_turn` = re-send to continue, `tool_use` = execute client-side tool and re-send
+- **Tool call flow**: `_call_api_with_tool_loop()` handles the response loop: `end_turn` = done, `pause_turn` = re-send to continue, `tool_use` = execute client-side tool and re-send. Models in `COMPACTION_MODELS` use the beta API with server-side compaction (`compact-2026-01-12`) to automatically summarize context when approaching limits
 - **Multi-turn with tools**: Assistant messages are stored as full `response.content` blocks (not plain text) to preserve encrypted server tool data for citations across turns
 - **Memory tool**: Client-side tool storing files in `./memories/{user_discord_id}/` with path traversal protection
 - **Document citations**: PDF and text file attachments are sent as document blocks with `citations: {enabled: true}`. Response citations use a `kind` field to distinguish types:

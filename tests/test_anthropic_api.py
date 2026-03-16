@@ -837,3 +837,52 @@ class TestCallApiWithToolLoop:
         )
 
         assert parsed.stop_reason == "model_context_window_exceeded"
+
+    @pytest.mark.asyncio
+    async def test_compaction_model_uses_beta_api(self, cog):
+        """Compaction models use client.beta.messages.create with compaction params."""
+        mock_response = MagicMock()
+        text_block = MagicMock()
+        text_block.type = "text"
+        text_block.text = "Hello!"
+        text_block.citations = None
+        mock_response.content = [text_block]
+        mock_response.stop_reason = "end_turn"
+        cog.client.beta.messages.create = AsyncMock(return_value=mock_response)
+
+        messages = [{"role": "user", "content": "Hi"}]
+        api_params = {"model": "claude-opus-4-6", "max_tokens": 1024}
+
+        parsed = await cog._call_api_with_tool_loop(
+            api_params=api_params, messages=messages, user_id=123
+        )
+
+        assert parsed.text == "Hello!"
+        cog.client.beta.messages.create.assert_called_once()
+        call_kwargs = cog.client.beta.messages.create.call_args[1]
+        assert call_kwargs["betas"] == ["compact-2026-01-12"]
+        assert call_kwargs["context_management"] == {
+            "edits": [{"type": "compact_20260112"}]
+        }
+
+    @pytest.mark.asyncio
+    async def test_non_compaction_model_uses_regular_api(self, cog):
+        """Non-compaction models use client.messages.create without compaction."""
+        mock_response = MagicMock()
+        text_block = MagicMock()
+        text_block.type = "text"
+        text_block.text = "Hello!"
+        text_block.citations = None
+        mock_response.content = [text_block]
+        mock_response.stop_reason = "end_turn"
+        cog.client.messages.create = AsyncMock(return_value=mock_response)
+
+        messages = [{"role": "user", "content": "Hi"}]
+        api_params = {"model": "claude-haiku-4-5", "max_tokens": 1024}
+
+        parsed = await cog._call_api_with_tool_loop(
+            api_params=api_params, messages=messages, user_id=123
+        )
+
+        assert parsed.text == "Hello!"
+        cog.client.messages.create.assert_called_once()
