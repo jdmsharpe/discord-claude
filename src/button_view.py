@@ -62,9 +62,15 @@ class ButtonView(View):
                     description="Save and recall memories across conversations.",
                     default="memory" in selected_tools,
                 ),
+                SelectOption(
+                    label="Bash",
+                    value="bash",
+                    description="Execute shell commands.",
+                    default="bash" in selected_tools,
+                ),
             ],
             min_values=0,
-            max_values=4,
+            max_values=5,
             row=1,
         )
 
