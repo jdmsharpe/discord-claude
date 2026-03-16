@@ -31,6 +31,9 @@ A Discord bot wrapping Anthropic's Claude API using py-cord for Discord integrat
 - **Tool call flow**: `_call_api_with_tool_loop()` handles the response loop: `end_turn` = done, `pause_turn` = re-send to continue, `tool_use` = execute client-side tool and re-send
 - **Multi-turn with tools**: Assistant messages are stored as full `response.content` blocks (not plain text) to preserve encrypted server tool data for citations across turns
 - **Memory tool**: Client-side tool storing files in `./memories/{user_discord_id}/` with path traversal protection
+- **Document citations**: PDF and text file attachments are sent as document blocks with `citations: {enabled: true}`. Response citations use a `kind` field to distinguish types:
+  - `kind: "web"` — web search citations with `url`, `title`, `cited_text`
+  - `kind: "document"` — document citations with `cited_text`, `document_title`, `location` (page info for PDFs)
 
 ## Dependencies
 

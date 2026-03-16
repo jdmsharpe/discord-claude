@@ -70,29 +70,39 @@ def build_attachment_content_block(
             },
         }
     elif content_type == "application/pdf":
-        return {
+        block: dict[str, Any] = {
             "type": "document",
             "source": {
                 "type": "base64",
                 "media_type": "application/pdf",
                 "data": base64.b64encode(data).decode("utf-8"),
             },
+            "citations": {"enabled": True},
         }
+        if filename:
+            block["title"] = filename
+        return block
     elif content_type in SUPPORTED_DOCUMENT_TYPES or (
         content_type and content_type.startswith("text/")
     ):
-        # For text files, decode and send as plain text document
+        # Send as a citable document block
         try:
             text_content = data.decode("utf-8")
         except UnicodeDecodeError:
             text_content = data.decode("latin-1")
 
-        # Include filename context if available
-        prefix = f"[File: {filename}]\n\n" if filename else ""
-        return {
-            "type": "text",
-            "text": f"{prefix}{text_content}",
+        text_block: dict[str, Any] = {
+            "type": "document",
+            "source": {
+                "type": "text",
+                "media_type": "text/plain",
+                "data": text_content,
+            },
+            "citations": {"enabled": True},
         }
+        if filename:
+            text_block["title"] = filename
+        return text_block
     return None
 
 
@@ -120,6 +130,7 @@ def extract_response_content(response) -> ParsedResponse:
     citations: list[dict[str, str]] = []
     tool_use_blocks: list[Any] = []
     seen_urls: set[str] = set()
+    seen_cited_texts: set[str] = set()
 
     for block in response.content:
         if block.type == "thinking":
@@ -131,13 +142,38 @@ def extract_response_content(response) -> ParsedResponse:
             if block_citations:
                 for citation in block_citations:
                     url = getattr(citation, "url", None)
+                    cited_text = getattr(citation, "cited_text", "")
                     if url and url not in seen_urls:
+                        # Web search citation
                         seen_urls.add(url)
                         citations.append(
                             {
+                                "kind": "web",
                                 "url": url,
                                 "title": getattr(citation, "title", url),
-                                "cited_text": getattr(citation, "cited_text", ""),
+                                "cited_text": cited_text,
+                            }
+                        )
+                    elif not url and cited_text and cited_text not in seen_cited_texts:
+                        # Document citation (char_location, page_location, content_block_location)
+                        seen_cited_texts.add(cited_text)
+                        doc_title = getattr(citation, "document_title", "Document")
+                        location = ""
+                        citation_type = getattr(citation, "type", "")
+                        if citation_type == "page_location":
+                            start = getattr(citation, "start_page_number", None)
+                            end = getattr(citation, "end_page_number", None)
+                            if start is not None:
+                                if end is not None and end > start + 1:
+                                    location = f"pp. {start}\u2013{end - 1}"
+                                else:
+                                    location = f"p. {start}"
+                        citations.append(
+                            {
+                                "kind": "document",
+                                "cited_text": cited_text,
+                                "document_title": doc_title,
+                                "location": location,
                             }
                         )
         elif block.type == "tool_use":
@@ -197,17 +233,43 @@ def append_response_embeds(embeds: list[Embed], response_text: str) -> None:
 def append_citations_embed(
     embeds: list[Embed], citations: list[dict[str, str]]
 ) -> None:
-    """Append a Sources embed listing citation URLs from web search."""
+    """Append a Sources embed listing web search links and/or document citations."""
     if not citations:
         return
 
-    lines = []
-    for i, citation in enumerate(citations[:20], start=1):
-        title = citation.get("title", citation["url"])
-        url = citation["url"]
-        lines.append(f"{i}. [{title}]({url})")
+    web_lines = []
+    doc_lines = []
 
-    description = "\n".join(lines)
+    for citation in citations:
+        kind = citation.get("kind", "web")
+        if kind == "web":
+            title = citation.get("title", citation.get("url", ""))
+            url = citation.get("url", "")
+            if url:
+                web_lines.append(f"[{title}]({url})")
+        elif kind == "document":
+            cited_text = citation.get("cited_text", "")
+            doc_title = citation.get("document_title", "")
+            location = citation.get("location", "")
+            if cited_text:
+                if len(cited_text) > 150:
+                    cited_text = cited_text[:147] + "..."
+                source = doc_title
+                if location:
+                    source += f", {location}"
+                doc_lines.append(f"> {cited_text}\n> \u2014 *{source}*")
+
+    parts = []
+    if web_lines:
+        numbered = [f"{i}. {line}" for i, line in enumerate(web_lines[:20], 1)]
+        parts.append("\n".join(numbered))
+    if doc_lines:
+        parts.append("\n\n".join(doc_lines[:10]))
+
+    if not parts:
+        return
+
+    description = "\n\n".join(parts)
 
     # Respect Discord's embed limits
     current_total = sum(
