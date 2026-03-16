@@ -29,6 +29,7 @@ A Discord bot wrapping Anthropic's Claude API using py-cord for Discord integrat
   4. `src/memory.py` or new handler module (for client-side tools)
   5. `src/anthropic_api.py` - `_execute_tool()` dispatch (for client-side tools)
 - **Tool call flow**: `_call_api_with_tool_loop()` handles the response loop: `end_turn` = done, `pause_turn` = re-send to continue, `tool_use` = execute client-side tool and re-send. Models in `COMPACTION_MODELS` use the beta API with server-side compaction (`compact-2026-01-12`) to automatically summarize context when approaching limits
+- **Auxiliary embeds**: Citations and cost embeds are sent as a separate message (`aux_embeds`) so the ButtonView stays attached to the response. On each new turn, `_strip_previous_view()` removes buttons from the previous turn's message via `last_view_messages` tracking
 - **Multi-turn with tools**: Assistant messages are stored as full `response.content` blocks (not plain text) to preserve encrypted server tool data for citations across turns
 - **Memory tool**: Client-side tool storing files in `./memories/{user_discord_id}/` with path traversal protection
 - **Document citations**: PDF and text file attachments are sent as document blocks with `citations: {enabled: true}`. Response citations use a `kind` field to distinguish types:
