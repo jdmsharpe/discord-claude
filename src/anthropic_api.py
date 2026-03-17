@@ -30,6 +30,7 @@ from memory import execute_memory_operation
 from util import (
     ADAPTIVE_THINKING_MODELS,
     AVAILABLE_TOOLS,
+    CACHE_TTL,
     COMPACTION_MODELS,
     EXTENDED_THINKING_MODELS,
     MODEL_PRICING,
@@ -523,12 +524,12 @@ class AnthropicAPI(commands.Cog):
                     **api_params,
                     betas=betas,
                     context_management={"edits": edits} if edits else None,
-                    cache_control={"type": "ephemeral"},
+                    cache_control={"type": "ephemeral", "ttl": CACHE_TTL},
                 )
             else:
                 response = await self.client.messages.create(
                     **api_params,
-                    cache_control={"type": "ephemeral"},
+                    cache_control={"type": "ephemeral", "ttl": CACHE_TTL},
                 )
             parsed = extract_response_content(response)
             parsed.stop_reason = response.stop_reason
@@ -683,7 +684,7 @@ class AnthropicAPI(commands.Cog):
                 "messages": messages,
             }
             if params.model in ADAPTIVE_THINKING_MODELS:
-                api_params["thinking"] = {"type": "adaptive"}
+                api_params["thinking"] = {"type": "adaptive", "display": "summarized"}
             elif (
                 params.thinking_budget is not None
                 and params.model in EXTENDED_THINKING_MODELS
@@ -1104,7 +1105,7 @@ class AnthropicAPI(commands.Cog):
                 "messages": conversation_messages,
             }
             if model in ADAPTIVE_THINKING_MODELS:
-                api_params["thinking"] = {"type": "adaptive"}
+                api_params["thinking"] = {"type": "adaptive", "display": "summarized"}
             elif thinking_budget is not None and model in EXTENDED_THINKING_MODELS:
                 api_params["thinking"] = {
                     "type": "enabled",

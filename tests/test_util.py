@@ -242,10 +242,10 @@ class TestCalculateCost:
         assert cost == 0.0
 
     def test_cache_write_tokens(self):
-        """Cache write tokens cost 1.25x base input price."""
-        # claude-sonnet-4-6: $3/MTok input, so cache write = $3.75/MTok
+        """Cache write tokens cost 2x base input price (1h TTL)."""
+        # claude-sonnet-4-6: $3/MTok input, so cache write = $6/MTok
         cost = calculate_cost("claude-sonnet-4-6", 0, 0, cache_creation_tokens=1_000_000)
-        assert cost == 3.75
+        assert cost == 6.0
 
     def test_cache_read_tokens(self):
         """Cache read tokens cost 0.1x base input price."""
@@ -259,10 +259,10 @@ class TestCalculateCost:
             "claude-sonnet-4-6",
             input_tokens=500_000,       # $1.50
             output_tokens=100_000,      # $1.50
-            cache_creation_tokens=200_000,  # $0.75
+            cache_creation_tokens=200_000,  # $1.20
             cache_read_tokens=1_000_000,    # $0.30
         )
-        assert cost == pytest.approx(4.05)
+        assert cost == pytest.approx(4.50)
 
     def test_unknown_model_uses_default(self):
         """Unknown model should use default pricing."""
