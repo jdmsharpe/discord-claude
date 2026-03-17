@@ -225,11 +225,18 @@ def append_thinking_embeds(embeds: list[Embed], thinking_text: str) -> None:
 
 def append_response_embeds(embeds: list[Embed], response_text: str) -> None:
     """Append response text as Discord embeds, handling chunking for long responses."""
-    # If response is extremely long (>20000 chars), truncate it to prevent too many embeds
-    if len(response_text) > 20000:
-        response_text = (
-            response_text[:19500] + "\n\n... [Response truncated due to length]"
-        )
+    # Discord enforces a 6000-char total across all embeds per message.
+    # Reserve 500 chars for a potential citations embed.
+    CITATION_RESERVE = 500
+    current_total = sum(
+        len(e.description or "") + len(e.title or "") for e in embeds
+    )
+    available = 6000 - current_total - CITATION_RESERVE
+    if available < 50:
+        return
+
+    if len(response_text) > available:
+        response_text = response_text[: available - 40] + "\n\n... [Response truncated due to length]"
 
     for index, chunk in enumerate(chunk_text(response_text, 3500), start=1):
         embeds.append(
@@ -658,9 +665,9 @@ class AnthropicAPI(commands.Cog):
             typing_task = asyncio.create_task(self.keep_typing(message.channel))
 
             # Build user message content with support for multiple attachments
-            user_content: list[dict[str, Any]] = [
-                {"type": "text", "text": message.content}
-            ]
+            user_content: list[dict[str, Any]] = []
+            if message.content:
+                user_content.append({"type": "text", "text": message.content})
             if message.attachments:
                 for attachment in message.attachments:
                     attachment_data = await self._fetch_attachment_bytes(attachment)
