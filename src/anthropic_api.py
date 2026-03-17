@@ -904,7 +904,7 @@ class AnthropicAPI(commands.Cog):
     )
     @option(
         "model",
-        description="Choose from the following Claude models. (default: Claude Sonnet 4.6)",
+        description="Choose from the following Claude models. (default: Claude Opus 4.6. warning: Opus is expensive!)",
         required=False,
         choices=[
             OptionChoice(name="Claude Opus 4.6", value="claude-opus-4-6"),
@@ -997,7 +997,7 @@ class AnthropicAPI(commands.Cog):
         self,
         ctx: ApplicationContext,
         prompt: str,
-        model: str = "claude-sonnet-4-6",
+        model: str = "claude-opus-4-6",
         system: str | None = None,
         attachment: Attachment | None = None,
         max_tokens: int = 16384,
@@ -1022,7 +1022,7 @@ class AnthropicAPI(commands.Cog):
         Args:
             ctx: Discord application context
             prompt: Initial conversation prompt or question
-            model: Claude model variant (default: claude-sonnet-4-6)
+            model: Claude model variant (default: claude-opus-4-6)
             system: Optional system prompt to set Claude's behavior
             attachment: Optional image attachment for multimodal input
             max_tokens: Maximum tokens in the response (default: 16384)
