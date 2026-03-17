@@ -8,7 +8,7 @@ A Discord bot wrapping Anthropic's Claude API using py-cord for Discord integrat
 
 - `src/bot.py` - Entry point; creates the Discord bot and loads the cog
 - `src/anthropic_api.py` - Main cog with slash commands (`/claude chat`, `/claude check_permissions`), conversation handling, and tool call loop
-- `src/util.py` - Shared constants (`CLAUDE_MODELS`, `ADAPTIVE_THINKING_MODELS`, `COMPACTION_MODELS`, `AVAILABLE_TOOLS`), dataclasses (`ChatCompletionParameters`, `Conversation`), and helpers
+- `src/util.py` - Shared constants (`CLAUDE_MODELS`, `ADAPTIVE_THINKING_MODELS`, `COMPACTION_MODELS`, `AVAILABLE_TOOLS`, `CACHE_TTL`), dataclasses (`ChatCompletionParameters`, `Conversation`), and helpers
 - `src/button_view.py` - Discord UI buttons (regenerate, pause/resume, end) and tool Select Menu for mid-conversation tool toggling
 - `src/memory.py` - Client-side memory tool handler (view, create, str_replace, insert, delete, rename)
 - `src/bash_tool.py` - Client-side bash tool handler (execute shell commands with timeout and output truncation)
@@ -21,7 +21,7 @@ A Discord bot wrapping Anthropic's Claude API using py-cord for Discord integrat
   1. `src/anthropic_api.py` - `OptionChoice` list in the `chat` command's `model` option
   2. `src/util.py` - `CLAUDE_MODELS` list
   3. `src/util.py` - `ADAPTIVE_THINKING_MODELS` set (if the model supports adaptive thinking)
-- **Adaptive thinking**: Models in `ADAPTIVE_THINKING_MODELS` get `thinking: {"type": "adaptive"}` in API calls
+- **Adaptive thinking**: Models in `ADAPTIVE_THINKING_MODELS` get `thinking: {"type": "adaptive", "display": "summarized"}` in API calls
 - **Default model**: Set in `chat()` function signature and described in the `model` option description
 - **Tool updates**: When adding a new tool, update five places:
   1. `src/util.py` - `AVAILABLE_TOOLS` dict with the tool definition
@@ -31,8 +31,8 @@ A Discord bot wrapping Anthropic's Claude API using py-cord for Discord integrat
   5. `src/anthropic_api.py` - `_execute_tool()` dispatch (for client-side tools)
 - **Tool call flow**: `_call_api_with_tool_loop()` handles the response loop: `end_turn` = done, `pause_turn` = re-send to continue, `tool_use` = execute client-side tool and re-send. Models in `COMPACTION_MODELS` use the beta API with server-side compaction (`compact-2026-01-12`) to automatically summarize context when approaching limits
 - **Context editing**: All API calls with tools or thinking use the `context-management-2025-06-27` beta for server-side context editing. `clear_tool_uses_20250919` clears old tool results when input exceeds 50k tokens (keeps last 5). `clear_thinking_20251015` clears old thinking blocks (keeps last 2 turns). Thinking clearing must come before tool clearing in the edits array
-- **Prompt caching**: All API calls use `cache_control={"type": "ephemeral"}` for automatic prompt caching. The system caches the growing conversation prefix, reducing costs (cache reads are 10% of base input price) and latency on multi-turn conversations
-- **Cost calculation**: `calculate_cost()` accounts for cache write tokens (1.25x base input price) and cache read tokens (0.1x base input price) in addition to regular input/output tokens. The pricing embed shows cache hit counts when present
+- **Prompt caching**: All API calls use `cache_control={"type": "ephemeral", "ttl": CACHE_TTL}` with a 1-hour TTL (`CACHE_TTL` in `src/util.py`) for extended prompt caching. The longer TTL keeps caches warm across Discord conversation pauses, reducing costs (cache reads are 10% of base input price) and latency on multi-turn conversations
+- **Cost calculation**: `calculate_cost()` accounts for cache write tokens (2x base input price for 1h TTL) and cache read tokens (0.1x base input price) in addition to regular input/output tokens. The pricing embed shows cache hit counts when present
 - **Embed ordering**: All embeds (thinking, response, citations, cost) are sent in a single message. The ButtonView (buttons + tool select) attaches to that same message and renders below all embeds. On each new turn, `_strip_previous_view()` removes buttons from the previous turn's message via `last_view_messages` tracking
 - **Multi-turn with tools**: Assistant messages are stored as full `response.content` blocks (not plain text) to preserve encrypted server tool data for citations across turns
 - **Memory tool**: Client-side tool storing files in `./memories/{user_discord_id}/` with path traversal protection

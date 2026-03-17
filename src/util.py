@@ -5,6 +5,8 @@ from discord import Member, User
 
 CHUNK_TEXT_SIZE = 3500  # Maximum number of characters in each text chunk.
 
+CACHE_TTL = "1h"  # 1-hour TTL for prompt caching (2x base input price for writes)
+
 # Models that support adaptive thinking
 ADAPTIVE_THINKING_MODELS = {"claude-opus-4-6", "claude-sonnet-4-6"}
 
@@ -65,13 +67,13 @@ def calculate_cost(
 ) -> float:
     """Calculate the cost in dollars for a given model and token usage.
 
-    Cache write tokens cost 1.25x base input price; cache read tokens cost 0.1x.
+    Cache write tokens cost 2x base input price (1h TTL); cache read tokens cost 0.1x.
     """
     input_price, output_price = MODEL_PRICING.get(model, (15.0, 75.0))
     return (
         (input_tokens / 1_000_000) * input_price
         + (output_tokens / 1_000_000) * output_price
-        + (cache_creation_tokens / 1_000_000) * input_price * 1.25
+        + (cache_creation_tokens / 1_000_000) * input_price * 2.0
         + (cache_read_tokens / 1_000_000) * input_price * 0.10
     )
 

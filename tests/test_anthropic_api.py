@@ -943,7 +943,7 @@ class TestCallApiWithToolLoop:
         call_kwargs = cog.client.beta.messages.create.call_args[1]
         assert "compact-2026-01-12" in call_kwargs["betas"]
         assert {"type": "compact_20260112"} in call_kwargs["context_management"]["edits"]
-        assert call_kwargs["cache_control"] == {"type": "ephemeral"}
+        assert call_kwargs["cache_control"] == {"type": "ephemeral", "ttl": "1h"}
 
     @pytest.mark.asyncio
     async def test_non_compaction_model_uses_regular_api(self, cog):
@@ -967,7 +967,7 @@ class TestCallApiWithToolLoop:
         assert parsed.text == "Hello!"
         cog.client.messages.create.assert_called_once()
         call_kwargs = cog.client.messages.create.call_args[1]
-        assert call_kwargs["cache_control"] == {"type": "ephemeral"}
+        assert call_kwargs["cache_control"] == {"type": "ephemeral", "ttl": "1h"}
 
     @pytest.mark.asyncio
     async def test_context_editing_with_tools(self, cog):
