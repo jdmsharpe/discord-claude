@@ -34,7 +34,6 @@ class TestExtractResponseContent:
         assert parsed.text == "Hello!"
         assert parsed.thinking == ""
         assert parsed.citations == []
-        assert parsed.has_tool_use is False
 
     def test_thinking_and_text(self):
         """Response with thinking and text blocks."""
@@ -242,12 +241,11 @@ class TestExtractResponseContent:
         response.content = [text_block, tool_block]
 
         parsed = extract_response_content(response)
-        assert parsed.has_tool_use is True
         assert len(parsed.tool_use_blocks) == 1
         assert parsed.tool_use_blocks[0].name == "memory"
 
     def test_server_tool_blocks_skipped(self):
-        """Server-side tool blocks don't appear in text but raw_content preserves them."""
+        """Server-side tool blocks don't appear in text or tool_use_blocks."""
         from src.anthropic_api import extract_response_content
 
         response = MagicMock()
@@ -263,8 +261,7 @@ class TestExtractResponseContent:
 
         parsed = extract_response_content(response)
         assert parsed.text == "Here are the results."
-        assert parsed.has_tool_use is False
-        assert len(parsed.raw_content) == 3
+        assert len(parsed.tool_use_blocks) == 0
 
 
 class TestAppendThinkingEmbeds:

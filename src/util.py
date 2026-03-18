@@ -84,16 +84,6 @@ def calculate_cost(
     )
 
 
-# Claude models
-CLAUDE_MODELS = [
-    "claude-opus-4-6",
-    "claude-sonnet-4-6",
-    "claude-opus-4-5",
-    "claude-sonnet-4-5",
-    "claude-opus-4-1",
-    "claude-haiku-4-5",
-]
-
 
 @dataclass
 class ChatCompletionParameters:
@@ -111,31 +101,7 @@ class ChatCompletionParameters:
     effort: str | None = None
     thinking_budget: int | None = None
     paused: bool | None = False
-    messages: list[dict[str, Any]] = field(default_factory=list)
     tools: list[str] = field(default_factory=list)
-
-    def to_dict(self) -> dict[str, Any]:
-        """Convert to dictionary for API calls."""
-        payload: dict[str, Any] = {
-            "model": self.model,
-            "max_tokens": self.max_tokens,
-            "messages": self.messages,
-        }
-        if self.system:
-            payload["system"] = self.system
-        if self.temperature is not None:
-            payload["temperature"] = self.temperature
-        if self.top_p is not None:
-            payload["top_p"] = self.top_p
-        if self.top_k is not None:
-            payload["top_k"] = self.top_k
-        if self.effort is not None:
-            payload["effort"] = self.effort
-        if self.tools:
-            payload["tools"] = [
-                AVAILABLE_TOOLS[t] for t in self.tools if t in AVAILABLE_TOOLS
-            ]
-        return payload
 
 
 @dataclass
