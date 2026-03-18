@@ -463,8 +463,8 @@ class TestAppendPricingEmbed:
         append_pricing_embed(embeds, "claude-sonnet-4-6", parsed, daily_cost=0.50)
         assert len(embeds) == 1
         desc = embeds[0].description
-        assert "1,000 in" in desc
-        assert "500 out" in desc
+        assert "1,000 tokens in" in desc
+        assert "500 tokens out" in desc
         assert "daily $0.50" in desc
 
     def test_pricing_embed_with_cache_hits(self):
