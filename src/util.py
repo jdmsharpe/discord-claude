@@ -49,13 +49,16 @@ AVAILABLE_TOOLS: dict[str, dict[str, Any]] = {
 
 # Per-million-token pricing: (input_cost, output_cost)
 MODEL_PRICING: dict[str, tuple[float, float]] = {
-    "claude-opus-4-6": (15.0, 75.0),
-    "claude-opus-4-5": (15.0, 75.0),
+    "claude-opus-4-6": (5.0, 25.0),
+    "claude-opus-4-5": (5.0, 25.0),
     "claude-opus-4-1": (15.0, 75.0),
     "claude-sonnet-4-6": (3.0, 15.0),
     "claude-sonnet-4-5": (3.0, 15.0),
-    "claude-haiku-4-5": (0.80, 4.0),
+    "claude-haiku-4-5": (1.0, 5.0),
 }
+
+# Server tool pricing
+WEB_SEARCH_COST_PER_REQUEST = 0.01  # $10 per 1,000 searches
 
 
 def calculate_cost(
@@ -64,10 +67,12 @@ def calculate_cost(
     output_tokens: int,
     cache_creation_tokens: int = 0,
     cache_read_tokens: int = 0,
+    web_search_requests: int = 0,
 ) -> float:
     """Calculate the cost in dollars for a given model and token usage.
 
     Cache write tokens cost 2x base input price (1h TTL); cache read tokens cost 0.1x.
+    Web search requests cost $0.01 each ($10 per 1,000 searches).
     """
     input_price, output_price = MODEL_PRICING.get(model, (15.0, 75.0))
     return (
@@ -75,6 +80,7 @@ def calculate_cost(
         + (output_tokens / 1_000_000) * output_price
         + (cache_creation_tokens / 1_000_000) * input_price * 2.0
         + (cache_read_tokens / 1_000_000) * input_price * 0.10
+        + web_search_requests * WEB_SEARCH_COST_PER_REQUEST
     )
 
 

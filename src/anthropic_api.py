@@ -33,7 +33,6 @@ from util import (
     CACHE_TTL,
     COMPACTION_MODELS,
     EXTENDED_THINKING_MODELS,
-    MODEL_PRICING,
     ChatCompletionParameters,
     Conversation,
     calculate_cost,
@@ -127,6 +126,9 @@ class ParsedResponse:
     output_tokens: int = 0
     cache_creation_tokens: int = 0
     cache_read_tokens: int = 0
+    web_search_requests: int = 0
+    web_fetch_requests: int = 0
+    code_execution_requests: int = 0
 
 
 def extract_response_content(response) -> ParsedResponse:
@@ -342,19 +344,24 @@ def append_stop_reason_embed(embeds: list[Embed], stop_reason: str) -> None:
 def append_pricing_embed(
     embeds: list[Embed],
     model: str,
-    input_tokens: int,
-    output_tokens: int,
+    parsed: "ParsedResponse",
     daily_cost: float,
-    cache_creation_tokens: int = 0,
-    cache_read_tokens: int = 0,
 ) -> None:
     """Append a compact pricing embed showing cost and token usage."""
     cost = calculate_cost(
-        model, input_tokens, output_tokens, cache_creation_tokens, cache_read_tokens
+        model, parsed.input_tokens, parsed.output_tokens,
+        parsed.cache_creation_tokens, parsed.cache_read_tokens,
+        parsed.web_search_requests,
     )
-    parts = [f"${cost:.4f} · {input_tokens:,} tokens in / {output_tokens:,} tokens out"]
-    if cache_read_tokens:
-        parts.append(f"{cache_read_tokens:,} cached")
+    parts = [f"${cost:.4f} · {parsed.input_tokens:,} in / {parsed.output_tokens:,} out"]
+    if parsed.cache_read_tokens:
+        parts.append(f"{parsed.cache_read_tokens:,} cached")
+    if parsed.web_search_requests:
+        parts.append(f"{parsed.web_search_requests} search{'es' if parsed.web_search_requests != 1 else ''}")
+    if parsed.web_fetch_requests:
+        parts.append(f"{parsed.web_fetch_requests} fetch{'es' if parsed.web_fetch_requests != 1 else ''}")
+    if parsed.code_execution_requests:
+        parts.append(f"{parsed.code_execution_requests} code exec{'s' if parsed.code_execution_requests != 1 else ''}")
     parts.append(f"daily ${daily_cost:.2f}")
     embeds.append(Embed(description=" · ".join(parts), color=Colour.orange()))
 
@@ -414,17 +421,29 @@ class AnthropicAPI(commands.Cog):
         self,
         user_id: int,
         model: str,
-        input_tokens: int,
-        output_tokens: int,
-        cache_creation_tokens: int = 0,
-        cache_read_tokens: int = 0,
+        parsed: "ParsedResponse",
     ) -> float:
-        """Add this request's cost to the user's daily total and return the new daily total."""
+        """Add this request's cost to the user's daily total, log it, and return the new daily total."""
         cost = calculate_cost(
-            model, input_tokens, output_tokens, cache_creation_tokens, cache_read_tokens
+            model, parsed.input_tokens, parsed.output_tokens,
+            parsed.cache_creation_tokens, parsed.cache_read_tokens,
+            parsed.web_search_requests,
         )
         key = (user_id, date.today().isoformat())
         self.daily_costs[key] = self.daily_costs.get(key, 0.0) + cost
+
+        self.logger.info(
+            "COST | user=%s model=%s input=%d output=%d "
+            "cache_write=%d cache_read=%d "
+            "web_searches=%d web_fetches=%d code_execs=%d "
+            "request_cost=$%.4f daily_total=$%.4f",
+            user_id, model, parsed.input_tokens, parsed.output_tokens,
+            parsed.cache_creation_tokens, parsed.cache_read_tokens,
+            parsed.web_search_requests, parsed.web_fetch_requests,
+            parsed.code_execution_requests,
+            cost, self.daily_costs[key],
+        )
+
         return self.daily_costs[key]
 
     async def _fetch_attachment_bytes(self, attachment: Attachment) -> bytes | None:
@@ -523,6 +542,9 @@ class AnthropicAPI(commands.Cog):
         total_output_tokens = 0
         total_cache_creation_tokens = 0
         total_cache_read_tokens = 0
+        total_web_search_requests = 0
+        total_web_fetch_requests = 0
+        total_code_execution_requests = 0
 
         for iteration in range(max_iterations):
             api_params["messages"] = messages
@@ -548,6 +570,12 @@ class AnthropicAPI(commands.Cog):
                 total_output_tokens += getattr(usage, "output_tokens", 0)
                 total_cache_creation_tokens += getattr(usage, "cache_creation_input_tokens", 0) or 0
                 total_cache_read_tokens += getattr(usage, "cache_read_input_tokens", 0) or 0
+                # Accumulate server tool use counts
+                server_tool_use = getattr(usage, "server_tool_use", None)
+                if server_tool_use:
+                    total_web_search_requests += getattr(server_tool_use, "web_search_requests", 0) or 0
+                    total_web_fetch_requests += getattr(server_tool_use, "web_fetch_requests", 0) or 0
+                    total_code_execution_requests += getattr(server_tool_use, "code_execution_requests", 0) or 0
 
             if response.stop_reason == "end_turn":
                 messages.append(
@@ -557,6 +585,9 @@ class AnthropicAPI(commands.Cog):
                 parsed.output_tokens = total_output_tokens
                 parsed.cache_creation_tokens = total_cache_creation_tokens
                 parsed.cache_read_tokens = total_cache_read_tokens
+                parsed.web_search_requests = total_web_search_requests
+                parsed.web_fetch_requests = total_web_fetch_requests
+                parsed.code_execution_requests = total_code_execution_requests
                 return parsed
 
             elif response.stop_reason == "pause_turn":
@@ -609,6 +640,9 @@ class AnthropicAPI(commands.Cog):
                 parsed.output_tokens = total_output_tokens
                 parsed.cache_creation_tokens = total_cache_creation_tokens
                 parsed.cache_read_tokens = total_cache_read_tokens
+                parsed.web_search_requests = total_web_search_requests
+                parsed.web_fetch_requests = total_web_fetch_requests
+                parsed.code_execution_requests = total_code_execution_requests
                 return parsed
 
         self.logger.warning(
@@ -618,6 +652,9 @@ class AnthropicAPI(commands.Cog):
         parsed.output_tokens = total_output_tokens
         parsed.cache_creation_tokens = total_cache_creation_tokens
         parsed.cache_read_tokens = total_cache_read_tokens
+        parsed.web_search_requests = total_web_search_requests
+        parsed.web_fetch_requests = total_web_fetch_requests
+        parsed.code_execution_requests = total_code_execution_requests
         return parsed
 
     async def _execute_tool(
@@ -742,16 +779,10 @@ class AnthropicAPI(commands.Cog):
 
             append_citations_embed(embeds, parsed.citations)
             daily_cost = self._track_daily_cost(
-                message.author.id, params.model,
-                parsed.input_tokens, parsed.output_tokens,
-                parsed.cache_creation_tokens, parsed.cache_read_tokens,
+                message.author.id, params.model, parsed,
             )
             if SHOW_COST_EMBEDS:
-                append_pricing_embed(
-                    embeds, params.model,
-                    parsed.input_tokens, parsed.output_tokens, daily_cost,
-                    parsed.cache_creation_tokens, parsed.cache_read_tokens,
-                )
+                append_pricing_embed(embeds, params.model, parsed, daily_cost)
 
             main_conversation_id = conversation.params.conversation_id
 
@@ -1179,16 +1210,10 @@ class AnthropicAPI(commands.Cog):
 
             append_citations_embed(embeds, parsed.citations)
             daily_cost = self._track_daily_cost(
-                ctx.author.id, model,
-                parsed.input_tokens, parsed.output_tokens,
-                parsed.cache_creation_tokens, parsed.cache_read_tokens,
+                ctx.author.id, model, parsed,
             )
             if SHOW_COST_EMBEDS:
-                append_pricing_embed(
-                    embeds, model,
-                    parsed.input_tokens, parsed.output_tokens, daily_cost,
-                    parsed.cache_creation_tokens, parsed.cache_read_tokens,
-                )
+                append_pricing_embed(embeds, model, parsed, daily_cost)
 
             if len(embeds) == 1:
                 await ctx.send_followup("No response generated.")
