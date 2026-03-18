@@ -118,9 +118,7 @@ class ParsedResponse:
     text: str = ""
     thinking: str = ""
     citations: list[dict[str, str]] = field(default_factory=list)
-    has_tool_use: bool = False
     tool_use_blocks: list[Any] = field(default_factory=list)
-    raw_content: list[Any] = field(default_factory=list)
     stop_reason: str = "end_turn"
     input_tokens: int = 0
     output_tokens: int = 0
@@ -202,9 +200,7 @@ def extract_response_content(response) -> ParsedResponse:
         text=response_text,
         thinking=thinking_text,
         citations=citations,
-        has_tool_use=len(tool_use_blocks) > 0,
         tool_use_blocks=tool_use_blocks,
-        raw_content=response.content,
     )
 
 
@@ -389,8 +385,6 @@ class AnthropicAPI(commands.Cog):
 
         # Dictionary to store conversation state for each chat interaction
         self.conversations: dict[int, Conversation] = {}
-        # Dictionary to map any message ID to the main conversation ID for tracking
-        self.message_to_conversation_id: dict[int, int] = {}
         # Dictionary to store UI views for each conversation
         self.views = {}
         # Last message with a ButtonView attached, keyed by user — used to strip old buttons
@@ -798,9 +792,6 @@ class AnthropicAPI(commands.Cog):
             if embeds:
                 try:
                     reply_message = await message.reply(embeds=embeds, view=view)
-                    self.message_to_conversation_id[reply_message.id] = (
-                        main_conversation_id
-                    )
                     self.last_view_messages[message.author] = reply_message
                 except Exception as embed_error:
                     self.logger.warning(f"Embed failed, sending as text: {embed_error}")
@@ -808,9 +799,6 @@ class AnthropicAPI(commands.Cog):
                     reply_message = await message.reply(
                         content=f"**Response:**\n{safe_response_text[:1900]}{'...' if len(safe_response_text) > 1900 else ''}",
                         view=view,
-                    )
-                    self.message_to_conversation_id[reply_message.id] = (
-                        main_conversation_id
                     )
                     self.last_view_messages[message.author] = reply_message
 
@@ -1233,7 +1221,6 @@ class AnthropicAPI(commands.Cog):
             self.views[ctx.author] = view
 
             message = await ctx.send_followup(embeds=embeds, view=view)
-            self.message_to_conversation_id[message.id] = main_conversation_id
             self.last_view_messages[ctx.author] = message
 
             # Store the conversation details
