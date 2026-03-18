@@ -353,7 +353,7 @@ def append_pricing_embed(
         parsed.cache_creation_tokens, parsed.cache_read_tokens,
         parsed.web_search_requests,
     )
-    parts = [f"${cost:.4f} · {parsed.input_tokens:,} in / {parsed.output_tokens:,} out"]
+    parts = [f"${cost:.4f} · {parsed.input_tokens:,} tokens in / {parsed.output_tokens:,} tokens out"]
     if parsed.cache_read_tokens:
         parts.append(f"{parsed.cache_read_tokens:,} cached")
     if parsed.web_search_requests:
