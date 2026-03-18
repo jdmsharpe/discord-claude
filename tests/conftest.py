@@ -35,12 +35,7 @@ def mock_anthropic_client():
         mock_response.id = "msg_01XFDUDYJgAACzvnptvVoYEL"
         mock_response.model = "claude-sonnet-4"
         mock_response.stop_reason = "end_turn"
-        mock_response.usage = MagicMock(
-            input_tokens=10,
-            output_tokens=15,
-            cache_creation_input_tokens=0,
-            cache_read_input_tokens=0,
-        )
+        mock_response.usage = make_mock_usage()
 
         client.messages.create = AsyncMock(return_value=mock_response)
 
@@ -114,6 +109,32 @@ def sample_api_response():
     }
 
 
+def make_mock_usage(
+    input_tokens=10,
+    output_tokens=15,
+    cache_creation_input_tokens=0,
+    cache_read_input_tokens=0,
+    web_search_requests=0,
+    web_fetch_requests=0,
+    code_execution_requests=0,
+):
+    """Create a mock usage object with proper numeric values and server_tool_use."""
+    server_tool_use = None
+    if web_search_requests or web_fetch_requests or code_execution_requests:
+        server_tool_use = MagicMock(
+            web_search_requests=web_search_requests,
+            web_fetch_requests=web_fetch_requests,
+            code_execution_requests=code_execution_requests,
+        )
+    return MagicMock(
+        input_tokens=input_tokens,
+        output_tokens=output_tokens,
+        cache_creation_input_tokens=cache_creation_input_tokens,
+        cache_read_input_tokens=cache_read_input_tokens,
+        server_tool_use=server_tool_use,
+    )
+
+
 @pytest.fixture
 def mock_tool_use_response():
     """Mock response with a client-side tool_use block (memory)."""
@@ -129,6 +150,7 @@ def mock_tool_use_response():
     tool_block.input = {"command": "view", "path": "/memories"}
     response.content = [text_block, tool_block]
     response.stop_reason = "tool_use"
+    response.usage = make_mock_usage()
     return response
 
 
@@ -156,4 +178,5 @@ def mock_web_search_response():
 
     response.content = [server_block, result_block, text_block]
     response.stop_reason = "end_turn"
+    response.usage = make_mock_usage(web_search_requests=1)
     return response

@@ -264,6 +264,46 @@ class TestCalculateCost:
         )
         assert cost == pytest.approx(4.50)
 
+    def test_opus_4_6_pricing(self):
+        """Opus 4.6 uses $5/MTok input, $25/MTok output."""
+        cost = calculate_cost("claude-opus-4-6", 1_000_000, 1_000_000)
+        assert cost == 30.0  # $5 + $25
+
+    def test_opus_4_5_pricing(self):
+        """Opus 4.5 uses $5/MTok input, $25/MTok output."""
+        cost = calculate_cost("claude-opus-4-5", 1_000_000, 1_000_000)
+        assert cost == 30.0  # $5 + $25
+
+    def test_opus_4_1_pricing(self):
+        """Opus 4.1 uses $15/MTok input, $75/MTok output."""
+        cost = calculate_cost("claude-opus-4-1", 1_000_000, 1_000_000)
+        assert cost == 90.0  # $15 + $75
+
+    def test_haiku_4_5_pricing(self):
+        """Haiku 4.5 uses $1/MTok input, $5/MTok output."""
+        cost = calculate_cost("claude-haiku-4-5", 1_000_000, 1_000_000)
+        assert cost == 6.0  # $1 + $5
+
+    def test_web_search_cost(self):
+        """Web search requests cost $0.01 each."""
+        cost = calculate_cost("claude-sonnet-4-6", 0, 0, web_search_requests=1)
+        assert cost == pytest.approx(0.01)
+
+    def test_web_search_cost_multiple(self):
+        """Multiple web search requests accumulate."""
+        cost = calculate_cost("claude-sonnet-4-6", 0, 0, web_search_requests=5)
+        assert cost == pytest.approx(0.05)
+
+    def test_web_search_with_tokens(self):
+        """Web search cost combines with token costs."""
+        cost = calculate_cost(
+            "claude-sonnet-4-6",
+            input_tokens=1_000_000,  # $3.00
+            output_tokens=100_000,   # $1.50
+            web_search_requests=3,   # $0.03
+        )
+        assert cost == pytest.approx(4.53)
+
     def test_unknown_model_uses_default(self):
         """Unknown model should use default pricing."""
         cost = calculate_cost("unknown-model", 1_000_000, 0)

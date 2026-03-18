@@ -3,6 +3,19 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 
+def _make_usage(**kwargs):
+    """Create a mock usage object with proper numeric values and server_tool_use=None."""
+    defaults = {
+        "input_tokens": 10,
+        "output_tokens": 15,
+        "cache_creation_input_tokens": 0,
+        "cache_read_input_tokens": 0,
+        "server_tool_use": None,
+    }
+    defaults.update(kwargs)
+    return MagicMock(**defaults)
+
+
 class TestExtractResponseContent:
     """Tests for the extract_response_content helper."""
 
@@ -419,6 +432,101 @@ class TestAppendStopReasonEmbed:
         assert len(embeds) == 0
 
 
+class TestAppendPricingEmbed:
+    """Tests for the append_pricing_embed helper."""
+
+    def _make_parsed(self, **kwargs):
+        """Create a ParsedResponse with given token/tool counts."""
+        from src.anthropic_api import ParsedResponse
+
+        defaults = {
+            "input_tokens": 1000,
+            "output_tokens": 500,
+            "cache_creation_tokens": 0,
+            "cache_read_tokens": 0,
+            "web_search_requests": 0,
+            "web_fetch_requests": 0,
+            "code_execution_requests": 0,
+        }
+        defaults.update(kwargs)
+        parsed = ParsedResponse()
+        for k, v in defaults.items():
+            setattr(parsed, k, v)
+        return parsed
+
+    def test_basic_pricing_embed(self):
+        """Basic embed shows cost, token counts, and daily total."""
+        from src.anthropic_api import append_pricing_embed
+
+        embeds = []
+        parsed = self._make_parsed(input_tokens=1000, output_tokens=500)
+        append_pricing_embed(embeds, "claude-sonnet-4-6", parsed, daily_cost=0.50)
+        assert len(embeds) == 1
+        desc = embeds[0].description
+        assert "1,000 in" in desc
+        assert "500 out" in desc
+        assert "daily $0.50" in desc
+
+    def test_pricing_embed_with_cache_hits(self):
+        """Cache hits are shown when present."""
+        from src.anthropic_api import append_pricing_embed
+
+        embeds = []
+        parsed = self._make_parsed(cache_read_tokens=5000)
+        append_pricing_embed(embeds, "claude-sonnet-4-6", parsed, daily_cost=0.10)
+        assert "5,000 cached" in embeds[0].description
+
+    def test_pricing_embed_with_web_searches(self):
+        """Web search count is shown when present."""
+        from src.anthropic_api import append_pricing_embed
+
+        embeds = []
+        parsed = self._make_parsed(web_search_requests=3)
+        append_pricing_embed(embeds, "claude-sonnet-4-6", parsed, daily_cost=0.10)
+        assert "3 searches" in embeds[0].description
+
+    def test_pricing_embed_single_search_no_plural(self):
+        """Single web search uses singular form."""
+        from src.anthropic_api import append_pricing_embed
+
+        embeds = []
+        parsed = self._make_parsed(web_search_requests=1)
+        append_pricing_embed(embeds, "claude-sonnet-4-6", parsed, daily_cost=0.10)
+        assert "1 search" in embeds[0].description
+        assert "searches" not in embeds[0].description
+
+    def test_pricing_embed_with_web_fetches(self):
+        """Web fetch count is shown when present."""
+        from src.anthropic_api import append_pricing_embed
+
+        embeds = []
+        parsed = self._make_parsed(web_fetch_requests=2)
+        append_pricing_embed(embeds, "claude-sonnet-4-6", parsed, daily_cost=0.10)
+        assert "2 fetches" in embeds[0].description
+
+    def test_pricing_embed_with_code_execution(self):
+        """Code execution count is shown when present."""
+        from src.anthropic_api import append_pricing_embed
+
+        embeds = []
+        parsed = self._make_parsed(code_execution_requests=1)
+        append_pricing_embed(embeds, "claude-sonnet-4-6", parsed, daily_cost=0.10)
+        assert "1 code exec" in embeds[0].description
+        assert "execs" not in embeds[0].description
+
+    def test_pricing_embed_no_server_tools_hidden(self):
+        """Server tool counts are hidden when zero."""
+        from src.anthropic_api import append_pricing_embed
+
+        embeds = []
+        parsed = self._make_parsed()
+        append_pricing_embed(embeds, "claude-sonnet-4-6", parsed, daily_cost=0.10)
+        desc = embeds[0].description
+        assert "search" not in desc
+        assert "fetch" not in desc
+        assert "code exec" not in desc
+
+
 class TestAnthropicAPIIntegration:
     """Integration tests for the Anthropic API client (mocked)."""
 
@@ -527,6 +635,7 @@ class TestAnthropicAPICog:
             mock_response.content = [text_block]
             mock_response.id = "msg_test123"
             mock_response.stop_reason = "end_turn"
+            mock_response.usage = _make_usage()
             mock_client.messages.create = AsyncMock(return_value=mock_response)
             mock_client_class.return_value = mock_client
 
@@ -1040,7 +1149,7 @@ class TestCallApiWithToolLoop:
         pause_text.citations = None
         pause_response.content = [pause_text]
         pause_response.stop_reason = "pause_turn"
-        pause_response.usage = MagicMock(
+        pause_response.usage = _make_usage(
             input_tokens=100, output_tokens=50,
             cache_creation_input_tokens=200, cache_read_input_tokens=0,
         )
@@ -1052,7 +1161,7 @@ class TestCallApiWithToolLoop:
         final_text.citations = None
         final_response.content = [final_text]
         final_response.stop_reason = "end_turn"
-        final_response.usage = MagicMock(
+        final_response.usage = _make_usage(
             input_tokens=50, output_tokens=30,
             cache_creation_input_tokens=0, cache_read_input_tokens=200,
         )
@@ -1072,3 +1181,80 @@ class TestCallApiWithToolLoop:
         assert parsed.output_tokens == 80
         assert parsed.cache_creation_tokens == 200
         assert parsed.cache_read_tokens == 200
+
+    @pytest.mark.asyncio
+    async def test_server_tool_use_accumulated(self, cog):
+        """Server tool use counts are accumulated across iterations."""
+        # First iteration: pause_turn with 2 web searches
+        pause_response = MagicMock()
+        pause_text = MagicMock()
+        pause_text.type = "text"
+        pause_text.text = "Searching..."
+        pause_text.citations = None
+        pause_response.content = [pause_text]
+        pause_response.stop_reason = "pause_turn"
+        server_tool_use_1 = MagicMock(
+            web_search_requests=2, web_fetch_requests=1, code_execution_requests=0,
+        )
+        pause_response.usage = MagicMock(
+            input_tokens=100, output_tokens=50,
+            cache_creation_input_tokens=0, cache_read_input_tokens=0,
+            server_tool_use=server_tool_use_1,
+        )
+
+        # Second iteration: end_turn with 1 more web search
+        final_response = MagicMock()
+        final_text = MagicMock()
+        final_text.type = "text"
+        final_text.text = "Found results!"
+        final_text.citations = None
+        final_response.content = [final_text]
+        final_response.stop_reason = "end_turn"
+        server_tool_use_2 = MagicMock(
+            web_search_requests=1, web_fetch_requests=0, code_execution_requests=1,
+        )
+        final_response.usage = MagicMock(
+            input_tokens=200, output_tokens=100,
+            cache_creation_input_tokens=0, cache_read_input_tokens=0,
+            server_tool_use=server_tool_use_2,
+        )
+
+        cog.client.messages.create = AsyncMock(
+            side_effect=[pause_response, final_response]
+        )
+
+        messages = [{"role": "user", "content": "Search for something"}]
+        api_params = {"model": "claude-haiku-4-5", "max_tokens": 1024}
+
+        parsed = await cog._call_api_with_tool_loop(
+            api_params=api_params, messages=messages, user_id=123
+        )
+
+        assert parsed.web_search_requests == 3
+        assert parsed.web_fetch_requests == 1
+        assert parsed.code_execution_requests == 1
+
+    @pytest.mark.asyncio
+    async def test_server_tool_use_none_handled(self, cog):
+        """Responses without server_tool_use don't break accumulation."""
+        mock_response = MagicMock()
+        text_block = MagicMock()
+        text_block.type = "text"
+        text_block.text = "Hello!"
+        text_block.citations = None
+        mock_response.content = [text_block]
+        mock_response.stop_reason = "end_turn"
+        mock_response.usage = _make_usage()
+
+        cog.client.messages.create = AsyncMock(return_value=mock_response)
+
+        messages = [{"role": "user", "content": "Hi"}]
+        api_params = {"model": "claude-sonnet-4", "max_tokens": 1024}
+
+        parsed = await cog._call_api_with_tool_loop(
+            api_params=api_params, messages=messages, user_id=123
+        )
+
+        assert parsed.web_search_requests == 0
+        assert parsed.web_fetch_requests == 0
+        assert parsed.code_execution_requests == 0
