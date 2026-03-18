@@ -457,7 +457,7 @@ class TestAppendPricingEmbed:
 
         embeds = []
         parsed = self._make_parsed(input_tokens=1000, output_tokens=500)
-        append_pricing_embed(embeds, "claude-sonnet-4-6", parsed, daily_cost=0.50)
+        append_pricing_embed(embeds, parsed, request_cost=0.01, daily_cost=0.50)
         assert len(embeds) == 1
         desc = embeds[0].description
         assert "1,000 tokens in" in desc
@@ -470,7 +470,7 @@ class TestAppendPricingEmbed:
 
         embeds = []
         parsed = self._make_parsed(cache_read_tokens=5000)
-        append_pricing_embed(embeds, "claude-sonnet-4-6", parsed, daily_cost=0.10)
+        append_pricing_embed(embeds, parsed, request_cost=0.01, daily_cost=0.10)
         assert "5,000 cached" in embeds[0].description
 
     def test_pricing_embed_with_web_searches(self):
@@ -479,7 +479,7 @@ class TestAppendPricingEmbed:
 
         embeds = []
         parsed = self._make_parsed(web_search_requests=3)
-        append_pricing_embed(embeds, "claude-sonnet-4-6", parsed, daily_cost=0.10)
+        append_pricing_embed(embeds, parsed, request_cost=0.01, daily_cost=0.10)
         assert "3 searches" in embeds[0].description
 
     def test_pricing_embed_single_search_no_plural(self):
@@ -488,7 +488,7 @@ class TestAppendPricingEmbed:
 
         embeds = []
         parsed = self._make_parsed(web_search_requests=1)
-        append_pricing_embed(embeds, "claude-sonnet-4-6", parsed, daily_cost=0.10)
+        append_pricing_embed(embeds, parsed, request_cost=0.01, daily_cost=0.10)
         assert "1 search" in embeds[0].description
         assert "searches" not in embeds[0].description
 
@@ -498,7 +498,7 @@ class TestAppendPricingEmbed:
 
         embeds = []
         parsed = self._make_parsed(web_fetch_requests=2)
-        append_pricing_embed(embeds, "claude-sonnet-4-6", parsed, daily_cost=0.10)
+        append_pricing_embed(embeds, parsed, request_cost=0.01, daily_cost=0.10)
         assert "2 fetches" in embeds[0].description
 
     def test_pricing_embed_with_code_execution(self):
@@ -507,7 +507,7 @@ class TestAppendPricingEmbed:
 
         embeds = []
         parsed = self._make_parsed(code_execution_requests=1)
-        append_pricing_embed(embeds, "claude-sonnet-4-6", parsed, daily_cost=0.10)
+        append_pricing_embed(embeds, parsed, request_cost=0.01, daily_cost=0.10)
         assert "1 code exec" in embeds[0].description
         assert "execs" not in embeds[0].description
 
@@ -517,7 +517,7 @@ class TestAppendPricingEmbed:
 
         embeds = []
         parsed = self._make_parsed()
-        append_pricing_embed(embeds, "claude-sonnet-4-6", parsed, daily_cost=0.10)
+        append_pricing_embed(embeds, parsed, request_cost=0.01, daily_cost=0.10)
         desc = embeds[0].description
         assert "search" not in desc
         assert "fetch" not in desc
