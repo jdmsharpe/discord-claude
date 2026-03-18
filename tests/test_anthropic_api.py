@@ -683,6 +683,28 @@ class TestAnthropicAPICog:
         assert user not in cog.last_view_messages
 
     @pytest.mark.asyncio
+    async def test_cleanup_conversation_strips_view_and_removes_state(self, cog):
+        """_cleanup_conversation strips the view and removes it from self.views."""
+        user = MagicMock()
+        old_message = AsyncMock()
+        cog.last_view_messages[user] = old_message
+        cog.views[user] = MagicMock()
+
+        await cog._cleanup_conversation(user)
+
+        old_message.edit.assert_awaited_once_with(view=None)
+        assert user not in cog.last_view_messages
+        assert user not in cog.views
+
+    @pytest.mark.asyncio
+    async def test_cleanup_conversation_no_prior_state(self, cog):
+        """_cleanup_conversation is a no-op when there's no prior state."""
+        user = MagicMock()
+        await cog._cleanup_conversation(user)
+        assert user not in cog.last_view_messages
+        assert user not in cog.views
+
+    @pytest.mark.asyncio
     async def test_chat_creates_conversation(
         self, cog, mock_discord_context, mock_anthropic_client
     ):

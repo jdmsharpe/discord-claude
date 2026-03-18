@@ -406,6 +406,11 @@ class AnthropicAPI(commands.Cog):
             except Exception as e:
                 self.logger.debug("Failed to strip previous view: %s", e)
 
+    async def _cleanup_conversation(self, user) -> None:
+        """Remove button view from the last message and clean up view state."""
+        await self._strip_previous_view(user)
+        self.views.pop(user, None)
+
     def _track_daily_cost(
         self,
         user_id: int,
@@ -816,9 +821,14 @@ class AnthropicAPI(commands.Cog):
             )
             if len(description) > 4000:
                 description = description[:4000] + "\n\n... (error message truncated)"
+            await self._cleanup_conversation(message.author)
             await message.reply(
                 embed=Embed(title="Error", description=description, color=Colour.red())
             )
+            # Remove the conversation so stale state doesn't linger
+            conv_id = conversation.params.conversation_id
+            if conv_id is not None:
+                self.conversations.pop(conv_id, None)
 
         finally:
             if typing_task:
@@ -1246,6 +1256,7 @@ class AnthropicAPI(commands.Cog):
                 f"Error in chat: {description}",
                 exc_info=True,
             )
+            await self._cleanup_conversation(ctx.author)
             await ctx.send_followup(
                 embed=Embed(title="Error", description=description, color=Colour.red())
             )
