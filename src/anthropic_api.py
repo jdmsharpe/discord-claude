@@ -427,10 +427,11 @@ class AnthropicAPI(commands.Cog):
         self.daily_costs[key] = self.daily_costs.get(key, 0.0) + cost
 
         self.logger.info(
-            "COST | user=%s model=%s input=%d output=%d "
-            "cache_write=%d cache_read=%d "
-            "web_searches=%d web_fetches=%d code_execs=%d "
-            "request_cost=$%.4f daily_total=$%.4f",
+            "COST | command=chat | user=%s | model=%s"
+            " | input=%d | output=%d"
+            " | cache_write=%d | cache_read=%d"
+            " | web_searches=%d | web_fetches=%d | code_execs=%d"
+            " | cost=$%.4f | daily=$%.4f",
             user_id, model, parsed.input_tokens, parsed.output_tokens,
             parsed.cache_creation_tokens, parsed.cache_read_tokens,
             parsed.web_search_requests, parsed.web_fetch_requests,
