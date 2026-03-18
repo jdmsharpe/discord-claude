@@ -339,17 +339,12 @@ def append_stop_reason_embed(embeds: list[Embed], stop_reason: str) -> None:
 
 def append_pricing_embed(
     embeds: list[Embed],
-    model: str,
     parsed: "ParsedResponse",
+    request_cost: float,
     daily_cost: float,
 ) -> None:
     """Append a compact pricing embed showing cost and token usage."""
-    cost = calculate_cost(
-        model, parsed.input_tokens, parsed.output_tokens,
-        parsed.cache_creation_tokens, parsed.cache_read_tokens,
-        parsed.web_search_requests,
-    )
-    parts = [f"${cost:.4f} · {parsed.input_tokens:,} tokens in / {parsed.output_tokens:,} tokens out"]
+    parts = [f"${request_cost:.4f} · {parsed.input_tokens:,} tokens in / {parsed.output_tokens:,} tokens out"]
     if parsed.cache_read_tokens:
         parts.append(f"{parsed.cache_read_tokens:,} cached")
     if parsed.web_search_requests:
@@ -408,16 +403,16 @@ class AnthropicAPI(commands.Cog):
         if prev is not None:
             try:
                 await prev.edit(view=None)
-            except Exception:
-                pass
+            except Exception as e:
+                self.logger.debug("Failed to strip previous view: %s", e)
 
     def _track_daily_cost(
         self,
         user_id: int,
         model: str,
         parsed: "ParsedResponse",
-    ) -> float:
-        """Add this request's cost to the user's daily total, log it, and return the new daily total."""
+    ) -> tuple[float, float]:
+        """Add this request's cost to the user's daily total, log it, and return (request_cost, daily_total)."""
         cost = calculate_cost(
             model, parsed.input_tokens, parsed.output_tokens,
             parsed.cache_creation_tokens, parsed.cache_read_tokens,
@@ -439,7 +434,7 @@ class AnthropicAPI(commands.Cog):
             cost, self.daily_costs[key],
         )
 
-        return self.daily_costs[key]
+        return cost, self.daily_costs[key]
 
     async def _fetch_attachment_bytes(self, attachment: Attachment) -> bytes | None:
         session = await self._get_http_session()
@@ -773,11 +768,11 @@ class AnthropicAPI(commands.Cog):
             append_stop_reason_embed(embeds, parsed.stop_reason)
 
             append_citations_embed(embeds, parsed.citations)
-            daily_cost = self._track_daily_cost(
+            request_cost, daily_cost = self._track_daily_cost(
                 message.author.id, params.model, parsed,
             )
             if SHOW_COST_EMBEDS:
-                append_pricing_embed(embeds, params.model, parsed, daily_cost)
+                append_pricing_embed(embeds, parsed, request_cost, daily_cost)
 
             main_conversation_id = conversation.params.conversation_id
 
@@ -1198,11 +1193,11 @@ class AnthropicAPI(commands.Cog):
             append_stop_reason_embed(embeds, parsed.stop_reason)
 
             append_citations_embed(embeds, parsed.citations)
-            daily_cost = self._track_daily_cost(
+            request_cost, daily_cost = self._track_daily_cost(
                 ctx.author.id, model, parsed,
             )
             if SHOW_COST_EMBEDS:
-                append_pricing_embed(embeds, model, parsed, daily_cost)
+                append_pricing_embed(embeds, parsed, request_cost, daily_cost)
 
             if len(embeds) == 1:
                 await ctx.send_followup("No response generated.")
