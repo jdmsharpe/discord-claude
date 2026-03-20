@@ -950,7 +950,7 @@ class AnthropicAPI(commands.Cog):
     )
     @option(
         "attachment",
-        description="Attach an image (JPEG, PNG, GIF, WEBP), a PDF, or a text file (TXT, MD, CSV).",
+        description="Attach an image (JPEG, PNG, GIF, WEBP), a PDF, a text document, or a code file.",
         required=False,
         type=Attachment,
     )
