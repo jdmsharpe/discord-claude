@@ -1,5 +1,5 @@
 aiohttp~=3.13
-anthropic~=0.85
+anthropic~=0.86
 py-cord~=2.7
 pytest~=9.0
 pytest-asyncio~=1.3

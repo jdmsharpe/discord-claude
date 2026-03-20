@@ -29,9 +29,10 @@ AVAILABLE_TOOLS: dict[str, dict[str, Any]] = {
         "max_uses": 5,
     },
     "web_fetch": {
-        "type": "web_fetch_20260209",
+        "type": "web_fetch_20260309",
         "name": "web_fetch",
         "max_uses": 5,
+        "use_cache": False,
     },
     "code_execution": {
         "type": "code_execution_20250825",
