@@ -816,6 +816,7 @@ class TestCallApiWithToolLoop:
         text_block.citations = None
         mock_response.content = [text_block]
         mock_response.stop_reason = "end_turn"
+        mock_response.usage = None
         cog.client.messages.create = AsyncMock(return_value=mock_response)
 
         messages = [{"role": "user", "content": "Hi"}]
@@ -840,6 +841,7 @@ class TestCallApiWithToolLoop:
         pause_text.citations = None
         pause_response.content = [pause_text]
         pause_response.stop_reason = "pause_turn"
+        pause_response.usage = None
 
         final_response = MagicMock()
         final_text = MagicMock()
@@ -848,6 +850,7 @@ class TestCallApiWithToolLoop:
         final_text.citations = None
         final_response.content = [final_text]
         final_response.stop_reason = "end_turn"
+        final_response.usage = None
 
         cog.client.messages.create = AsyncMock(
             side_effect=[pause_response, final_response]
@@ -879,6 +882,7 @@ class TestCallApiWithToolLoop:
         tool_block.input = {"command": "view", "path": "/memories"}
         tool_response.content = [tool_text, tool_block]
         tool_response.stop_reason = "tool_use"
+        tool_response.usage = None
 
         # Second response: end_turn
         final_response = MagicMock()
@@ -888,6 +892,7 @@ class TestCallApiWithToolLoop:
         final_text.citations = None
         final_response.content = [final_text]
         final_response.stop_reason = "end_turn"
+        final_response.usage = None
 
         cog.client.messages.create = AsyncMock(
             side_effect=[tool_response, final_response]
@@ -924,6 +929,7 @@ class TestCallApiWithToolLoop:
         tool_block.input = {"command": "echo hello"}
         tool_response.content = [tool_text, tool_block]
         tool_response.stop_reason = "tool_use"
+        tool_response.usage = None
 
         # Second response: end_turn
         final_response = MagicMock()
@@ -933,6 +939,7 @@ class TestCallApiWithToolLoop:
         final_text.citations = None
         final_response.content = [final_text]
         final_response.stop_reason = "end_turn"
+        final_response.usage = None
 
         cog.client.messages.create = AsyncMock(
             side_effect=[tool_response, final_response]
@@ -967,6 +974,7 @@ class TestCallApiWithToolLoop:
         pause_text.citations = None
         pause_response.content = [pause_text]
         pause_response.stop_reason = "pause_turn"
+        pause_response.usage = None
 
         cog.client.messages.create = AsyncMock(return_value=pause_response)
 
@@ -992,6 +1000,7 @@ class TestCallApiWithToolLoop:
         text_block.citations = None
         mock_response.content = [text_block]
         mock_response.stop_reason = "max_tokens"
+        mock_response.usage = None
         cog.client.messages.create = AsyncMock(return_value=mock_response)
 
         messages = [{"role": "user", "content": "Write a long essay"}]
@@ -1015,6 +1024,7 @@ class TestCallApiWithToolLoop:
         text_block.citations = None
         mock_response.content = [text_block]
         mock_response.stop_reason = "refusal"
+        mock_response.usage = None
         cog.client.messages.create = AsyncMock(return_value=mock_response)
 
         messages = [{"role": "user", "content": "Bad request"}]
@@ -1036,6 +1046,7 @@ class TestCallApiWithToolLoop:
         text_block.citations = None
         mock_response.content = [text_block]
         mock_response.stop_reason = "model_context_window_exceeded"
+        mock_response.usage = None
         cog.client.messages.create = AsyncMock(return_value=mock_response)
 
         messages = [{"role": "user", "content": "Very long conversation"}]
@@ -1057,6 +1068,7 @@ class TestCallApiWithToolLoop:
         text_block.citations = None
         mock_response.content = [text_block]
         mock_response.stop_reason = "end_turn"
+        mock_response.usage = None
         cog.client.beta.messages.create = AsyncMock(return_value=mock_response)
 
         messages = [{"role": "user", "content": "Hi"}]
@@ -1083,6 +1095,7 @@ class TestCallApiWithToolLoop:
         text_block.citations = None
         mock_response.content = [text_block]
         mock_response.stop_reason = "end_turn"
+        mock_response.usage = None
         cog.client.messages.create = AsyncMock(return_value=mock_response)
 
         messages = [{"role": "user", "content": "Hi"}]
@@ -1107,6 +1120,7 @@ class TestCallApiWithToolLoop:
         text_block.citations = None
         mock_response.content = [text_block]
         mock_response.stop_reason = "end_turn"
+        mock_response.usage = None
         cog.client.beta.messages.create = AsyncMock(return_value=mock_response)
 
         messages = [{"role": "user", "content": "Hi"}]
@@ -1137,6 +1151,7 @@ class TestCallApiWithToolLoop:
         text_block.citations = None
         mock_response.content = [text_block]
         mock_response.stop_reason = "end_turn"
+        mock_response.usage = None
         cog.client.beta.messages.create = AsyncMock(return_value=mock_response)
 
         messages = [{"role": "user", "content": "Hi"}]
@@ -1277,3 +1292,194 @@ class TestCallApiWithToolLoop:
         assert parsed.web_search_requests == 0
         assert parsed.web_fetch_requests == 0
         assert parsed.code_execution_requests == 0
+
+    @pytest.mark.asyncio
+    async def test_context_warning_at_85_percent(self, cog):
+        """context_warning is set when input tokens exceed 85% of context window."""
+        mock_response = MagicMock()
+        text_block = MagicMock()
+        text_block.type = "text"
+        text_block.text = "Response."
+        text_block.citations = None
+        mock_response.content = [text_block]
+        mock_response.stop_reason = "end_turn"
+        # 175k tokens is 87.5% of 200k — should trigger warning
+        mock_response.usage = _make_usage(input_tokens=175_000, output_tokens=500)
+        cog.client.messages.create = AsyncMock(return_value=mock_response)
+
+        messages = [{"role": "user", "content": "Hi"}]
+        api_params = {"model": "claude-haiku-4-5", "max_tokens": 1024}
+
+        parsed = await cog._call_api_with_tool_loop(
+            api_params=api_params, messages=messages, user_id=123
+        )
+
+        assert parsed.context_warning is True
+        assert parsed.context_compacted is False
+
+    @pytest.mark.asyncio
+    async def test_no_context_warning_below_threshold(self, cog):
+        """context_warning is not set when input tokens are below 85%."""
+        mock_response = MagicMock()
+        text_block = MagicMock()
+        text_block.type = "text"
+        text_block.text = "Response."
+        text_block.citations = None
+        mock_response.content = [text_block]
+        mock_response.stop_reason = "end_turn"
+        # 50k tokens is 25% of 200k — should NOT trigger warning
+        mock_response.usage = _make_usage(input_tokens=50_000, output_tokens=500)
+        cog.client.messages.create = AsyncMock(return_value=mock_response)
+
+        messages = [{"role": "user", "content": "Hi"}]
+        api_params = {"model": "claude-haiku-4-5", "max_tokens": 1024}
+
+        parsed = await cog._call_api_with_tool_loop(
+            api_params=api_params, messages=messages, user_id=123
+        )
+
+        assert parsed.context_warning is False
+
+    @pytest.mark.asyncio
+    async def test_manual_compaction_triggers_at_75_percent(self, cog):
+        """Non-compaction models trigger manual compaction when tokens exceed 75%."""
+        # First response: pause_turn with 155k tokens (77.5% > 75% threshold)
+        pause_response = MagicMock()
+        pause_text = MagicMock()
+        pause_text.type = "text"
+        pause_text.text = "Working..."
+        pause_text.citations = None
+        pause_response.content = [pause_text]
+        pause_response.stop_reason = "pause_turn"
+        pause_response.usage = _make_usage(input_tokens=155_000, output_tokens=200)
+
+        # Second response: end_turn (after compaction reduced context)
+        final_response = MagicMock()
+        final_text = MagicMock()
+        final_text.type = "text"
+        final_text.text = "Done!"
+        final_text.citations = None
+        final_response.content = [final_text]
+        final_response.stop_reason = "end_turn"
+        final_response.usage = _make_usage(input_tokens=2_000, output_tokens=100)
+
+        # Summary response for _compact_conversation
+        summary_response = MagicMock()
+        summary_text = MagicMock()
+        summary_text.type = "text"
+        summary_text.text = "<summary>Conversation summary here.</summary>"
+        summary_response.content = [summary_text]
+
+        cog.client.messages.create = AsyncMock(
+            side_effect=[pause_response, summary_response, final_response]
+        )
+
+        messages = [
+            {"role": "user", "content": "Hi"},
+            {"role": "assistant", "content": "Hello!"},
+            {"role": "user", "content": "Continue"},
+        ]
+        api_params = {"model": "claude-haiku-4-5", "max_tokens": 1024}
+
+        parsed = await cog._call_api_with_tool_loop(
+            api_params=api_params, messages=messages, user_id=123
+        )
+
+        assert parsed.context_compacted is True
+        assert parsed.text == "Done!"
+        # 3 API calls: original, compaction summary, post-compaction
+        assert cog.client.messages.create.call_count == 3
+
+    @pytest.mark.asyncio
+    async def test_compaction_model_skips_manual_compaction(self, cog):
+        """Compaction models (server-side) never trigger manual compaction."""
+        mock_response = MagicMock()
+        text_block = MagicMock()
+        text_block.type = "text"
+        text_block.text = "Hello!"
+        text_block.citations = None
+        mock_response.content = [text_block]
+        mock_response.stop_reason = "end_turn"
+        # High token count, but server-side compaction handles it
+        mock_response.usage = _make_usage(input_tokens=180_000, output_tokens=500)
+        cog.client.beta.messages.create = AsyncMock(return_value=mock_response)
+
+        messages = [{"role": "user", "content": "Hi"}]
+        api_params = {"model": "claude-sonnet-4-6", "max_tokens": 1024}
+
+        parsed = await cog._call_api_with_tool_loop(
+            api_params=api_params, messages=messages, user_id=123
+        )
+
+        assert parsed.context_compacted is False
+        # Warning still fires since 180k > 85% of 200k
+        assert parsed.context_warning is True
+        # Only 1 API call (no compaction call)
+        cog.client.beta.messages.create.assert_called_once()
+
+
+class TestContextEmbeds:
+    """Tests for context warning and compaction embed helpers."""
+
+    def test_context_warning_embed(self):
+        from src.anthropic_api import append_context_warning_embed
+
+        embeds = []
+        append_context_warning_embed(embeds)
+        assert len(embeds) == 1
+        assert embeds[0].title == "Context Window Warning"
+        assert "85%" in embeds[0].description
+
+    def test_compaction_embed(self):
+        from src.anthropic_api import append_compaction_embed
+
+        embeds = []
+        append_compaction_embed(embeds)
+        assert len(embeds) == 1
+        assert embeds[0].title == "Context Compacted"
+        assert "summarized" in embeds[0].description
+
+
+class TestToolHandlerRegistry:
+    """Tests for the tool handler registry pattern."""
+
+    @pytest.fixture
+    def cog(self, mock_bot):
+        with patch("anthropic.AsyncAnthropic"):
+            from src.anthropic_api import AnthropicAPI
+            return AnthropicAPI(bot=mock_bot)
+
+    @pytest.mark.asyncio
+    async def test_memory_tool_dispatches(self, cog):
+        """Memory tool is dispatched via the registry."""
+        with patch("src.anthropic_api.execute_memory_operation") as mock_exec:
+            mock_exec.return_value = "Memory result."
+            result = await cog._execute_tool(
+                "memory", {"command": "view", "path": "/memories"}, user_id=123
+            )
+        assert result == "Memory result."
+        mock_exec.assert_called_once_with(
+            user_id=123, tool_input={"command": "view", "path": "/memories"},
+        )
+
+    @pytest.mark.asyncio
+    async def test_bash_tool_dispatches(self, cog):
+        """Bash tool is dispatched via the registry."""
+        with patch("src.anthropic_api.execute_bash_command", new_callable=AsyncMock) as mock_bash:
+            mock_bash.return_value = "hello\n"
+            result = await cog._execute_tool(
+                "bash", {"command": "echo hello"}, user_id=123
+            )
+        assert result == "hello\n"
+
+    @pytest.mark.asyncio
+    async def test_bash_restart_handled(self, cog):
+        """Bash restart command returns restart message."""
+        result = await cog._execute_tool("bash", {"restart": True}, user_id=123)
+        assert result == "Bash session restarted."
+
+    @pytest.mark.asyncio
+    async def test_unknown_tool_returns_error(self, cog):
+        """Unknown tool names return an error string."""
+        result = await cog._execute_tool("nonexistent", {}, user_id=123)
+        assert "Error: Unknown tool" in result

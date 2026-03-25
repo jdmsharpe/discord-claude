@@ -13,7 +13,7 @@ A Discord bot that wraps Anthropic's Claude API, providing an easy-to-use interf
 - **Tools**: Enable web search, web fetch, code execution, memory, and bash — toggleable mid-conversation
 - **Citations**: Web search and document citations displayed as a separate Sources embed
 - **Prompt caching**: Automatic prompt caching reduces costs (cache reads at 10% of input price) and latency on multi-turn conversations
-- **Context editing**: Server-side clearing of old tool results and thinking blocks to manage context growth in long conversations
+- **Context management**: Automatic compaction for non-compaction models at 75% context usage, server-side compaction for Opus/Sonnet 4.6, and an 85% context warning embed. Server-side clearing of old tool results and thinking blocks to manage context growth in long conversations
 - **Pricing display**: Per-request cost, token counts, cache hits, and daily spend shown as a separate embed after each response (configurable via `SHOW_COST_EMBEDS`)
 - **Conversation controls**: Pause, resume, regenerate responses, and end conversations with interactive buttons (previous turn's buttons are automatically removed)
 - **System prompts**: Customize Claude's behavior with system prompts
@@ -28,7 +28,7 @@ Start a conversation with Claude.
 **Parameters:**
 
 - `prompt` (required): Your initial message to Claude
-- `model`: Choose the Claude model (default: Claude Sonnet 4.6)
+- `model`: Choose the Claude model (default: Claude Opus 4.6)
 - `system`: System prompt to set Claude's behavior
 - `attachment`: Attach an image (JPEG, PNG, GIF, WEBP), a PDF, or a text file (TXT, MD, CSV)
 - `max_tokens`: Maximum tokens in the response (default: 16384)
