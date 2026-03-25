@@ -32,7 +32,11 @@ from util import (
     AVAILABLE_TOOLS,
     CACHE_TTL,
     COMPACTION_MODELS,
+    COMPACTION_SUMMARY_MODEL,
+    CONTEXT_COMPACTION_THRESHOLD,
+    CONTEXT_WARNING_THRESHOLD,
     EXTENDED_THINKING_MODELS,
+    MODEL_CONTEXT_WINDOWS,
     ChatCompletionParameters,
     Conversation,
     calculate_cost,
@@ -42,6 +46,16 @@ from util import (
 )
 
 # Supported attachment MIME types
+async def _execute_bash(tool_input: dict[str, Any]) -> str:
+    """Handle bash tool input, including restart and command execution."""
+    if tool_input.get("restart"):
+        return "Bash session restarted."
+    command = tool_input.get("command", "")
+    if not command:
+        return "Error: No command provided."
+    return await execute_bash_command(command)
+
+
 SUPPORTED_IMAGE_TYPES = {"image/jpeg", "image/png", "image/gif", "image/webp"}
 SUPPORTED_DOCUMENT_TYPES = {
     "application/pdf",
@@ -127,6 +141,8 @@ class ParsedResponse:
     web_search_requests: int = 0
     web_fetch_requests: int = 0
     code_execution_requests: int = 0
+    context_warning: bool = False
+    context_compacted: bool = False
 
 
 def extract_response_content(response) -> ParsedResponse:
@@ -337,6 +353,34 @@ def append_stop_reason_embed(embeds: list[Embed], stop_reason: str) -> None:
         )
 
 
+def append_context_warning_embed(embeds: list[Embed]) -> None:
+    """Append a warning embed when context usage exceeds 85% of the window."""
+    embeds.append(
+        Embed(
+            title="Context Window Warning",
+            description=(
+                "This conversation is using over 85% of the model's context window. "
+                "Consider starting a new conversation soon to avoid degraded responses."
+            ),
+            color=Colour.yellow(),
+        )
+    )
+
+
+def append_compaction_embed(embeds: list[Embed]) -> None:
+    """Append an info embed when context was automatically compacted."""
+    embeds.append(
+        Embed(
+            title="Context Compacted",
+            description=(
+                "This conversation's history was automatically summarized to stay "
+                "within the model's context window. Earlier details may be condensed."
+            ),
+            color=Colour.blue(),
+        )
+    )
+
+
 def append_pricing_embed(
     embeds: list[Embed],
     parsed: "ParsedResponse",
@@ -396,6 +440,57 @@ class AnthropicAPI(commands.Cog):
             if self._http_session is None or self._http_session.closed:
                 self._http_session = aiohttp.ClientSession()
             return self._http_session
+
+    async def _compact_conversation(
+        self,
+        messages: list[dict[str, Any]],
+        system: str | None = None,
+    ) -> str:
+        """Compact conversation history into a summary for non-compaction models.
+
+        Sends the current messages plus a summary prompt to a cheap model,
+        then replaces the messages list with just the summary.
+
+        Returns the generated summary text (for logging).
+        """
+        summary_prompt = (
+            "You are summarizing a conversation to allow it to continue in a fresh context window. "
+            "Write a concise continuation summary that preserves:\n\n"
+            "1. **Task/Topic**: The user's core request or discussion topic\n"
+            "2. **Key Context**: Important facts, decisions, and constraints established\n"
+            "3. **Current State**: What has been discussed/completed so far\n"
+            "4. **Next Steps**: What the user is likely to ask about next\n\n"
+            "Be concise but complete — preserve information that prevents repeated work. "
+            "Wrap your summary in <summary></summary> tags."
+        )
+
+        summary_messages = list(messages) + [
+            {"role": "user", "content": summary_prompt}
+        ]
+
+        create_kwargs: dict[str, Any] = {
+            "model": COMPACTION_SUMMARY_MODEL,
+            "max_tokens": 4096,
+            "messages": summary_messages,
+        }
+        if system:
+            create_kwargs["system"] = system
+
+        summary_response = await self.client.messages.create(**create_kwargs)
+
+        summary_text = "".join(
+            block.text for block in summary_response.content if block.type == "text"
+        )
+
+        # Replace messages in place with just the summary
+        messages.clear()
+        messages.append({"role": "user", "content": summary_text})
+
+        self.logger.info(
+            "Context compacted: conversation reduced to summary (%d chars)",
+            len(summary_text),
+        )
+        return summary_text
 
     async def _strip_previous_view(self, user) -> None:
         """Edit the last message that had buttons to remove its view."""
@@ -540,8 +635,27 @@ class AnthropicAPI(commands.Cog):
         total_web_search_requests = 0
         total_web_fetch_requests = 0
         total_code_execution_requests = 0
+        context_compacted = False
+
+        # Context window size for this model (used for threshold checks)
+        context_window = MODEL_CONTEXT_WINDOWS.get(model, 200_000)
 
         for iteration in range(max_iterations):
+            # Manual compaction for non-compaction models when approaching context limit
+            if (
+                not use_compaction
+                and total_input_tokens > context_window * CONTEXT_COMPACTION_THRESHOLD
+                and len(messages) > 1
+            ):
+                self.logger.info(
+                    "Input tokens (%d) exceeded %.0f%% of context window (%d), compacting...",
+                    total_input_tokens, CONTEXT_COMPACTION_THRESHOLD * 100, context_window,
+                )
+                await self._compact_conversation(
+                    messages, system=api_params.get("system"),
+                )
+                context_compacted = True
+
             api_params["messages"] = messages
             if betas:
                 response = await self.client.beta.messages.create(
@@ -583,6 +697,10 @@ class AnthropicAPI(commands.Cog):
                 parsed.web_search_requests = total_web_search_requests
                 parsed.web_fetch_requests = total_web_fetch_requests
                 parsed.code_execution_requests = total_code_execution_requests
+                parsed.context_compacted = context_compacted
+                parsed.context_warning = (
+                    total_input_tokens > context_window * CONTEXT_WARNING_THRESHOLD
+                )
                 return parsed
 
             elif response.stop_reason == "pause_turn":
@@ -638,6 +756,10 @@ class AnthropicAPI(commands.Cog):
                 parsed.web_search_requests = total_web_search_requests
                 parsed.web_fetch_requests = total_web_fetch_requests
                 parsed.code_execution_requests = total_code_execution_requests
+                parsed.context_compacted = context_compacted
+                parsed.context_warning = (
+                    total_input_tokens > context_window * CONTEXT_WARNING_THRESHOLD
+                )
                 return parsed
 
         self.logger.warning(
@@ -650,22 +772,32 @@ class AnthropicAPI(commands.Cog):
         parsed.web_search_requests = total_web_search_requests
         parsed.web_fetch_requests = total_web_fetch_requests
         parsed.code_execution_requests = total_code_execution_requests
+        parsed.context_compacted = context_compacted
+        parsed.context_warning = (
+            total_input_tokens > context_window * CONTEXT_WARNING_THRESHOLD
+        )
         return parsed
+
+    # Tool handler registry: maps tool name -> handler function.
+    # Handlers take (tool_input, user_id) and return a string (sync or async).
+    _tool_handlers: dict[str, Any] = {
+        "memory": lambda tool_input, user_id: execute_memory_operation(
+            user_id=user_id, tool_input=tool_input,
+        ),
+        "bash": lambda tool_input, _user_id: _execute_bash(tool_input),
+    }
 
     async def _execute_tool(
         self, tool_name: str, tool_input: dict[str, Any], user_id: int
     ) -> str:
-        """Execute a client-side tool and return the result string."""
-        if tool_name == "memory":
-            return execute_memory_operation(user_id=user_id, tool_input=tool_input)
-        if tool_name == "bash":
-            if tool_input.get("restart"):
-                return "Bash session restarted."
-            command = tool_input.get("command", "")
-            if not command:
-                return "Error: No command provided."
-            return await execute_bash_command(command)
-        return f"Error: Unknown tool '{tool_name}'"
+        """Execute a client-side tool via the handler registry."""
+        handler = self._tool_handlers.get(tool_name)
+        if handler is None:
+            return f"Error: Unknown tool '{tool_name}'"
+        result = handler(tool_input, user_id)
+        if asyncio.iscoroutine(result):
+            return await result
+        return result
 
     async def handle_new_message_in_conversation(
         self, message, conversation: Conversation
@@ -771,6 +903,10 @@ class AnthropicAPI(commands.Cog):
             append_thinking_embeds(embeds, thinking_text)
             append_response_embeds(embeds, response_text)
             append_stop_reason_embed(embeds, parsed.stop_reason)
+            if parsed.context_compacted:
+                append_compaction_embed(embeds)
+            if parsed.context_warning:
+                append_context_warning_embed(embeds)
 
             append_citations_embed(embeds, parsed.citations)
             request_cost, daily_cost = self._track_daily_cost(
@@ -1201,6 +1337,10 @@ class AnthropicAPI(commands.Cog):
             append_thinking_embeds(embeds, thinking_text)
             append_response_embeds(embeds, response_text)
             append_stop_reason_embed(embeds, parsed.stop_reason)
+            if parsed.context_compacted:
+                append_compaction_embed(embeds)
+            if parsed.context_warning:
+                append_context_warning_embed(embeds)
 
             append_citations_embed(embeds, parsed.citations)
             request_cost, daily_cost = self._track_daily_cost(

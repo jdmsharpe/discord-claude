@@ -13,6 +13,21 @@ ADAPTIVE_THINKING_MODELS = {"claude-opus-4-6", "claude-sonnet-4-6"}
 # Models that support server-side compaction (beta)
 COMPACTION_MODELS = {"claude-opus-4-6", "claude-sonnet-4-6"}
 
+# Context window sizes per model (input tokens)
+MODEL_CONTEXT_WINDOWS: dict[str, int] = {
+    "claude-opus-4-6": 200_000,
+    "claude-sonnet-4-6": 200_000,
+    "claude-opus-4-5": 200_000,
+    "claude-sonnet-4-5": 200_000,
+    "claude-opus-4-1": 200_000,
+    "claude-haiku-4-5": 200_000,
+}
+
+# Context management thresholds
+CONTEXT_WARNING_THRESHOLD = 0.85  # Show warning embed at 85% of context window
+CONTEXT_COMPACTION_THRESHOLD = 0.75  # Trigger manual compaction at 75% (non-compaction models)
+COMPACTION_SUMMARY_MODEL = "claude-haiku-4-5"  # Cheap model for generating summaries
+
 # Models that support manual extended thinking (type: "enabled" with budget_tokens)
 EXTENDED_THINKING_MODELS = {
     "claude-opus-4-5",

@@ -6,7 +6,7 @@ Discord bot wrapping Anthropic's Claude API using py-cord.
 
 - `src/bot.py` - Entry point; creates the Discord bot and loads the cog
 - `src/anthropic_api.py` - Main cog: slash commands, conversation handling, tool call loop, `ParsedResponse` dataclass
-- `src/util.py` - Constants (`ADAPTIVE_THINKING_MODELS`, `COMPACTION_MODELS`, `AVAILABLE_TOOLS`, `CACHE_TTL`), dataclasses, cost calculation
+- `src/util.py` - Constants (`ADAPTIVE_THINKING_MODELS`, `COMPACTION_MODELS`, `AVAILABLE_TOOLS`, `CACHE_TTL`, `MODEL_CONTEXT_WINDOWS`, thresholds), dataclasses, cost calculation
 - `src/button_view.py` - Discord UI buttons and tool select menu
 - `src/memory.py` - Client-side memory tool handler
 - `src/bash_tool.py` - Client-side bash tool handler
@@ -15,17 +15,20 @@ Discord bot wrapping Anthropic's Claude API using py-cord.
 
 ## Key Patterns
 
-- **Model updates** — update two places:
+- **Model updates** — update four places:
   1. `src/anthropic_api.py` - `OptionChoice` list in the `chat` command's `model` option
   2. `src/util.py` - `ADAPTIVE_THINKING_MODELS` set (if the model supports adaptive thinking)
+  3. `src/util.py` - `MODEL_CONTEXT_WINDOWS` dict (context window size for the model)
+  4. `src/util.py` - `MODEL_PRICING` dict (per-million-token pricing)
 - **Default model** — set in `chat()` signature and its `model` option description
 - **Tool updates** — update five places:
   1. `src/util.py` - `AVAILABLE_TOOLS` dict with the tool definition
   2. `src/anthropic_api.py` - Add `@option` decorator (bool) and parameter to `chat()`, append to `enabled_tools`
   3. `src/button_view.py` - `SelectOption` in `_add_tool_select()`
   4. `src/memory.py` or new handler module (for client-side tools)
-  5. `src/anthropic_api.py` - `_execute_tool()` dispatch (for client-side tools)
-- **Tool call flow** — `_call_api_with_tool_loop()`: `end_turn` = done, `pause_turn` = re-send, `tool_use` = execute and re-send. `COMPACTION_MODELS` use server-side compaction
+  5. `src/anthropic_api.py` - `_tool_handlers` registry (for client-side tools)
+- **Tool call flow** — `_call_api_with_tool_loop()`: `end_turn` = done, `pause_turn` = re-send, `tool_use` = execute via `_tool_handlers` registry and re-send. `COMPACTION_MODELS` use server-side compaction
+- **Context management** — 85% warning embed when approaching context window limit. Non-compaction models get automatic manual compaction at 75% via `_compact_conversation()` (uses Haiku for cheap summaries). `COMPACTION_MODELS` use server-side compaction instead
 - **Context editing** — `context-management-2025-06-27` beta with `clear_thinking` (keeps last 2 turns) then `clear_tool_uses` (keeps last 5) edits. Thinking clearing must come before tool clearing
 - **Prompt caching** — 1-hour TTL via `CACHE_TTL` for extended caching across Discord conversation pauses
 - **Cost** — `calculate_cost()` handles cache write (2x), cache read (0.1x), and web search pricing. `_track_daily_cost()` emits structured `COST |` log lines
