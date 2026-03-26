@@ -71,6 +71,8 @@ def execute_memory_operation(user_id: int, tool_input: dict[str, Any]) -> str:
             return _handle_delete(user_id, tool_input)
         elif command == "rename":
             return _handle_rename(user_id, tool_input)
+        else:
+            assert False, f"Unhandled command: {command}"
     except ValueError as e:
         return f"Error: {e}"
     except Exception as e:

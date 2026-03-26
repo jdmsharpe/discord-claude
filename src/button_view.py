@@ -1,5 +1,7 @@
+from __future__ import annotations
+
 import logging
-from typing import cast
+from typing import TYPE_CHECKING, cast
 
 from discord import (
     ButtonStyle,
@@ -11,15 +13,18 @@ from discord import (
 )
 from discord.ui import Button, Select, View, button
 
-from util import AVAILABLE_TOOLS
+from util import AVAILABLE_TOOLS, ConversationKey
+
+if TYPE_CHECKING:
+    from anthropic_api import AnthropicAPI
 
 
 class ButtonView(View):
     def __init__(
         self,
-        cog: "AnthropicAPI",
+        cog: AnthropicAPI,
         conversation_starter: Member | User,
-        conversation_id: int,
+        conversation_key: ConversationKey,
         initial_tools: list[str] | None = None,
     ):
         """
@@ -28,7 +33,7 @@ class ButtonView(View):
         super().__init__(timeout=None)
         self.cog = cog
         self.conversation_starter = conversation_starter
-        self.conversation_id = conversation_id
+        self.conversation_key = conversation_key
         self._add_tool_select(initial_tools)
 
     def _add_tool_select(self, initial_tools: list[str] | None = None) -> None:
@@ -91,7 +96,7 @@ class ButtonView(View):
             )
             return
 
-        conversation = self.cog.conversations.get(self.conversation_id)
+        conversation = self.cog.conversations.get(self.conversation_key)
         if conversation is None:
             await interaction.response.send_message(
                 "No active conversation found.", ephemeral=True
@@ -128,7 +133,7 @@ class ButtonView(View):
                 )
                 return
 
-            conversation = self.cog.conversations.get(self.conversation_id)
+            conversation = self.cog.conversations.get(self.conversation_key)
             if conversation is None:
                 await interaction.response.send_message(
                     "No active conversation found.", ephemeral=True
@@ -186,7 +191,7 @@ class ButtonView(View):
             )
 
             if removed_entries:
-                conversation = self.cog.conversations.get(self.conversation_id)
+                conversation = self.cog.conversations.get(self.conversation_key)
                 if conversation is not None:
                     conversation.messages.extend(removed_entries)
 
@@ -215,8 +220,8 @@ class ButtonView(View):
             return
 
         # Toggle the paused state
-        if self.conversation_id in self.cog.conversations:
-            conversation = self.cog.conversations[self.conversation_id]
+        if self.conversation_key in self.cog.conversations:
+            conversation = self.cog.conversations[self.conversation_key]
             conversation.params.paused = not conversation.params.paused
             status = "paused" if conversation.params.paused else "resumed"
             await interaction.response.send_message(
@@ -245,8 +250,8 @@ class ButtonView(View):
             return
 
         # End the conversation
-        if self.conversation_id in self.cog.conversations:
-            del self.cog.conversations[self.conversation_id]
+        if self.conversation_key in self.cog.conversations:
+            del self.cog.conversations[self.conversation_key]
             await self.cog._cleanup_conversation(self.conversation_starter)
             await interaction.response.send_message(
                 "Conversation ended.", ephemeral=True, delete_after=3

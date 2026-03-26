@@ -10,7 +10,7 @@ from typing import Any
 import aiohttp
 
 # Anthropic imports
-from anthropic import AsyncAnthropic
+from anthropic import APIConnectionError, APIError, AsyncAnthropic
 
 # Discord imports
 from discord import Attachment, Colour, Embed
@@ -31,29 +31,45 @@ from util import (
     ADAPTIVE_THINKING_MODELS,
     AVAILABLE_TOOLS,
     CACHE_TTL,
+    CITATION_EMBED_RESERVE,
     COMPACTION_MODELS,
     COMPACTION_SUMMARY_MODEL,
     CONTEXT_COMPACTION_THRESHOLD,
     CONTEXT_WARNING_THRESHOLD,
+    DISCORD_EMBED_TOTAL_LIMIT,
     EXTENDED_THINKING_MODELS,
     MODEL_CONTEXT_WINDOWS,
     ChatCompletionParameters,
     Conversation,
+    ConversationKey,
+    ToolHandler,
+    UsageTotals,
+    available_embed_space,
     calculate_cost,
     chunk_text,
     format_anthropic_error,
     truncate_text,
 )
 
-# Supported attachment MIME types
-async def _execute_bash(tool_input: dict[str, Any]) -> str:
-    """Handle bash tool input, including restart and command execution."""
-    if tool_input.get("restart"):
-        return "Bash session restarted."
-    command = tool_input.get("command", "")
-    if not command:
-        return "Error: No command provided."
-    return await execute_bash_command(command)
+# Tool handler implementations (satisfy ToolHandler Protocol)
+
+class MemoryToolHandler:
+    """Executes memory tool operations (sync, wrapped as async)."""
+
+    async def execute(self, tool_input: dict[str, Any], user_id: int) -> str:
+        return execute_memory_operation(user_id=user_id, tool_input=tool_input)
+
+
+class BashToolHandler:
+    """Executes bash tool operations."""
+
+    async def execute(self, tool_input: dict[str, Any], user_id: int) -> str:
+        if tool_input.get("restart"):
+            return "Bash session restarted."
+        command = tool_input.get("command", "")
+        if not command:
+            return "Error: No command provided."
+        return await execute_bash_command(command)
 
 
 SUPPORTED_IMAGE_TYPES = {"image/jpeg", "image/png", "image/gif", "image/webp"}
@@ -239,13 +255,7 @@ def append_thinking_embeds(embeds: list[Embed], thinking_text: str) -> None:
 
 def append_response_embeds(embeds: list[Embed], response_text: str) -> None:
     """Append response text as Discord embeds, handling chunking for long responses."""
-    # Discord enforces a 6000-char total across all embeds per message.
-    # Reserve 500 chars for a potential citations embed.
-    CITATION_RESERVE = 500
-    current_total = sum(
-        len(e.description or "") + len(e.title or "") for e in embeds
-    )
-    available = 6000 - current_total - CITATION_RESERVE
+    available = available_embed_space(embeds, reserve=CITATION_EMBED_RESERVE)
     if available < 50:
         return
 
@@ -304,10 +314,7 @@ def append_citations_embed(
     description = "\n\n".join(parts)
 
     # Respect Discord's embed limits
-    current_total = sum(
-        len(embed.description or "") + len(embed.title or "") for embed in embeds
-    )
-    remaining_chars = 6000 - current_total - len("Sources")
+    remaining_chars = available_embed_space(embeds, reserve=len("Sources"))
 
     if remaining_chars < 50:
         return
@@ -422,8 +429,8 @@ class AnthropicAPI(commands.Cog):
         )
         self.logger = logging.getLogger(__name__)
 
-        # Dictionary to store conversation state for each chat interaction
-        self.conversations: dict[int, Conversation] = {}
+        # Dictionary to store conversation state, keyed by (user_id, channel_id)
+        self.conversations: dict[ConversationKey, Conversation] = {}
         # Dictionary to store UI views for each conversation
         self.views = {}
         # Last message with a ButtonView attached, keyed by user — used to strip old buttons
@@ -628,40 +635,31 @@ class AnthropicAPI(commands.Cog):
             betas.append("compact-2026-01-12")
             edits.append({"type": "compact_20260112"})
 
-        total_input_tokens = 0
-        total_output_tokens = 0
-        total_cache_creation_tokens = 0
-        total_cache_read_tokens = 0
-        total_web_search_requests = 0
-        total_web_fetch_requests = 0
-        total_code_execution_requests = 0
-        context_compacted = False
-
-        # Context window size for this model (used for threshold checks)
+        totals = UsageTotals()
         context_window = MODEL_CONTEXT_WINDOWS.get(model, 200_000)
 
         for iteration in range(max_iterations):
             # Manual compaction for non-compaction models when approaching context limit
             if (
                 not use_compaction
-                and total_input_tokens > context_window * CONTEXT_COMPACTION_THRESHOLD
+                and totals.input_tokens > context_window * CONTEXT_COMPACTION_THRESHOLD
                 and len(messages) > 1
             ):
                 self.logger.info(
                     "Input tokens (%d) exceeded %.0f%% of context window (%d), compacting...",
-                    total_input_tokens, CONTEXT_COMPACTION_THRESHOLD * 100, context_window,
+                    totals.input_tokens, CONTEXT_COMPACTION_THRESHOLD * 100, context_window,
                 )
                 await self._compact_conversation(
                     messages, system=api_params.get("system"),
                 )
-                context_compacted = True
+                totals.context_compacted = True
 
             api_params["messages"] = messages
             if betas:
-                response = await self.client.beta.messages.create(
+                response = await self.client.beta.messages.create(  # type: ignore[call-overload]
                     **api_params,
                     betas=betas,
-                    context_management={"edits": edits} if edits else None,
+                    context_management={"edits": edits} if edits else None,  # type: ignore[arg-type]
                     cache_control={"type": "ephemeral", "ttl": CACHE_TTL},
                 )
             else:
@@ -671,36 +669,13 @@ class AnthropicAPI(commands.Cog):
                 )
             parsed = extract_response_content(response)
             parsed.stop_reason = response.stop_reason
-
-            # Accumulate token usage across iterations
-            usage = getattr(response, "usage", None)
-            if usage:
-                total_input_tokens += getattr(usage, "input_tokens", 0)
-                total_output_tokens += getattr(usage, "output_tokens", 0)
-                total_cache_creation_tokens += getattr(usage, "cache_creation_input_tokens", 0) or 0
-                total_cache_read_tokens += getattr(usage, "cache_read_input_tokens", 0) or 0
-                # Accumulate server tool use counts
-                server_tool_use = getattr(usage, "server_tool_use", None)
-                if server_tool_use:
-                    total_web_search_requests += getattr(server_tool_use, "web_search_requests", 0) or 0
-                    total_web_fetch_requests += getattr(server_tool_use, "web_fetch_requests", 0) or 0
-                    total_code_execution_requests += getattr(server_tool_use, "code_execution_requests", 0) or 0
+            totals.accumulate(getattr(response, "usage", None))
 
             if response.stop_reason == "end_turn":
                 messages.append(
                     {"role": "assistant", "content": response.content}
                 )
-                parsed.input_tokens = total_input_tokens
-                parsed.output_tokens = total_output_tokens
-                parsed.cache_creation_tokens = total_cache_creation_tokens
-                parsed.cache_read_tokens = total_cache_read_tokens
-                parsed.web_search_requests = total_web_search_requests
-                parsed.web_fetch_requests = total_web_fetch_requests
-                parsed.code_execution_requests = total_code_execution_requests
-                parsed.context_compacted = context_compacted
-                parsed.context_warning = (
-                    total_input_tokens > context_window * CONTEXT_WARNING_THRESHOLD
-                )
+                totals.apply_to(parsed, context_window)
                 return parsed
 
             elif response.stop_reason == "pause_turn":
@@ -749,42 +724,19 @@ class AnthropicAPI(commands.Cog):
                     self.logger.warning(
                         f"Unknown stop_reason: {response.stop_reason}"
                     )
-                parsed.input_tokens = total_input_tokens
-                parsed.output_tokens = total_output_tokens
-                parsed.cache_creation_tokens = total_cache_creation_tokens
-                parsed.cache_read_tokens = total_cache_read_tokens
-                parsed.web_search_requests = total_web_search_requests
-                parsed.web_fetch_requests = total_web_fetch_requests
-                parsed.code_execution_requests = total_code_execution_requests
-                parsed.context_compacted = context_compacted
-                parsed.context_warning = (
-                    total_input_tokens > context_window * CONTEXT_WARNING_THRESHOLD
-                )
+                totals.apply_to(parsed, context_window)
                 return parsed
 
         self.logger.warning(
             f"Tool loop hit max_iterations ({max_iterations})"
         )
-        parsed.input_tokens = total_input_tokens
-        parsed.output_tokens = total_output_tokens
-        parsed.cache_creation_tokens = total_cache_creation_tokens
-        parsed.cache_read_tokens = total_cache_read_tokens
-        parsed.web_search_requests = total_web_search_requests
-        parsed.web_fetch_requests = total_web_fetch_requests
-        parsed.code_execution_requests = total_code_execution_requests
-        parsed.context_compacted = context_compacted
-        parsed.context_warning = (
-            total_input_tokens > context_window * CONTEXT_WARNING_THRESHOLD
-        )
+        totals.apply_to(parsed, context_window)
         return parsed
 
-    # Tool handler registry: maps tool name -> handler function.
-    # Handlers take (tool_input, user_id) and return a string (sync or async).
-    _tool_handlers: dict[str, Any] = {
-        "memory": lambda tool_input, user_id: execute_memory_operation(
-            user_id=user_id, tool_input=tool_input,
-        ),
-        "bash": lambda tool_input, _user_id: _execute_bash(tool_input),
+    # Tool handler registry: maps tool name -> ToolHandler implementation.
+    _tool_handlers: dict[str, ToolHandler] = {
+        "memory": MemoryToolHandler(),
+        "bash": BashToolHandler(),
     }
 
     async def _execute_tool(
@@ -794,10 +746,43 @@ class AnthropicAPI(commands.Cog):
         handler = self._tool_handlers.get(tool_name)
         if handler is None:
             return f"Error: Unknown tool '{tool_name}'"
-        result = handler(tool_input, user_id)
-        if asyncio.iscoroutine(result):
-            return await result
-        return result
+        return await handler.execute(tool_input, user_id)
+
+    @staticmethod
+    def _build_api_params(
+        params: ChatCompletionParameters, messages: list[dict[str, Any]]
+    ) -> dict[str, Any]:
+        """Build the API parameter dict from ChatCompletionParameters."""
+        api_params: dict[str, Any] = {
+            "model": params.model,
+            "max_tokens": params.max_tokens,
+            "messages": messages,
+        }
+        if params.model in ADAPTIVE_THINKING_MODELS:
+            api_params["thinking"] = {"type": "adaptive", "display": "summarized"}
+        elif (
+            params.thinking_budget is not None
+            and params.model in EXTENDED_THINKING_MODELS
+        ):
+            api_params["thinking"] = {
+                "type": "enabled",
+                "budget_tokens": params.thinking_budget,
+            }
+        if params.effort is not None:
+            api_params["effort"] = params.effort
+        if params.system:
+            api_params["system"] = params.system
+        if params.temperature is not None:
+            api_params["temperature"] = params.temperature
+        if params.top_p is not None:
+            api_params["top_p"] = params.top_p
+        if params.top_k is not None:
+            api_params["top_k"] = params.top_k
+        if params.tools:
+            api_params["tools"] = [
+                AVAILABLE_TOOLS[t] for t in params.tools if t in AVAILABLE_TOOLS
+            ]
+        return api_params
 
     async def handle_new_message_in_conversation(
         self, message, conversation: Conversation
@@ -848,39 +833,7 @@ class AnthropicAPI(commands.Cog):
 
             self.logger.debug(f"Sending messages to Claude: {len(messages)} messages")
 
-            # Build API call parameters
-            api_params: dict[str, Any] = {
-                "model": params.model,
-                "max_tokens": params.max_tokens,
-                "messages": messages,
-            }
-            if params.model in ADAPTIVE_THINKING_MODELS:
-                api_params["thinking"] = {"type": "adaptive", "display": "summarized"}
-            elif (
-                params.thinking_budget is not None
-                and params.model in EXTENDED_THINKING_MODELS
-            ):
-                api_params["thinking"] = {
-                    "type": "enabled",
-                    "budget_tokens": params.thinking_budget,
-                }
-            if params.effort is not None:
-                api_params["effort"] = params.effort
-            if params.system:
-                api_params["system"] = params.system
-            if params.temperature is not None:
-                api_params["temperature"] = params.temperature
-            if params.top_p is not None:
-                api_params["top_p"] = params.top_p
-            if params.top_k is not None:
-                api_params["top_k"] = params.top_k
-            if params.tools:
-                api_params["tools"] = [
-                    AVAILABLE_TOOLS[t]
-                    for t in params.tools
-                    if t in AVAILABLE_TOOLS
-                ]
-
+            api_params = self._build_api_params(params, messages)
             parsed = await self._call_api_with_tool_loop(
                 api_params=api_params,
                 messages=messages,
@@ -949,7 +902,7 @@ class AnthropicAPI(commands.Cog):
                 self.last_view_messages[message.author] = reply_message
 
 
-        except Exception as e:
+        except (APIError, APIConnectionError, aiohttp.ClientError) as e:
             description = format_anthropic_error(e)
             self.logger.error(
                 f"Error in handle_new_message_in_conversation: {description}",
@@ -962,9 +915,8 @@ class AnthropicAPI(commands.Cog):
                 embed=Embed(title="Error", description=description, color=Colour.red())
             )
             # Remove the conversation so stale state doesn't linger
-            conv_id = conversation.params.conversation_id
-            if conv_id is not None:
-                self.conversations.pop(conv_id, None)
+            conv_key = (message.author.id, message.channel.id)
+            self.conversations.pop(conv_key, None)
 
         finally:
             if typing_task:
@@ -1020,21 +972,14 @@ class AnthropicAPI(commands.Cog):
             f"Received message from {message.author} in channel {message.channel.id}: '{message.content}'"
         )
 
-        # Check for active conversations in this channel
-        for conversation in self.conversations.values():
-            # Skip conversations that are not in the same channel
-            if message.channel.id != conversation.params.channel_id:
-                continue
-
-            # Skip if the message is not from the conversation starter
-            if message.author != conversation.params.conversation_starter:
-                continue
-
+        # Direct O(1) lookup for active conversation by (user_id, channel_id)
+        conv_key: ConversationKey = (message.author.id, message.channel.id)
+        conversation = self.conversations.get(conv_key)
+        if conversation is not None:
             self.logger.info(
                 f"Processing followup message for conversation {conversation.params.conversation_id}"
             )
             await self.handle_new_message_in_conversation(message, conversation)
-            break
 
     @commands.Cog.listener()
     async def on_error(self, event, *args, **kwargs):
@@ -1051,7 +996,10 @@ class AnthropicAPI(commands.Cog):
         """
         Checks and reports the bot's permissions in the current channel.
         """
-        permissions = ctx.channel.permissions_for(ctx.guild.me)
+        if ctx.guild is None or not hasattr(ctx.channel, "permissions_for"):
+            await ctx.respond("This command must be used in a server channel.")
+            return
+        permissions = ctx.channel.permissions_for(ctx.guild.me)  # type: ignore[union-attr]
         if permissions.read_messages and permissions.read_message_history:
             await ctx.respond(
                 "Bot has permission to read messages and message history."
@@ -1218,19 +1166,15 @@ class AnthropicAPI(commands.Cog):
             )
             return
 
-        for conv in self.conversations.values():
-            if (
-                conv.params.conversation_starter == ctx.author
-                and conv.params.channel_id == ctx.channel.id
-            ):
-                await ctx.send_followup(
-                    embed=Embed(
-                        title="Error",
-                        description="You already have an active conversation in this channel. Please finish it before starting a new one.",
-                        color=Colour.red(),
-                    )
+        if (ctx.author.id, ctx.channel.id) in self.conversations:
+            await ctx.send_followup(
+                embed=Embed(
+                    title="Error",
+                    description="You already have an active conversation in this channel. Please finish it before starting a new one.",
+                    color=Colour.red(),
                 )
-                return
+            )
+            return
 
         try:
             typing_task = asyncio.create_task(self.keep_typing(ctx.channel))
@@ -1266,34 +1210,23 @@ class AnthropicAPI(commands.Cog):
                 {"role": "user", "content": user_content}
             ]
 
-            # Build API call parameters
-            api_params: dict[str, Any] = {
-                "model": model,
-                "max_tokens": max_tokens,
-                "messages": conversation_messages,
-            }
-            if model in ADAPTIVE_THINKING_MODELS:
-                api_params["thinking"] = {"type": "adaptive", "display": "summarized"}
-            elif thinking_budget is not None and model in EXTENDED_THINKING_MODELS:
-                api_params["thinking"] = {
-                    "type": "enabled",
-                    "budget_tokens": thinking_budget,
-                }
-            if effort is not None:
-                api_params["effort"] = effort
-            if system:
-                api_params["system"] = system
-            if temperature is not None:
-                api_params["temperature"] = temperature
-            if top_p is not None:
-                api_params["top_p"] = top_p
-            if top_k is not None:
-                api_params["top_k"] = top_k
-            if enabled_tools:
-                api_params["tools"] = [
-                    AVAILABLE_TOOLS[t] for t in enabled_tools
-                ]
+            # Create params early so _build_api_params can use them
+            params = ChatCompletionParameters(
+                model=model,
+                system=system,
+                max_tokens=max_tokens,
+                temperature=temperature,
+                top_p=top_p,
+                top_k=top_k,
+                effort=effort,
+                thinking_budget=thinking_budget,
+                conversation_starter=ctx.author,
+                channel_id=ctx.channel.id,
+                conversation_id=ctx.interaction.id,
+                tools=enabled_tools,
+            )
 
+            api_params = self._build_api_params(params, conversation_messages)
             parsed = await self._call_api_with_tool_loop(
                 api_params=api_params,
                 messages=conversation_messages,
@@ -1357,11 +1290,11 @@ class AnthropicAPI(commands.Cog):
             await self._strip_previous_view(ctx.author)
 
             # Create the view with buttons and tool select menu
-            main_conversation_id = ctx.interaction.id
+            conv_key: ConversationKey = (ctx.author.id, ctx.channel.id)
             view = ButtonView(
                 cog=self,
                 conversation_starter=ctx.author,
-                conversation_id=main_conversation_id,
+                conversation_key=conv_key,
                 initial_tools=enabled_tools,
             )
             self.views[ctx.author] = view
@@ -1369,28 +1302,13 @@ class AnthropicAPI(commands.Cog):
             message = await ctx.send_followup(embeds=embeds, view=view)
             self.last_view_messages[ctx.author] = message
 
-            # Store the conversation details
-            # conversation_messages already contains all turns from the tool loop
-            params = ChatCompletionParameters(
-                model=model,
-                system=system,
-                max_tokens=max_tokens,
-                temperature=temperature,
-                top_p=top_p,
-                top_k=top_k,
-                effort=effort,
-                thinking_budget=thinking_budget,
-                conversation_starter=ctx.author,
-                channel_id=ctx.channel.id,
-                conversation_id=main_conversation_id,
-                tools=enabled_tools,
-            )
+            # Store the conversation (params already created above)
             conversation = Conversation(
                 params=params, messages=conversation_messages
             )
-            self.conversations[main_conversation_id] = conversation
+            self.conversations[conv_key] = conversation
 
-        except Exception as e:
+        except (APIError, APIConnectionError, aiohttp.ClientError) as e:
             description = format_anthropic_error(e)
             self.logger.error(
                 f"Error in chat: {description}",

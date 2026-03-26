@@ -1,9 +1,14 @@
+from unittest.mock import MagicMock
+
 import pytest
 
 from src.util import (
     CHUNK_TEXT_SIZE,
+    DISCORD_EMBED_TOTAL_LIMIT,
     ChatCompletionParameters,
     Conversation,
+    UsageTotals,
+    available_embed_space,
     calculate_cost,
     chunk_text,
     format_anthropic_error,
@@ -229,3 +234,103 @@ class TestCalculateCost:
         """Unknown model should use default pricing."""
         cost = calculate_cost("unknown-model", 1_000_000, 0)
         assert cost == 15.0  # Default input price
+
+
+class TestUsageTotals:
+    """Tests for the UsageTotals dataclass."""
+
+    def test_accumulate_basic(self):
+        """Basic token accumulation from a usage object."""
+        totals = UsageTotals()
+        usage = MagicMock(
+            input_tokens=100, output_tokens=50,
+            cache_creation_input_tokens=10, cache_read_input_tokens=20,
+            server_tool_use=None,
+        )
+        totals.accumulate(usage)
+        assert totals.input_tokens == 100
+        assert totals.output_tokens == 50
+        assert totals.cache_creation_tokens == 10
+        assert totals.cache_read_tokens == 20
+
+    def test_accumulate_multiple(self):
+        """Multiple accumulations add up."""
+        totals = UsageTotals()
+        usage1 = MagicMock(
+            input_tokens=100, output_tokens=50,
+            cache_creation_input_tokens=0, cache_read_input_tokens=0,
+            server_tool_use=None,
+        )
+        usage2 = MagicMock(
+            input_tokens=200, output_tokens=100,
+            cache_creation_input_tokens=0, cache_read_input_tokens=0,
+            server_tool_use=None,
+        )
+        totals.accumulate(usage1)
+        totals.accumulate(usage2)
+        assert totals.input_tokens == 300
+        assert totals.output_tokens == 150
+
+    def test_accumulate_none_is_noop(self):
+        """Accumulating None usage should not change totals."""
+        totals = UsageTotals()
+        totals.accumulate(None)
+        assert totals.input_tokens == 0
+
+    def test_accumulate_server_tool_use(self):
+        """Server tool use counts are accumulated."""
+        totals = UsageTotals()
+        server_tool_use = MagicMock(
+            web_search_requests=2, web_fetch_requests=1, code_execution_requests=0,
+        )
+        usage = MagicMock(
+            input_tokens=0, output_tokens=0,
+            cache_creation_input_tokens=0, cache_read_input_tokens=0,
+            server_tool_use=server_tool_use,
+        )
+        totals.accumulate(usage)
+        assert totals.web_search_requests == 2
+        assert totals.web_fetch_requests == 1
+        assert totals.code_execution_requests == 0
+
+    def test_apply_to_sets_all_fields(self):
+        """apply_to stamps all fields onto a target object."""
+        totals = UsageTotals(
+            input_tokens=100, output_tokens=50,
+            cache_creation_tokens=10, cache_read_tokens=20,
+            web_search_requests=1, web_fetch_requests=2,
+            code_execution_requests=3, context_compacted=True,
+        )
+        target = MagicMock()
+        totals.apply_to(target, context_window=200_000)
+        assert target.input_tokens == 100
+        assert target.output_tokens == 50
+        assert target.context_compacted is True
+        assert target.context_warning is False  # 100 < 200_000 * 0.85
+
+    def test_apply_to_context_warning(self):
+        """context_warning is True when input tokens exceed 85% of window."""
+        totals = UsageTotals(input_tokens=175_000)
+        target = MagicMock()
+        totals.apply_to(target, context_window=200_000)
+        assert target.context_warning is True
+
+
+class TestAvailableEmbedSpace:
+    """Tests for the available_embed_space helper."""
+
+    def test_empty_embeds(self):
+        """No embeds should return full limit."""
+        assert available_embed_space([]) == DISCORD_EMBED_TOTAL_LIMIT
+
+    def test_with_reserve(self):
+        """Reserve should be subtracted."""
+        assert available_embed_space([], reserve=500) == DISCORD_EMBED_TOTAL_LIMIT - 500
+
+    def test_with_existing_embeds(self):
+        """Existing embed content reduces available space."""
+        embed = MagicMock()
+        embed.description = "a" * 1000
+        embed.title = "Title"
+        space = available_embed_space([embed])
+        assert space == DISCORD_EMBED_TOTAL_LIMIT - 1005

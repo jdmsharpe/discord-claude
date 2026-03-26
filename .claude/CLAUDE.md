@@ -6,7 +6,7 @@ Discord bot wrapping Anthropic's Claude API using py-cord.
 
 - `src/bot.py` - Entry point; creates the Discord bot and loads the cog
 - `src/anthropic_api.py` - Main cog: slash commands, conversation handling, tool call loop, `ParsedResponse` dataclass
-- `src/util.py` - Constants (`ADAPTIVE_THINKING_MODELS`, `COMPACTION_MODELS`, `AVAILABLE_TOOLS`, `CACHE_TTL`, `MODEL_CONTEXT_WINDOWS`, thresholds), dataclasses, cost calculation
+- `src/util.py` - Constants, dataclasses (`ChatCompletionParameters`, `Conversation`, `UsageTotals`), `ToolHandler` Protocol, `ConversationKey` type, `available_embed_space()`, cost calculation
 - `src/button_view.py` - Discord UI buttons and tool select menu
 - `src/memory.py` - Client-side memory tool handler
 - `src/bash_tool.py` - Client-side bash tool handler
@@ -25,9 +25,10 @@ Discord bot wrapping Anthropic's Claude API using py-cord.
   1. `src/util.py` - `AVAILABLE_TOOLS` dict with the tool definition
   2. `src/anthropic_api.py` - Add `@option` decorator (bool) and parameter to `chat()`, append to `enabled_tools`
   3. `src/button_view.py` - `SelectOption` in `_add_tool_select()`
-  4. `src/memory.py` or new handler module (for client-side tools)
-  5. `src/anthropic_api.py` - `_tool_handlers` registry (for client-side tools)
-- **Tool call flow** — `_call_api_with_tool_loop()`: `end_turn` = done, `pause_turn` = re-send, `tool_use` = execute via `_tool_handlers` registry and re-send. `COMPACTION_MODELS` use server-side compaction
+  4. `src/memory.py` or new handler module — implement `ToolHandler` Protocol (`async execute(tool_input, user_id) -> str`)
+  5. `src/anthropic_api.py` - Add handler class instance to `_tool_handlers` registry
+- **Tool call flow** — `_call_api_with_tool_loop()`: uses `UsageTotals` for accumulation. `end_turn` = done, `pause_turn` = re-send, `tool_use` = execute via `_tool_handlers` registry (`ToolHandler` Protocol) and re-send. `COMPACTION_MODELS` use server-side compaction
+- **Conversation keying** — conversations stored by `ConversationKey = (user_id, channel_id)` for O(1) lookup. `_build_api_params()` centralizes API parameter construction from `ChatCompletionParameters`
 - **Context management** — 85% warning embed when approaching context window limit. Non-compaction models get automatic manual compaction at 75% via `_compact_conversation()` (uses Haiku for cheap summaries). `COMPACTION_MODELS` use server-side compaction instead
 - **Context editing** — `context-management-2025-06-27` beta with `clear_thinking` (keeps last 2 turns) then `clear_tool_uses` (keeps last 5) edits. Thinking clearing must come before tool clearing
 - **Prompt caching** — 1-hour TTL via `CACHE_TTL` for extended caching across Discord conversation pauses
@@ -45,6 +46,10 @@ Discord bot wrapping Anthropic's Claude API using py-cord.
 ## Testing
 
 - `pytest` from project root — mocked Discord/Anthropic clients, no real API calls
+
+## Type Checking
+
+- `pyright src/` — Pyright configured via `pyrightconfig.json` (`basic` mode). Must pass with 0 errors before committing
 
 ## Style
 
