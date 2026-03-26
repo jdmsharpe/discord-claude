@@ -1,7 +1,10 @@
-from dataclasses import dataclass, field
-from typing import Any
+from __future__ import annotations
 
-from discord import Member, User
+from dataclasses import dataclass, field
+from datetime import datetime, timezone
+from typing import Any, Protocol
+
+from discord import Embed, Member, User
 
 CHUNK_TEXT_SIZE = 3500  # Maximum number of characters in each text chunk.
 
@@ -76,6 +79,16 @@ MODEL_PRICING: dict[str, tuple[float, float]] = {
 # Server tool pricing
 WEB_SEARCH_COST_PER_REQUEST = 0.01  # $10 per 1,000 searches
 
+# Discord embed limits
+DISCORD_EMBED_TOTAL_LIMIT = 6000  # Max chars across all embeds in a single message
+CITATION_EMBED_RESERVE = 500  # Chars reserved for a potential citations embed
+
+
+def available_embed_space(embeds: list[Embed], reserve: int = 0) -> int:
+    """Calculate remaining character budget across all embeds in a message."""
+    used = sum(len(e.description or "") + len(e.title or "") for e in embeds)
+    return DISCORD_EMBED_TOTAL_LIMIT - used - reserve
+
 
 def calculate_cost(
     model: str,
@@ -102,6 +115,48 @@ def calculate_cost(
 
 
 @dataclass
+class UsageTotals:
+    """Accumulates token/tool usage across multiple API iterations."""
+
+    input_tokens: int = 0
+    output_tokens: int = 0
+    cache_creation_tokens: int = 0
+    cache_read_tokens: int = 0
+    web_search_requests: int = 0
+    web_fetch_requests: int = 0
+    code_execution_requests: int = 0
+    context_compacted: bool = False
+
+    def accumulate(self, usage: Any) -> None:
+        """Add a single API response's usage to running totals."""
+        if usage is None:
+            return
+        self.input_tokens += getattr(usage, "input_tokens", 0)
+        self.output_tokens += getattr(usage, "output_tokens", 0)
+        self.cache_creation_tokens += getattr(usage, "cache_creation_input_tokens", 0) or 0
+        self.cache_read_tokens += getattr(usage, "cache_read_input_tokens", 0) or 0
+        server_tool_use = getattr(usage, "server_tool_use", None)
+        if server_tool_use:
+            self.web_search_requests += getattr(server_tool_use, "web_search_requests", 0) or 0
+            self.web_fetch_requests += getattr(server_tool_use, "web_fetch_requests", 0) or 0
+            self.code_execution_requests += getattr(server_tool_use, "code_execution_requests", 0) or 0
+
+    def apply_to(self, parsed: Any, context_window: int) -> None:
+        """Stamp all accumulated totals onto a ParsedResponse."""
+        parsed.input_tokens = self.input_tokens
+        parsed.output_tokens = self.output_tokens
+        parsed.cache_creation_tokens = self.cache_creation_tokens
+        parsed.cache_read_tokens = self.cache_read_tokens
+        parsed.web_search_requests = self.web_search_requests
+        parsed.web_fetch_requests = self.web_fetch_requests
+        parsed.code_execution_requests = self.code_execution_requests
+        parsed.context_compacted = self.context_compacted
+        parsed.context_warning = (
+            self.input_tokens > context_window * CONTEXT_WARNING_THRESHOLD
+        )
+
+
+@dataclass
 class ChatCompletionParameters:
     """A dataclass to store the parameters for a chat completion."""
 
@@ -120,12 +175,23 @@ class ChatCompletionParameters:
     tools: list[str] = field(default_factory=list)
 
 
+# Conversation key: (user_id, channel_id) for O(1) lookup
+ConversationKey = tuple[int, int]
+
+
 @dataclass
 class Conversation:
     """A dataclass to store conversation state."""
 
     params: ChatCompletionParameters
     messages: list[dict[str, Any]]
+    created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+
+
+class ToolHandler(Protocol):
+    """Protocol for client-side tool handlers."""
+
+    async def execute(self, tool_input: dict[str, Any], user_id: int) -> str: ...
 
 
 def chunk_text(text: str, chunk_size: int = CHUNK_TEXT_SIZE) -> list[str]:

@@ -735,7 +735,7 @@ class TestAnthropicAPICog:
         self, cog, mock_discord_context
     ):
         """Test that users can't start multiple conversations in the same channel."""
-        # Pre-populate with existing conversation
+        # Pre-populate with existing conversation using (user_id, channel_id) key
         from src.util import ChatCompletionParameters, Conversation
 
         existing_params = ChatCompletionParameters(
@@ -744,7 +744,8 @@ class TestAnthropicAPICog:
             channel_id=mock_discord_context.channel.id,
             conversation_id=123,
         )
-        cog.conversations[123] = Conversation(params=existing_params, messages=[])
+        conv_key = (mock_discord_context.author.id, mock_discord_context.channel.id)
+        cog.conversations[conv_key] = Conversation(params=existing_params, messages=[])
 
         # Call the callback directly (bypassing the command decorator)
         await cog.chat.callback(
