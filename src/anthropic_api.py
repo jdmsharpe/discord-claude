@@ -905,7 +905,7 @@ class AnthropicAPI(commands.Cog):
         except (APIError, APIConnectionError, aiohttp.ClientError) as e:
             description = format_anthropic_error(e)
             self.logger.error(
-                f"Error in handle_new_message_in_conversation: {description}",
+                f"API error in handle_new_message_in_conversation: {description}",
                 exc_info=True,
             )
             if len(description) > 4000:
@@ -917,6 +917,25 @@ class AnthropicAPI(commands.Cog):
             # Remove the conversation so stale state doesn't linger
             conv_key = (message.author.id, message.channel.id)
             self.conversations.pop(conv_key, None)
+
+        except Exception as e:
+            self.logger.error(
+                f"Unexpected error in handle_new_message_in_conversation: {e}",
+                exc_info=True,
+            )
+            await self._cleanup_conversation(message.author)
+            conv_key = (message.author.id, message.channel.id)
+            self.conversations.pop(conv_key, None)
+            try:
+                await message.reply(
+                    embed=Embed(
+                        title="Error",
+                        description=f"An unexpected error occurred: {type(e).__name__}",
+                        color=Colour.red(),
+                    )
+                )
+            except Exception:
+                pass  # Best-effort notification — Discord may be unreachable
 
         finally:
             if typing_task:
@@ -1311,13 +1330,30 @@ class AnthropicAPI(commands.Cog):
         except (APIError, APIConnectionError, aiohttp.ClientError) as e:
             description = format_anthropic_error(e)
             self.logger.error(
-                f"Error in chat: {description}",
+                f"API error in chat: {description}",
                 exc_info=True,
             )
             await self._cleanup_conversation(ctx.author)
             await ctx.send_followup(
                 embed=Embed(title="Error", description=description, color=Colour.red())
             )
+
+        except Exception as e:
+            self.logger.error(
+                f"Unexpected error in chat: {e}",
+                exc_info=True,
+            )
+            await self._cleanup_conversation(ctx.author)
+            try:
+                await ctx.send_followup(
+                    embed=Embed(
+                        title="Error",
+                        description=f"An unexpected error occurred: {type(e).__name__}",
+                        color=Colour.red(),
+                    )
+                )
+            except Exception:
+                pass  # Best-effort notification
 
         finally:
             if typing_task:
