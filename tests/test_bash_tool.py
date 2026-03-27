@@ -1,5 +1,3 @@
-import asyncio
-
 import pytest
 
 
@@ -42,9 +40,9 @@ class TestExecuteBashCommand:
     @pytest.mark.asyncio
     async def test_timeout(self):
         """Command that exceeds timeout returns error message."""
-        from src.bash_tool import execute_bash_command
-
         from unittest.mock import patch
+
+        from src.bash_tool import execute_bash_command
 
         with patch("src.bash_tool.BASH_TIMEOUT", 0.1):
             result = await execute_bash_command("sleep 10")
@@ -61,9 +59,9 @@ class TestExecuteBashCommand:
     @pytest.mark.asyncio
     async def test_output_truncation(self):
         """Output exceeding MAX_OUTPUT_LINES is truncated."""
-        from src.bash_tool import execute_bash_command
-
         from unittest.mock import patch
+
+        from src.bash_tool import execute_bash_command
 
         with patch("src.bash_tool.MAX_OUTPUT_LINES", 5):
             result = await execute_bash_command(

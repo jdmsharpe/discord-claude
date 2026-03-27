@@ -24,10 +24,8 @@ async def execute_bash_command(command: str) -> str:
             stderr=asyncio.subprocess.PIPE,
         )
         try:
-            stdout, stderr = await asyncio.wait_for(
-                process.communicate(), timeout=BASH_TIMEOUT
-            )
-        except asyncio.TimeoutError:
+            stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=BASH_TIMEOUT)
+        except TimeoutError:
             process.kill()
             await process.wait()
             return f"Error: Command timed out after {BASH_TIMEOUT} seconds"
