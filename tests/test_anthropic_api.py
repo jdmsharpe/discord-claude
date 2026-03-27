@@ -527,7 +527,6 @@ class TestAppendPricingEmbed:
 class TestAnthropicAPIIntegration:
     """Integration tests for the Anthropic API client (mocked)."""
 
-    @pytest.mark.asyncio
     async def test_messages_create_basic(self, mock_anthropic_client):
         """Test basic message creation with the Anthropic API."""
         response = await mock_anthropic_client.messages.create(
@@ -540,7 +539,6 @@ class TestAnthropicAPIIntegration:
         assert response.id.startswith("msg_")
         mock_anthropic_client.messages.create.assert_called_once()
 
-    @pytest.mark.asyncio
     async def test_messages_create_with_system(self, mock_anthropic_client):
         """Test message creation with system prompt."""
         await mock_anthropic_client.messages.create(
@@ -553,7 +551,6 @@ class TestAnthropicAPIIntegration:
         call_kwargs = mock_anthropic_client.messages.create.call_args[1]
         assert call_kwargs["system"] == "You are a helpful assistant."
 
-    @pytest.mark.asyncio
     async def test_messages_create_with_temperature(self, mock_anthropic_client):
         """Test message creation with temperature parameter."""
         await mock_anthropic_client.messages.create(
@@ -566,7 +563,6 @@ class TestAnthropicAPIIntegration:
         call_kwargs = mock_anthropic_client.messages.create.call_args[1]
         assert call_kwargs["temperature"] == 0.7
 
-    @pytest.mark.asyncio
     async def test_messages_create_multi_turn(self, mock_anthropic_client):
         """Test multi-turn conversation."""
         messages = [
@@ -584,7 +580,6 @@ class TestAnthropicAPIIntegration:
         call_kwargs = mock_anthropic_client.messages.create.call_args[1]
         assert len(call_kwargs["messages"]) == 3
 
-    @pytest.mark.asyncio
     async def test_messages_create_with_image_content(self, mock_anthropic_client):
         """Test message creation with image content block."""
         messages = [
@@ -643,7 +638,6 @@ class TestAnthropicAPICog:
             cog.client = mock_client
             return cog
 
-    @pytest.mark.asyncio
     async def test_cog_initialization(self, cog, mock_bot):
         """Test that the cog initializes correctly."""
         assert cog.bot == mock_bot
@@ -651,7 +645,6 @@ class TestAnthropicAPICog:
         assert cog.views == {}
         assert cog.last_view_messages == {}
 
-    @pytest.mark.asyncio
     async def test_strip_previous_view_removes_buttons(self, cog):
         """_strip_previous_view edits the old message to remove its view."""
         user = MagicMock()
@@ -663,14 +656,12 @@ class TestAnthropicAPICog:
         old_message.edit.assert_awaited_once_with(view=None)
         assert user not in cog.last_view_messages
 
-    @pytest.mark.asyncio
     async def test_strip_previous_view_no_previous(self, cog):
         """_strip_previous_view is a no-op when there's no previous message."""
         user = MagicMock()
         await cog._strip_previous_view(user)
         assert user not in cog.last_view_messages
 
-    @pytest.mark.asyncio
     async def test_strip_previous_view_handles_edit_error(self, cog):
         """_strip_previous_view swallows errors when the old message can't be edited."""
         user = MagicMock()
@@ -682,7 +673,6 @@ class TestAnthropicAPICog:
 
         assert user not in cog.last_view_messages
 
-    @pytest.mark.asyncio
     async def test_cleanup_conversation_strips_view_and_removes_state(self, cog):
         """_cleanup_conversation strips the view and removes it from self.views."""
         user = MagicMock()
@@ -696,7 +686,6 @@ class TestAnthropicAPICog:
         assert user not in cog.last_view_messages
         assert user not in cog.views
 
-    @pytest.mark.asyncio
     async def test_cleanup_conversation_no_prior_state(self, cog):
         """_cleanup_conversation is a no-op when there's no prior state."""
         user = MagicMock()
@@ -704,7 +693,6 @@ class TestAnthropicAPICog:
         assert user not in cog.last_view_messages
         assert user not in cog.views
 
-    @pytest.mark.asyncio
     async def test_chat_creates_conversation(
         self, cog, mock_discord_context, mock_anthropic_client
     ):
@@ -730,7 +718,6 @@ class TestAnthropicAPICog:
         # Verify conversation was stored
         assert len(cog.conversations) == 1
 
-    @pytest.mark.asyncio
     async def test_chat_prevents_duplicate_conversations(self, cog, mock_discord_context):
         """Test that users can't start multiple conversations in the same channel."""
         # Pre-populate with existing conversation using (user_id, channel_id) key
@@ -757,7 +744,6 @@ class TestAnthropicAPICog:
         call_kwargs = mock_discord_context.send_followup.call_args[1]
         assert "already have an active conversation" in call_kwargs["embed"].description
 
-    @pytest.mark.asyncio
     async def test_on_message_ignores_bot_messages(self, cog, mock_discord_message):
         """Test that the bot ignores its own messages."""
         mock_discord_message.author = cog.bot.user
@@ -767,7 +753,6 @@ class TestAnthropicAPICog:
         # Should not process the message (no API calls, no replies)
         mock_discord_message.reply.assert_not_called()
 
-    @pytest.mark.asyncio
     async def test_keep_typing_can_be_cancelled(self, cog, mock_discord_context):
         """Test that the typing indicator can be cancelled."""
         import asyncio
@@ -805,7 +790,6 @@ class TestCallApiWithToolLoop:
             cog.client = mock_client
             return cog
 
-    @pytest.mark.asyncio
     async def test_simple_end_turn(self, cog):
         """Single API call with end_turn returns ParsedResponse."""
         mock_response = MagicMock()
@@ -830,7 +814,6 @@ class TestCallApiWithToolLoop:
         assert messages[1]["role"] == "assistant"
         cog.client.messages.create.assert_called_once()
 
-    @pytest.mark.asyncio
     async def test_pause_turn_continues(self, cog):
         """pause_turn response causes re-send, then end_turn completes."""
         pause_response = MagicMock()
@@ -863,7 +846,6 @@ class TestCallApiWithToolLoop:
         assert parsed.text == "Found it!"
         assert cog.client.messages.create.call_count == 2
 
-    @pytest.mark.asyncio
     async def test_tool_use_loop(self, cog):
         """tool_use triggers execution and re-send."""
         # First response: tool_use
@@ -908,7 +890,6 @@ class TestCallApiWithToolLoop:
         # Messages should have: user, assistant (tool_use), user (tool_result), assistant (final)
         assert len(messages) == 4
 
-    @pytest.mark.asyncio
     async def test_bash_tool_use_loop(self, cog):
         """bash tool_use triggers command execution and re-send."""
         # First response: bash tool_use
@@ -957,7 +938,6 @@ class TestCallApiWithToolLoop:
         assert tool_result_msg["content"][0]["type"] == "tool_result"
         assert tool_result_msg["content"][0]["content"] == "hello\n"
 
-    @pytest.mark.asyncio
     async def test_max_iterations_safety(self, cog):
         """Loop stops at max_iterations."""
         pause_response = MagicMock()
@@ -983,7 +963,6 @@ class TestCallApiWithToolLoop:
 
         assert cog.client.messages.create.call_count == 3
 
-    @pytest.mark.asyncio
     async def test_max_tokens_stop_reason(self, cog):
         """max_tokens stop reason is propagated on ParsedResponse."""
         mock_response = MagicMock()
@@ -1007,7 +986,6 @@ class TestCallApiWithToolLoop:
         assert parsed.text == "Truncated response..."
         assert len(messages) == 2
 
-    @pytest.mark.asyncio
     async def test_refusal_stop_reason(self, cog):
         """refusal stop reason is propagated on ParsedResponse."""
         mock_response = MagicMock()
@@ -1029,7 +1007,6 @@ class TestCallApiWithToolLoop:
 
         assert parsed.stop_reason == "refusal"
 
-    @pytest.mark.asyncio
     async def test_context_window_exceeded_stop_reason(self, cog):
         """model_context_window_exceeded stop reason is propagated."""
         mock_response = MagicMock()
@@ -1051,7 +1028,6 @@ class TestCallApiWithToolLoop:
 
         assert parsed.stop_reason == "model_context_window_exceeded"
 
-    @pytest.mark.asyncio
     async def test_compaction_model_uses_beta_api(self, cog):
         """Compaction models use client.beta.messages.create with compaction params."""
         mock_response = MagicMock()
@@ -1078,7 +1054,6 @@ class TestCallApiWithToolLoop:
         assert {"type": "compact_20260112"} in call_kwargs["context_management"]["edits"]
         assert call_kwargs["cache_control"] == {"type": "ephemeral", "ttl": "1h"}
 
-    @pytest.mark.asyncio
     async def test_non_compaction_model_uses_regular_api(self, cog):
         """Non-compaction models without tools/thinking use client.messages.create."""
         mock_response = MagicMock()
@@ -1103,7 +1078,6 @@ class TestCallApiWithToolLoop:
         call_kwargs = cog.client.messages.create.call_args[1]
         assert call_kwargs["cache_control"] == {"type": "ephemeral", "ttl": "1h"}
 
-    @pytest.mark.asyncio
     async def test_context_editing_with_tools(self, cog):
         """Models with tools get context editing via beta API."""
         mock_response = MagicMock()
@@ -1132,7 +1106,6 @@ class TestCallApiWithToolLoop:
         tool_edits = [e for e in edits if e["type"] == "clear_tool_uses_20250919"]
         assert len(tool_edits) == 1
 
-    @pytest.mark.asyncio
     async def test_context_editing_with_thinking(self, cog):
         """Models with thinking get thinking block clearing."""
         mock_response = MagicMock()
@@ -1162,7 +1135,6 @@ class TestCallApiWithToolLoop:
         # Thinking clearing must come before any other edits
         assert edits[0]["type"] == "clear_thinking_20251015"
 
-    @pytest.mark.asyncio
     async def test_cache_tokens_accumulated(self, cog):
         """Cache creation and read tokens are accumulated across iterations."""
         pause_response = MagicMock()
@@ -1207,7 +1179,6 @@ class TestCallApiWithToolLoop:
         assert parsed.cache_creation_tokens == 200
         assert parsed.cache_read_tokens == 200
 
-    @pytest.mark.asyncio
     async def test_server_tool_use_accumulated(self, cog):
         """Server tool use counts are accumulated across iterations."""
         # First iteration: pause_turn with 2 web searches
@@ -1265,7 +1236,6 @@ class TestCallApiWithToolLoop:
         assert parsed.web_fetch_requests == 1
         assert parsed.code_execution_requests == 1
 
-    @pytest.mark.asyncio
     async def test_server_tool_use_none_handled(self, cog):
         """Responses without server_tool_use don't break accumulation."""
         mock_response = MagicMock()
@@ -1290,7 +1260,6 @@ class TestCallApiWithToolLoop:
         assert parsed.web_fetch_requests == 0
         assert parsed.code_execution_requests == 0
 
-    @pytest.mark.asyncio
     async def test_context_warning_at_85_percent(self, cog):
         """context_warning is set when input tokens exceed 85% of context window."""
         mock_response = MagicMock()
@@ -1314,7 +1283,6 @@ class TestCallApiWithToolLoop:
         assert parsed.context_warning is True
         assert parsed.context_compacted is False
 
-    @pytest.mark.asyncio
     async def test_no_context_warning_below_threshold(self, cog):
         """context_warning is not set when input tokens are below 85%."""
         mock_response = MagicMock()
@@ -1337,7 +1305,6 @@ class TestCallApiWithToolLoop:
 
         assert parsed.context_warning is False
 
-    @pytest.mark.asyncio
     async def test_manual_compaction_triggers_at_75_percent(self, cog):
         """Non-compaction models trigger manual compaction when tokens exceed 75%."""
         # First response: pause_turn with 155k tokens (77.5% > 75% threshold)
@@ -1387,7 +1354,6 @@ class TestCallApiWithToolLoop:
         # 3 API calls: original, compaction summary, post-compaction
         assert cog.client.messages.create.call_count == 3
 
-    @pytest.mark.asyncio
     async def test_compaction_model_skips_manual_compaction(self, cog):
         """Compaction models (server-side) never trigger manual compaction."""
         mock_response = MagicMock()
@@ -1447,7 +1413,6 @@ class TestToolHandlerRegistry:
 
             return AnthropicAPI(bot=mock_bot)
 
-    @pytest.mark.asyncio
     async def test_memory_tool_dispatches(self, cog):
         """Memory tool is dispatched via the registry."""
         with patch("src.anthropic_api.execute_memory_operation") as mock_exec:
@@ -1461,7 +1426,6 @@ class TestToolHandlerRegistry:
             tool_input={"command": "view", "path": "/memories"},
         )
 
-    @pytest.mark.asyncio
     async def test_bash_tool_dispatches(self, cog):
         """Bash tool is dispatched via the registry."""
         with patch("src.anthropic_api.execute_bash_command", new_callable=AsyncMock) as mock_bash:
@@ -1469,13 +1433,11 @@ class TestToolHandlerRegistry:
             result = await cog._execute_tool("bash", {"command": "echo hello"}, user_id=123)
         assert result == "hello\n"
 
-    @pytest.mark.asyncio
     async def test_bash_restart_handled(self, cog):
         """Bash restart command returns restart message."""
         result = await cog._execute_tool("bash", {"restart": True}, user_id=123)
         assert result == "Bash session restarted."
 
-    @pytest.mark.asyncio
     async def test_unknown_tool_returns_error(self, cog):
         """Unknown tool names return an error string."""
         result = await cog._execute_tool("nonexistent", {}, user_id=123)
