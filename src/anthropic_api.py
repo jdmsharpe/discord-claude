@@ -653,6 +653,7 @@ class AnthropicAPI(commands.Cog):
 
         totals = UsageTotals()
         context_window = MODEL_CONTEXT_WINDOWS.get(model, 200_000)
+        parsed: ParsedResponse | None = None
 
         for iteration in range(max_iterations):
             # Manual compaction for non-compaction models when approaching context limit
@@ -733,6 +734,8 @@ class AnthropicAPI(commands.Cog):
                 return parsed
 
         self.logger.warning(f"Tool loop hit max_iterations ({max_iterations})")
+        if parsed is None:
+            raise RuntimeError("Tool loop completed without any API response")
         totals.apply_to(parsed, context_window)
         return parsed
 
