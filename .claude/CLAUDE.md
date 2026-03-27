@@ -49,7 +49,7 @@ Discord bot wrapping Anthropic's Claude API using py-cord.
 
 ## Type Checking
 
-- `pyright src/` — Pyright configured via `pyrightconfig.json` (`basic` mode). Must pass with 0 errors before committing
+- `pyright src/` — Pyright configured via `pyproject.toml` (`basic` mode). Must pass with 0 errors before committing
 
 ## Linting
 
