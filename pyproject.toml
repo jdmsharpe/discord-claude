@@ -13,9 +13,5 @@ quote-style = "double"
 
 [tool.pyright]
 include = ["src"]
-exclude = [".venv"]
+exclude = [".venv", "**/node_modules", "**/__pycache__", "**/.*"]
 extraPaths = ["src"]
-pythonVersion = "3.12"
-typeCheckingMode = "basic"
-reportMissingImports = true
-reportMissingTypeStubs = false
