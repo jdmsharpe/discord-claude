@@ -324,9 +324,7 @@ class TestInvalidCommand:
 
     def test_unknown_command(self):
         """Returns error for unknown command."""
-        result = execute_memory_operation(
-            user_id=123, tool_input={"command": "unknown"}
-        )
+        result = execute_memory_operation(user_id=123, tool_input={"command": "unknown"})
         assert "Unknown command" in result
 
     def test_missing_command(self):

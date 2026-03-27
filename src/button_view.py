@@ -85,9 +85,7 @@ class ButtonView(View):
         tool_select.callback = _tool_callback
         self.add_item(tool_select)
 
-    async def tool_select_callback(
-        self, interaction: Interaction, tool_select: Select
-    ) -> None:
+    async def tool_select_callback(self, interaction: Interaction, tool_select: Select) -> None:
         """Handle tool selection changes."""
         if interaction.user != self.conversation_starter:
             await interaction.response.send_message(
@@ -98,14 +96,10 @@ class ButtonView(View):
 
         conversation = self.cog.conversations.get(self.conversation_key)
         if conversation is None:
-            await interaction.response.send_message(
-                "No active conversation found.", ephemeral=True
-            )
+            await interaction.response.send_message("No active conversation found.", ephemeral=True)
             return
 
-        selected_values = [
-            value for value in tool_select.values if value in AVAILABLE_TOOLS
-        ]
+        selected_values = [value for value in tool_select.values if value in AVAILABLE_TOOLS]
         conversation.params.tools = selected_values
 
         status = ", ".join(selected_values) if selected_values else "none"
@@ -163,11 +157,7 @@ class ButtonView(View):
             text_channel = cast(TextChannel, channel)
             messages = [message async for message in text_channel.history(limit=10)]
             user_message = next(
-                (
-                    message
-                    for message in messages
-                    if message.author == self.conversation_starter
-                ),
+                (message for message in messages if message.author == self.conversation_starter),
                 None,
             )
 
@@ -178,12 +168,8 @@ class ButtonView(View):
                 )
                 return
 
-            await self.cog.handle_new_message_in_conversation(
-                user_message, conversation
-            )
-            await interaction.followup.send(
-                "Response regenerated.", ephemeral=True, delete_after=3
-            )
+            await self.cog.handle_new_message_in_conversation(user_message, conversation)
+            await interaction.followup.send("Response regenerated.", ephemeral=True, delete_after=3)
         except Exception as error:
             logging.error(
                 f"Error in regenerate_button: {error}",
@@ -230,9 +216,7 @@ class ButtonView(View):
                 delete_after=3,
             )
         else:
-            await interaction.response.send_message(
-                "No active conversation found.", ephemeral=True
-            )
+            await interaction.response.send_message("No active conversation found.", ephemeral=True)
 
     @button(emoji="⏹️", style=ButtonStyle.blurple, row=0)
     async def stop_button(self, button: Button, interaction: Interaction):
@@ -257,6 +241,4 @@ class ButtonView(View):
                 "Conversation ended.", ephemeral=True, delete_after=3
             )
         else:
-            await interaction.response.send_message(
-                "No active conversation found.", ephemeral=True
-            )
+            await interaction.response.send_message("No active conversation found.", ephemeral=True)

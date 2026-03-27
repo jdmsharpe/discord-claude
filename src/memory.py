@@ -29,9 +29,9 @@ def _resolve_safe_path(user_id: int, file_path: str) -> Path:
     # Strip leading /memories or /memories/ prefix that Claude sends
     cleaned = file_path.strip()
     if cleaned.startswith("/memories/"):
-        cleaned = cleaned[len("/memories/"):]
+        cleaned = cleaned[len("/memories/") :]
     elif cleaned.startswith("/memories"):
-        cleaned = cleaned[len("/memories"):]
+        cleaned = cleaned[len("/memories") :]
     # Strip leading slashes
     cleaned = cleaned.lstrip("/\\")
 
@@ -42,9 +42,7 @@ def _resolve_safe_path(user_id: int, file_path: str) -> Path:
     user_dir_resolved = user_dir.resolve()
 
     if not str(target).startswith(str(user_dir_resolved)):
-        raise ValueError(
-            f"Path traversal detected: {file_path} resolves outside user directory"
-        )
+        raise ValueError(f"Path traversal detected: {file_path} resolves outside user directory")
     return target
 
 
@@ -72,7 +70,7 @@ def execute_memory_operation(user_id: int, tool_input: dict[str, Any]) -> str:
         elif command == "rename":
             return _handle_rename(user_id, tool_input)
         else:
-            assert False, f"Unhandled command: {command}"
+            raise AssertionError(f"Unhandled command: {command}")
     except ValueError as e:
         return f"Error: {e}"
     except Exception as e:
@@ -125,15 +123,11 @@ def _list_directory(target: Path, display_path: str) -> str:
         return "No memory files found."
 
     header = f"Here're the files and directories up to 2 levels deep in {display_path}, excluding hidden items and node_modules:"
-    dir_size = _human_readable_size(
-        sum(f.stat().st_size for f in target.rglob("*") if f.is_file())
-    )
+    dir_size = _human_readable_size(sum(f.stat().st_size for f in target.rglob("*") if f.is_file()))
     return f"{header}\n{dir_size}\t{display_path}\n" + "\n".join(items)
 
 
-def _read_file(
-    target: Path, display_path: str, view_range: list[int] | None = None
-) -> str:
+def _read_file(target: Path, display_path: str, view_range: list[int] | None = None) -> str:
     """Read a file and return contents with line numbers."""
     try:
         content = target.read_text(encoding="utf-8")
@@ -159,9 +153,7 @@ def _read_file(
     for i, line in enumerate(selected, start=start_line):
         numbered_lines.append(f"{i:>6}\t{line}")
 
-    return f"Here's the content of {display_path} with line numbers:\n" + "\n".join(
-        numbered_lines
-    )
+    return f"Here's the content of {display_path} with line numbers:\n" + "\n".join(numbered_lines)
 
 
 def _handle_create(user_id: int, tool_input: dict[str, Any]) -> str:

@@ -1,6 +1,7 @@
 # Standard library imports
 import asyncio
 import base64
+import contextlib
 import logging
 from dataclasses import dataclass, field
 from datetime import date
@@ -22,10 +23,11 @@ from discord.commands import (
 )
 from discord.ext import commands
 
+from bash_tool import execute_bash_command
+
 # Local imports
 from button_view import ButtonView
 from config.auth import ANTHROPIC_API_KEY, GUILD_IDS, SHOW_COST_EMBEDS
-from bash_tool import execute_bash_command
 from memory import execute_memory_operation
 from util import (
     ADAPTIVE_THINKING_MODELS,
@@ -35,8 +37,6 @@ from util import (
     COMPACTION_MODELS,
     COMPACTION_SUMMARY_MODEL,
     CONTEXT_COMPACTION_THRESHOLD,
-    CONTEXT_WARNING_THRESHOLD,
-    DISCORD_EMBED_TOTAL_LIMIT,
     EXTENDED_THINKING_MODELS,
     MODEL_CONTEXT_WINDOWS,
     ChatCompletionParameters,
@@ -52,6 +52,7 @@ from util import (
 )
 
 # Tool handler implementations (satisfy ToolHandler Protocol)
+
 
 class MemoryToolHandler:
     """Executes memory tool operations (sync, wrapped as async)."""
@@ -260,7 +261,9 @@ def append_response_embeds(embeds: list[Embed], response_text: str) -> None:
         return
 
     if len(response_text) > available:
-        response_text = response_text[: available - 40] + "\n\n... [Response truncated due to length]"
+        response_text = (
+            response_text[: available - 40] + "\n\n... [Response truncated due to length]"
+        )
 
     for index, chunk in enumerate(chunk_text(response_text, 3500), start=1):
         embeds.append(
@@ -272,9 +275,7 @@ def append_response_embeds(embeds: list[Embed], response_text: str) -> None:
         )
 
 
-def append_citations_embed(
-    embeds: list[Embed], citations: list[dict[str, str]]
-) -> None:
+def append_citations_embed(embeds: list[Embed], citations: list[dict[str, str]]) -> None:
     """Append a Sources embed listing web search links and/or document citations."""
     if not citations:
         return
@@ -395,24 +396,30 @@ def append_pricing_embed(
     daily_cost: float,
 ) -> None:
     """Append a compact pricing embed showing cost and token usage."""
-    parts = [f"${request_cost:.4f} · {parsed.input_tokens:,} tokens in / {parsed.output_tokens:,} tokens out"]
+    parts = [
+        f"${request_cost:.4f} · {parsed.input_tokens:,} tokens in / {parsed.output_tokens:,} tokens out"
+    ]
     if parsed.cache_read_tokens:
         parts.append(f"{parsed.cache_read_tokens:,} cached")
     if parsed.web_search_requests:
-        parts.append(f"{parsed.web_search_requests} search{'es' if parsed.web_search_requests != 1 else ''}")
+        parts.append(
+            f"{parsed.web_search_requests} search{'es' if parsed.web_search_requests != 1 else ''}"
+        )
     if parsed.web_fetch_requests:
-        parts.append(f"{parsed.web_fetch_requests} fetch{'es' if parsed.web_fetch_requests != 1 else ''}")
+        parts.append(
+            f"{parsed.web_fetch_requests} fetch{'es' if parsed.web_fetch_requests != 1 else ''}"
+        )
     if parsed.code_execution_requests:
-        parts.append(f"{parsed.code_execution_requests} code exec{'s' if parsed.code_execution_requests != 1 else ''}")
+        parts.append(
+            f"{parsed.code_execution_requests} code exec{'s' if parsed.code_execution_requests != 1 else ''}"
+        )
     parts.append(f"daily ${daily_cost:.2f}")
     embeds.append(Embed(description=" · ".join(parts), color=Colour.orange()))
 
 
 class AnthropicAPI(commands.Cog):
     # Slash command group for all Claude commands: /claude <subcommand>
-    claude = SlashCommandGroup(
-        "claude", "Claude AI commands", guild_ids=GUILD_IDS
-    )
+    claude = SlashCommandGroup("claude", "Claude AI commands", guild_ids=GUILD_IDS)
 
     def __init__(self, bot):
         """
@@ -471,9 +478,7 @@ class AnthropicAPI(commands.Cog):
             "Wrap your summary in <summary></summary> tags."
         )
 
-        summary_messages = list(messages) + [
-            {"role": "user", "content": summary_prompt}
-        ]
+        summary_messages = list(messages) + [{"role": "user", "content": summary_prompt}]
 
         create_kwargs: dict[str, Any] = {
             "model": COMPACTION_SUMMARY_MODEL,
@@ -521,8 +526,11 @@ class AnthropicAPI(commands.Cog):
     ) -> tuple[float, float]:
         """Add this request's cost to the user's daily total, log it, and return (request_cost, daily_total)."""
         cost = calculate_cost(
-            model, parsed.input_tokens, parsed.output_tokens,
-            parsed.cache_creation_tokens, parsed.cache_read_tokens,
+            model,
+            parsed.input_tokens,
+            parsed.output_tokens,
+            parsed.cache_creation_tokens,
+            parsed.cache_read_tokens,
             parsed.web_search_requests,
         )
         key = (user_id, date.today().isoformat())
@@ -534,11 +542,17 @@ class AnthropicAPI(commands.Cog):
             " | cache_write=%d | cache_read=%d"
             " | web_searches=%d | web_fetches=%d | code_execs=%d"
             " | cost=$%.4f | daily=$%.4f",
-            user_id, model, parsed.input_tokens, parsed.output_tokens,
-            parsed.cache_creation_tokens, parsed.cache_read_tokens,
-            parsed.web_search_requests, parsed.web_fetch_requests,
+            user_id,
+            model,
+            parsed.input_tokens,
+            parsed.output_tokens,
+            parsed.cache_creation_tokens,
+            parsed.cache_read_tokens,
+            parsed.web_search_requests,
+            parsed.web_fetch_requests,
             parsed.code_execution_requests,
-            cost, self.daily_costs[key],
+            cost,
+            self.daily_costs[key],
         )
 
         return cost, self.daily_costs[key]
@@ -555,9 +569,7 @@ class AnthropicAPI(commands.Cog):
                     response.status,
                 )
         except aiohttp.ClientError as error:
-            self.logger.warning(
-                "Error fetching attachment %s: %s", attachment.url, error
-            )
+            self.logger.warning("Error fetching attachment %s: %s", attachment.url, error)
         return None
 
     def cog_unload(self):
@@ -614,17 +626,21 @@ class AnthropicAPI(commands.Cog):
 
         # Context editing strategies (thinking clearing must come first)
         if has_thinking:
-            edits.append({
-                "type": "clear_thinking_20251015",
-                "keep": {"type": "thinking_turns", "value": 2},
-            })
+            edits.append(
+                {
+                    "type": "clear_thinking_20251015",
+                    "keep": {"type": "thinking_turns", "value": 2},
+                }
+            )
 
         if has_tools:
-            edits.append({
-                "type": "clear_tool_uses_20250919",
-                "trigger": {"type": "input_tokens", "value": 50000},
-                "keep": {"type": "tool_uses", "value": 5},
-            })
+            edits.append(
+                {
+                    "type": "clear_tool_uses_20250919",
+                    "trigger": {"type": "input_tokens", "value": 50000},
+                    "keep": {"type": "tool_uses", "value": 5},
+                }
+            )
 
         # Context editing beta only needed for tool/thinking clearing
         if edits:
@@ -647,10 +663,13 @@ class AnthropicAPI(commands.Cog):
             ):
                 self.logger.info(
                     "Input tokens (%d) exceeded %.0f%% of context window (%d), compacting...",
-                    totals.input_tokens, CONTEXT_COMPACTION_THRESHOLD * 100, context_window,
+                    totals.input_tokens,
+                    CONTEXT_COMPACTION_THRESHOLD * 100,
+                    context_window,
                 )
                 await self._compact_conversation(
-                    messages, system=api_params.get("system"),
+                    messages,
+                    system=api_params.get("system"),
                 )
                 totals.context_compacted = True
 
@@ -672,25 +691,17 @@ class AnthropicAPI(commands.Cog):
             totals.accumulate(getattr(response, "usage", None))
 
             if response.stop_reason == "end_turn":
-                messages.append(
-                    {"role": "assistant", "content": response.content}
-                )
+                messages.append({"role": "assistant", "content": response.content})
                 totals.apply_to(parsed, context_window)
                 return parsed
 
             elif response.stop_reason == "pause_turn":
-                messages.append(
-                    {"role": "assistant", "content": response.content}
-                )
-                self.logger.info(
-                    f"pause_turn received, continuing (iteration {iteration + 1})"
-                )
+                messages.append({"role": "assistant", "content": response.content})
+                self.logger.info(f"pause_turn received, continuing (iteration {iteration + 1})")
                 continue
 
             elif response.stop_reason == "tool_use":
-                messages.append(
-                    {"role": "assistant", "content": response.content}
-                )
+                messages.append({"role": "assistant", "content": response.content})
 
                 tool_results = []
                 for tool_block in parsed.tool_use_blocks:
@@ -706,30 +717,22 @@ class AnthropicAPI(commands.Cog):
                     )
 
                 messages.append({"role": "user", "content": tool_results})
-                self.logger.info(
-                    f"tool_use handled, re-sending (iteration {iteration + 1})"
-                )
+                self.logger.info(f"tool_use handled, re-sending (iteration {iteration + 1})")
                 continue
 
             else:
                 # max_tokens, refusal, model_context_window_exceeded, or unknown
-                messages.append(
-                    {"role": "assistant", "content": response.content}
-                )
+                messages.append({"role": "assistant", "content": response.content})
                 if response.stop_reason not in (
                     "max_tokens",
                     "refusal",
                     "model_context_window_exceeded",
                 ):
-                    self.logger.warning(
-                        f"Unknown stop_reason: {response.stop_reason}"
-                    )
+                    self.logger.warning(f"Unknown stop_reason: {response.stop_reason}")
                 totals.apply_to(parsed, context_window)
                 return parsed
 
-        self.logger.warning(
-            f"Tool loop hit max_iterations ({max_iterations})"
-        )
+        self.logger.warning(f"Tool loop hit max_iterations ({max_iterations})")
         totals.apply_to(parsed, context_window)
         return parsed
 
@@ -739,9 +742,7 @@ class AnthropicAPI(commands.Cog):
         "bash": BashToolHandler(),
     }
 
-    async def _execute_tool(
-        self, tool_name: str, tool_input: dict[str, Any], user_id: int
-    ) -> str:
+    async def _execute_tool(self, tool_name: str, tool_input: dict[str, Any], user_id: int) -> str:
         """Execute a client-side tool via the handler registry."""
         handler = self._tool_handlers.get(tool_name)
         if handler is None:
@@ -760,10 +761,7 @@ class AnthropicAPI(commands.Cog):
         }
         if params.model in ADAPTIVE_THINKING_MODELS:
             api_params["thinking"] = {"type": "adaptive", "display": "summarized"}
-        elif (
-            params.thinking_budget is not None
-            and params.model in EXTENDED_THINKING_MODELS
-        ):
+        elif params.thinking_budget is not None and params.model in EXTENDED_THINKING_MODELS:
             api_params["thinking"] = {
                 "type": "enabled",
                 "budget_tokens": params.thinking_budget,
@@ -779,14 +777,10 @@ class AnthropicAPI(commands.Cog):
         if params.top_k is not None:
             api_params["top_k"] = params.top_k
         if params.tools:
-            api_params["tools"] = [
-                AVAILABLE_TOOLS[t] for t in params.tools if t in AVAILABLE_TOOLS
-            ]
+            api_params["tools"] = [AVAILABLE_TOOLS[t] for t in params.tools if t in AVAILABLE_TOOLS]
         return api_params
 
-    async def handle_new_message_in_conversation(
-        self, message, conversation: Conversation
-    ):
+    async def handle_new_message_in_conversation(self, message, conversation: Conversation):
         """
         Handles a new message in an ongoing conversation.
 
@@ -797,9 +791,7 @@ class AnthropicAPI(commands.Cog):
         params = conversation.params
         messages = conversation.messages
 
-        self.logger.info(
-            f"Handling new message in conversation {params.conversation_id}."
-        )
+        self.logger.info(f"Handling new message in conversation {params.conversation_id}.")
         typing_task = None
         embeds = []
 
@@ -841,9 +833,7 @@ class AnthropicAPI(commands.Cog):
             )
             response_text = parsed.text
             thinking_text = parsed.thinking
-            self.logger.debug(
-                f"Received response from Claude: {response_text[:200]}..."
-            )
+            self.logger.debug(f"Received response from Claude: {response_text[:200]}...")
 
             # Stop typing indicator as soon as we have the response
             if typing_task:
@@ -863,7 +853,9 @@ class AnthropicAPI(commands.Cog):
 
             append_citations_embed(embeds, parsed.citations)
             request_cost, daily_cost = self._track_daily_cost(
-                message.author.id, params.model, parsed,
+                message.author.id,
+                params.model,
+                parsed,
             )
             if SHOW_COST_EMBEDS:
                 append_pricing_embed(embeds, parsed, request_cost, daily_cost)
@@ -901,7 +893,6 @@ class AnthropicAPI(commands.Cog):
                 )
                 self.last_view_messages[message.author] = reply_message
 
-
         except (APIError, APIConnectionError, aiohttp.ClientError) as e:
             description = format_anthropic_error(e)
             self.logger.error(
@@ -926,7 +917,7 @@ class AnthropicAPI(commands.Cog):
             await self._cleanup_conversation(message.author)
             conv_key = (message.author.id, message.channel.id)
             self.conversations.pop(conv_key, None)
-            try:
+            with contextlib.suppress(Exception):
                 await message.reply(
                     embed=Embed(
                         title="Error",
@@ -934,8 +925,6 @@ class AnthropicAPI(commands.Cog):
                         color=Colour.red(),
                     )
                 )
-            except Exception:
-                pass  # Best-effort notification — Discord may be unreachable
 
         finally:
             if typing_task:
@@ -970,9 +959,7 @@ class AnthropicAPI(commands.Cog):
             await self.bot.sync_commands()
             self.logger.info("Commands synchronized successfully.")
         except Exception as e:
-            self.logger.error(
-                f"Error during command synchronization: {e}", exc_info=True
-            )
+            self.logger.error(f"Error during command synchronization: {e}", exc_info=True)
 
     @commands.Cog.listener()
     async def on_message(self, message):
@@ -1020,9 +1007,7 @@ class AnthropicAPI(commands.Cog):
             return
         permissions = ctx.channel.permissions_for(ctx.guild.me)  # type: ignore[union-attr]
         if permissions.read_messages and permissions.read_message_history:
-            await ctx.respond(
-                "Bot has permission to read messages and message history."
-            )
+            await ctx.respond("Bot has permission to read messages and message history.")
         else:
             await ctx.respond("Bot is missing necessary permissions in this channel.")
 
@@ -1254,9 +1239,7 @@ class AnthropicAPI(commands.Cog):
             response_text = parsed.text
             thinking_text = parsed.thinking
 
-            self.logger.debug(
-                f"Received response from Claude: {response_text[:200]}..."
-            )
+            self.logger.debug(f"Received response from Claude: {response_text[:200]}...")
 
             # Update initial response description based on input parameters
             truncated_prompt = truncate_text(prompt, 2000)
@@ -1296,7 +1279,9 @@ class AnthropicAPI(commands.Cog):
 
             append_citations_embed(embeds, parsed.citations)
             request_cost, daily_cost = self._track_daily_cost(
-                ctx.author.id, model, parsed,
+                ctx.author.id,
+                model,
+                parsed,
             )
             if SHOW_COST_EMBEDS:
                 append_pricing_embed(embeds, parsed, request_cost, daily_cost)
@@ -1322,9 +1307,7 @@ class AnthropicAPI(commands.Cog):
             self.last_view_messages[ctx.author] = message
 
             # Store the conversation (params already created above)
-            conversation = Conversation(
-                params=params, messages=conversation_messages
-            )
+            conversation = Conversation(params=params, messages=conversation_messages)
             self.conversations[conv_key] = conversation
 
         except (APIError, APIConnectionError, aiohttp.ClientError) as e:
@@ -1344,7 +1327,7 @@ class AnthropicAPI(commands.Cog):
                 exc_info=True,
             )
             await self._cleanup_conversation(ctx.author)
-            try:
+            with contextlib.suppress(Exception):
                 await ctx.send_followup(
                     embed=Embed(
                         title="Error",
@@ -1352,8 +1335,6 @@ class AnthropicAPI(commands.Cog):
                         color=Colour.red(),
                     )
                 )
-            except Exception:
-                pass  # Best-effort notification
 
         finally:
             if typing_task:

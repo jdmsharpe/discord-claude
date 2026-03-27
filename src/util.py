@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any, Protocol
 
 from discord import Embed, Member, User
@@ -113,7 +113,6 @@ def calculate_cost(
     )
 
 
-
 @dataclass
 class UsageTotals:
     """Accumulates token/tool usage across multiple API iterations."""
@@ -139,7 +138,9 @@ class UsageTotals:
         if server_tool_use:
             self.web_search_requests += getattr(server_tool_use, "web_search_requests", 0) or 0
             self.web_fetch_requests += getattr(server_tool_use, "web_fetch_requests", 0) or 0
-            self.code_execution_requests += getattr(server_tool_use, "code_execution_requests", 0) or 0
+            self.code_execution_requests += (
+                getattr(server_tool_use, "code_execution_requests", 0) or 0
+            )
 
     def apply_to(self, parsed: Any, context_window: int) -> None:
         """Stamp all accumulated totals onto a ParsedResponse."""
@@ -151,9 +152,7 @@ class UsageTotals:
         parsed.web_fetch_requests = self.web_fetch_requests
         parsed.code_execution_requests = self.code_execution_requests
         parsed.context_compacted = self.context_compacted
-        parsed.context_warning = (
-            self.input_tokens > context_window * CONTEXT_WARNING_THRESHOLD
-        )
+        parsed.context_warning = self.input_tokens > context_window * CONTEXT_WARNING_THRESHOLD
 
 
 @dataclass
@@ -185,7 +184,7 @@ class Conversation:
 
     params: ChatCompletionParameters
     messages: list[dict[str, Any]]
-    created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    created_at: datetime = field(default_factory=lambda: datetime.now(UTC))
 
 
 class ToolHandler(Protocol):

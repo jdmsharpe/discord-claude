@@ -731,9 +731,7 @@ class TestAnthropicAPICog:
         assert len(cog.conversations) == 1
 
     @pytest.mark.asyncio
-    async def test_chat_prevents_duplicate_conversations(
-        self, cog, mock_discord_context
-    ):
+    async def test_chat_prevents_duplicate_conversations(self, cog, mock_discord_context):
         """Test that users can't start multiple conversations in the same channel."""
         # Pre-populate with existing conversation using (user_id, channel_id) key
         from src.util import ChatCompletionParameters, Conversation
@@ -853,9 +851,7 @@ class TestCallApiWithToolLoop:
         final_response.stop_reason = "end_turn"
         final_response.usage = None
 
-        cog.client.messages.create = AsyncMock(
-            side_effect=[pause_response, final_response]
-        )
+        cog.client.messages.create = AsyncMock(side_effect=[pause_response, final_response])
 
         messages = [{"role": "user", "content": "Search for something"}]
         api_params = {"model": "claude-sonnet-4", "max_tokens": 1024}
@@ -895,9 +891,7 @@ class TestCallApiWithToolLoop:
         final_response.stop_reason = "end_turn"
         final_response.usage = None
 
-        cog.client.messages.create = AsyncMock(
-            side_effect=[tool_response, final_response]
-        )
+        cog.client.messages.create = AsyncMock(side_effect=[tool_response, final_response])
 
         messages = [{"role": "user", "content": "Check my memories"}]
         api_params = {"model": "claude-sonnet-4", "max_tokens": 1024}
@@ -942,9 +936,7 @@ class TestCallApiWithToolLoop:
         final_response.stop_reason = "end_turn"
         final_response.usage = None
 
-        cog.client.messages.create = AsyncMock(
-            side_effect=[tool_response, final_response]
-        )
+        cog.client.messages.create = AsyncMock(side_effect=[tool_response, final_response])
 
         messages = [{"role": "user", "content": "Run echo hello"}]
         api_params = {"model": "claude-sonnet-4", "max_tokens": 1024}
@@ -982,7 +974,7 @@ class TestCallApiWithToolLoop:
         messages = [{"role": "user", "content": "Do something"}]
         api_params = {"model": "claude-sonnet-4", "max_tokens": 1024}
 
-        parsed = await cog._call_api_with_tool_loop(
+        await cog._call_api_with_tool_loop(
             api_params=api_params,
             messages=messages,
             user_id=123,
@@ -1131,9 +1123,7 @@ class TestCallApiWithToolLoop:
             "tools": [{"type": "web_search_20260209", "name": "web_search"}],
         }
 
-        await cog._call_api_with_tool_loop(
-            api_params=api_params, messages=messages, user_id=123
-        )
+        await cog._call_api_with_tool_loop(api_params=api_params, messages=messages, user_id=123)
 
         cog.client.beta.messages.create.assert_called_once()
         call_kwargs = cog.client.beta.messages.create.call_args[1]
@@ -1162,9 +1152,7 @@ class TestCallApiWithToolLoop:
             "thinking": {"type": "enabled", "budget_tokens": 5000},
         }
 
-        await cog._call_api_with_tool_loop(
-            api_params=api_params, messages=messages, user_id=123
-        )
+        await cog._call_api_with_tool_loop(api_params=api_params, messages=messages, user_id=123)
 
         cog.client.beta.messages.create.assert_called_once()
         call_kwargs = cog.client.beta.messages.create.call_args[1]
@@ -1185,8 +1173,10 @@ class TestCallApiWithToolLoop:
         pause_response.content = [pause_text]
         pause_response.stop_reason = "pause_turn"
         pause_response.usage = _make_usage(
-            input_tokens=100, output_tokens=50,
-            cache_creation_input_tokens=200, cache_read_input_tokens=0,
+            input_tokens=100,
+            output_tokens=50,
+            cache_creation_input_tokens=200,
+            cache_read_input_tokens=0,
         )
 
         final_response = MagicMock()
@@ -1197,13 +1187,13 @@ class TestCallApiWithToolLoop:
         final_response.content = [final_text]
         final_response.stop_reason = "end_turn"
         final_response.usage = _make_usage(
-            input_tokens=50, output_tokens=30,
-            cache_creation_input_tokens=0, cache_read_input_tokens=200,
+            input_tokens=50,
+            output_tokens=30,
+            cache_creation_input_tokens=0,
+            cache_read_input_tokens=200,
         )
 
-        cog.client.messages.create = AsyncMock(
-            side_effect=[pause_response, final_response]
-        )
+        cog.client.messages.create = AsyncMock(side_effect=[pause_response, final_response])
 
         messages = [{"role": "user", "content": "Hi"}]
         api_params = {"model": "claude-haiku-4-5", "max_tokens": 1024}
@@ -1229,11 +1219,15 @@ class TestCallApiWithToolLoop:
         pause_response.content = [pause_text]
         pause_response.stop_reason = "pause_turn"
         server_tool_use_1 = MagicMock(
-            web_search_requests=2, web_fetch_requests=1, code_execution_requests=0,
+            web_search_requests=2,
+            web_fetch_requests=1,
+            code_execution_requests=0,
         )
         pause_response.usage = MagicMock(
-            input_tokens=100, output_tokens=50,
-            cache_creation_input_tokens=0, cache_read_input_tokens=0,
+            input_tokens=100,
+            output_tokens=50,
+            cache_creation_input_tokens=0,
+            cache_read_input_tokens=0,
             server_tool_use=server_tool_use_1,
         )
 
@@ -1246,17 +1240,19 @@ class TestCallApiWithToolLoop:
         final_response.content = [final_text]
         final_response.stop_reason = "end_turn"
         server_tool_use_2 = MagicMock(
-            web_search_requests=1, web_fetch_requests=0, code_execution_requests=1,
+            web_search_requests=1,
+            web_fetch_requests=0,
+            code_execution_requests=1,
         )
         final_response.usage = MagicMock(
-            input_tokens=200, output_tokens=100,
-            cache_creation_input_tokens=0, cache_read_input_tokens=0,
+            input_tokens=200,
+            output_tokens=100,
+            cache_creation_input_tokens=0,
+            cache_read_input_tokens=0,
             server_tool_use=server_tool_use_2,
         )
 
-        cog.client.messages.create = AsyncMock(
-            side_effect=[pause_response, final_response]
-        )
+        cog.client.messages.create = AsyncMock(side_effect=[pause_response, final_response])
 
         messages = [{"role": "user", "content": "Search for something"}]
         api_params = {"model": "claude-haiku-4-5", "max_tokens": 1024}
@@ -1448,6 +1444,7 @@ class TestToolHandlerRegistry:
     def cog(self, mock_bot):
         with patch("anthropic.AsyncAnthropic"):
             from src.anthropic_api import AnthropicAPI
+
             return AnthropicAPI(bot=mock_bot)
 
     @pytest.mark.asyncio
@@ -1460,7 +1457,8 @@ class TestToolHandlerRegistry:
             )
         assert result == "Memory result."
         mock_exec.assert_called_once_with(
-            user_id=123, tool_input={"command": "view", "path": "/memories"},
+            user_id=123,
+            tool_input={"command": "view", "path": "/memories"},
         )
 
     @pytest.mark.asyncio
@@ -1468,9 +1466,7 @@ class TestToolHandlerRegistry:
         """Bash tool is dispatched via the registry."""
         with patch("src.anthropic_api.execute_bash_command", new_callable=AsyncMock) as mock_bash:
             mock_bash.return_value = "hello\n"
-            result = await cog._execute_tool(
-                "bash", {"command": "echo hello"}, user_id=123
-            )
+            result = await cog._execute_tool("bash", {"command": "echo hello"}, user_id=123)
         assert result == "hello\n"
 
     @pytest.mark.asyncio

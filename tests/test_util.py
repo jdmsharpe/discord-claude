@@ -101,7 +101,7 @@ class TestFormatAnthropicError:
     def test_exception_with_status_code(self):
         """Exception with status_code attribute should include it."""
         error = Exception("API error")
-        setattr(error, "status_code", 429)
+        error.status_code = 429
         result = format_anthropic_error(error)
         assert "API error" in result
         assert "Status: 429" in result
@@ -109,7 +109,7 @@ class TestFormatAnthropicError:
     def test_exception_with_message_attribute(self):
         """Exception with message attribute should use it."""
         error = Exception()
-        setattr(error, "message", "Custom message")
+        error.message = "Custom message"
         result = format_anthropic_error(error)
         assert "Custom message" in result
 
@@ -183,10 +183,10 @@ class TestCalculateCost:
         """Cost with all token types combined."""
         cost = calculate_cost(
             "claude-sonnet-4-6",
-            input_tokens=500_000,       # $1.50
-            output_tokens=100_000,      # $1.50
+            input_tokens=500_000,  # $1.50
+            output_tokens=100_000,  # $1.50
             cache_creation_tokens=200_000,  # $1.20
-            cache_read_tokens=1_000_000,    # $0.30
+            cache_read_tokens=1_000_000,  # $0.30
         )
         assert cost == pytest.approx(4.50)
 
@@ -225,8 +225,8 @@ class TestCalculateCost:
         cost = calculate_cost(
             "claude-sonnet-4-6",
             input_tokens=1_000_000,  # $3.00
-            output_tokens=100_000,   # $1.50
-            web_search_requests=3,   # $0.03
+            output_tokens=100_000,  # $1.50
+            web_search_requests=3,  # $0.03
         )
         assert cost == pytest.approx(4.53)
 
@@ -243,8 +243,10 @@ class TestUsageTotals:
         """Basic token accumulation from a usage object."""
         totals = UsageTotals()
         usage = MagicMock(
-            input_tokens=100, output_tokens=50,
-            cache_creation_input_tokens=10, cache_read_input_tokens=20,
+            input_tokens=100,
+            output_tokens=50,
+            cache_creation_input_tokens=10,
+            cache_read_input_tokens=20,
             server_tool_use=None,
         )
         totals.accumulate(usage)
@@ -257,13 +259,17 @@ class TestUsageTotals:
         """Multiple accumulations add up."""
         totals = UsageTotals()
         usage1 = MagicMock(
-            input_tokens=100, output_tokens=50,
-            cache_creation_input_tokens=0, cache_read_input_tokens=0,
+            input_tokens=100,
+            output_tokens=50,
+            cache_creation_input_tokens=0,
+            cache_read_input_tokens=0,
             server_tool_use=None,
         )
         usage2 = MagicMock(
-            input_tokens=200, output_tokens=100,
-            cache_creation_input_tokens=0, cache_read_input_tokens=0,
+            input_tokens=200,
+            output_tokens=100,
+            cache_creation_input_tokens=0,
+            cache_read_input_tokens=0,
             server_tool_use=None,
         )
         totals.accumulate(usage1)
@@ -281,11 +287,15 @@ class TestUsageTotals:
         """Server tool use counts are accumulated."""
         totals = UsageTotals()
         server_tool_use = MagicMock(
-            web_search_requests=2, web_fetch_requests=1, code_execution_requests=0,
+            web_search_requests=2,
+            web_fetch_requests=1,
+            code_execution_requests=0,
         )
         usage = MagicMock(
-            input_tokens=0, output_tokens=0,
-            cache_creation_input_tokens=0, cache_read_input_tokens=0,
+            input_tokens=0,
+            output_tokens=0,
+            cache_creation_input_tokens=0,
+            cache_read_input_tokens=0,
             server_tool_use=server_tool_use,
         )
         totals.accumulate(usage)
@@ -296,10 +306,14 @@ class TestUsageTotals:
     def test_apply_to_sets_all_fields(self):
         """apply_to stamps all fields onto a target object."""
         totals = UsageTotals(
-            input_tokens=100, output_tokens=50,
-            cache_creation_tokens=10, cache_read_tokens=20,
-            web_search_requests=1, web_fetch_requests=2,
-            code_execution_requests=3, context_compacted=True,
+            input_tokens=100,
+            output_tokens=50,
+            cache_creation_tokens=10,
+            cache_read_tokens=20,
+            web_search_requests=1,
+            web_fetch_requests=2,
+            code_execution_requests=3,
+            context_compacted=True,
         )
         target = MagicMock()
         totals.apply_to(target, context_window=200_000)
