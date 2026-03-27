@@ -55,7 +55,8 @@ Discord bot wrapping Anthropic's Claude API using py-cord.
 
 - `ruff check src/ tests/` — configured via `pyproject.toml` (E/W/F/I/UP/B/SIM rules, E501 ignored)
 - `ruff format src/ tests/` — auto-formatting (100-col, double quotes)
-- Pre-commit hook auto-formats staged Python files in `src/` and `tests/`, then blocks on lint failures
+- Pre-commit hook (`.githooks/pre-commit`) auto-formats staged Python files and blocks on lint failures
+- After cloning, run `git config core.hooksPath .githooks` to enable hooks
 
 ## Style
 
