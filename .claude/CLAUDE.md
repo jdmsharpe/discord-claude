@@ -51,6 +51,12 @@ Discord bot wrapping Anthropic's Claude API using py-cord.
 
 - `pyright src/` — Pyright configured via `pyrightconfig.json` (`basic` mode). Must pass with 0 errors before committing
 
+## Linting
+
+- `ruff check src/ tests/` — configured via `pyproject.toml` (E/W/F/I/UP/B/SIM rules, E501 ignored)
+- `ruff format src/ tests/` — auto-formatting (100-col, double quotes)
+- Pre-commit hook auto-formats staged Python files in `src/` and `tests/`, then blocks on lint failures
+
 ## Style
 
 Type hints, dataclasses, async/await, f-string logging
