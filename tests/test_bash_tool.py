@@ -1,10 +1,6 @@
-import pytest
-
-
 class TestExecuteBashCommand:
     """Tests for the execute_bash_command function."""
 
-    @pytest.mark.asyncio
     async def test_simple_command(self):
         """A simple echo command returns its output."""
         from src.bash_tool import execute_bash_command
@@ -12,7 +8,6 @@ class TestExecuteBashCommand:
         result = await execute_bash_command("echo hello")
         assert "hello" in result
 
-    @pytest.mark.asyncio
     async def test_stderr_included(self):
         """stderr output is included in the result."""
         from src.bash_tool import execute_bash_command
@@ -20,7 +15,6 @@ class TestExecuteBashCommand:
         result = await execute_bash_command("echo error >&2")
         assert "error" in result
 
-    @pytest.mark.asyncio
     async def test_combined_stdout_stderr(self):
         """Both stdout and stderr are returned together."""
         from src.bash_tool import execute_bash_command
@@ -29,7 +23,6 @@ class TestExecuteBashCommand:
         assert "out" in result
         assert "err" in result
 
-    @pytest.mark.asyncio
     async def test_no_output(self):
         """Command with no output returns placeholder text."""
         from src.bash_tool import execute_bash_command
@@ -37,7 +30,6 @@ class TestExecuteBashCommand:
         result = await execute_bash_command("true")
         assert result == "(no output)"
 
-    @pytest.mark.asyncio
     async def test_timeout(self):
         """Command that exceeds timeout returns error message."""
         from unittest.mock import patch
@@ -48,7 +40,6 @@ class TestExecuteBashCommand:
             result = await execute_bash_command("sleep 10")
         assert "timed out" in result
 
-    @pytest.mark.asyncio
     async def test_nonexistent_command(self):
         """Running a nonexistent command returns error output."""
         from src.bash_tool import execute_bash_command
@@ -56,7 +47,6 @@ class TestExecuteBashCommand:
         result = await execute_bash_command("nonexistentcommand12345")
         assert "not found" in result or "not recognized" in result
 
-    @pytest.mark.asyncio
     async def test_output_truncation(self):
         """Output exceeding MAX_OUTPUT_LINES is truncated."""
         from unittest.mock import patch
@@ -72,7 +62,6 @@ class TestExecuteBashCommand:
         # Lines beyond the limit should not appear
         assert "line20" not in result
 
-    @pytest.mark.asyncio
     async def test_exit_code_nonzero(self):
         """Non-zero exit code still returns output (stderr)."""
         from src.bash_tool import execute_bash_command
