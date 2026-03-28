@@ -518,6 +518,11 @@ class AnthropicAPI(commands.Cog):
         await self._strip_previous_view(user)
         self.views.pop(user, None)
 
+    async def _stop_conversation(self, conversation_key: ConversationKey, user) -> None:
+        """Stop a conversation and clean up resources."""
+        self.conversations.pop(conversation_key, None)
+        await self._cleanup_conversation(user)
+
     def _track_daily_cost(
         self,
         user_id: int,
@@ -1299,10 +1304,12 @@ class AnthropicAPI(commands.Cog):
             # Create the view with buttons and tool select menu
             conv_key: ConversationKey = (ctx.author.id, ctx.channel.id)
             view = ButtonView(
-                cog=self,
                 conversation_starter=ctx.author,
                 conversation_key=conv_key,
                 initial_tools=enabled_tools,
+                get_conversation=lambda key: self.conversations.get(key),
+                on_regenerate=self.handle_new_message_in_conversation,
+                on_stop=self._stop_conversation,
             )
             self.views[ctx.author] = view
 
