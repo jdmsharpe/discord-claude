@@ -3,6 +3,7 @@ import asyncio
 import base64
 import contextlib
 import logging
+import re
 from dataclasses import dataclass, field
 from datetime import date
 from typing import Any
@@ -264,6 +265,8 @@ def append_response_embeds(embeds: list[Embed], response_text: str) -> None:
         response_text = (
             response_text[: available - 40] + "\n\n... [Response truncated due to length]"
         )
+
+    response_text = re.sub(r"\n{3,}", "\n\n", response_text)
 
     for index, chunk in enumerate(chunk_text(response_text, 3500), start=1):
         embeds.append(
