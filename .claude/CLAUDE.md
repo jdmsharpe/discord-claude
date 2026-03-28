@@ -45,7 +45,10 @@ Discord bot wrapping Anthropic's Claude API using py-cord.
 
 ## Testing
 
-- `pytest` from project root — mocked Discord/Anthropic clients, no real API calls
+- `pytest` from project root — pytest-native with `asyncio_mode = "auto"` (no `@pytest.mark.asyncio` needed)
+- `pythonpath = ["src"]` configured in `pyproject.toml` — use direct imports (`from util import ...`), no `sys.path` hacks
+- Mocked Discord/Anthropic clients, no real API calls
+- `conftest.py` provides shared fixtures (mock_bot, mock_anthropic_client, mock_discord_context, etc.)
 
 ## Type Checking
 

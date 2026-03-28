@@ -3,21 +3,21 @@ class TestExecuteBashCommand:
 
     async def test_simple_command(self):
         """A simple echo command returns its output."""
-        from src.bash_tool import execute_bash_command
+        from bash_tool import execute_bash_command
 
         result = await execute_bash_command("echo hello")
         assert "hello" in result
 
     async def test_stderr_included(self):
         """stderr output is included in the result."""
-        from src.bash_tool import execute_bash_command
+        from bash_tool import execute_bash_command
 
         result = await execute_bash_command("echo error >&2")
         assert "error" in result
 
     async def test_combined_stdout_stderr(self):
         """Both stdout and stderr are returned together."""
-        from src.bash_tool import execute_bash_command
+        from bash_tool import execute_bash_command
 
         result = await execute_bash_command("echo out && echo err >&2")
         assert "out" in result
@@ -25,7 +25,7 @@ class TestExecuteBashCommand:
 
     async def test_no_output(self):
         """Command with no output returns placeholder text."""
-        from src.bash_tool import execute_bash_command
+        from bash_tool import execute_bash_command
 
         result = await execute_bash_command("true")
         assert result == "(no output)"
@@ -34,15 +34,15 @@ class TestExecuteBashCommand:
         """Command that exceeds timeout returns error message."""
         from unittest.mock import patch
 
-        from src.bash_tool import execute_bash_command
+        from bash_tool import execute_bash_command
 
-        with patch("src.bash_tool.BASH_TIMEOUT", 0.1):
+        with patch("bash_tool.BASH_TIMEOUT", 0.1):
             result = await execute_bash_command("sleep 10")
         assert "timed out" in result
 
     async def test_nonexistent_command(self):
         """Running a nonexistent command returns error output."""
-        from src.bash_tool import execute_bash_command
+        from bash_tool import execute_bash_command
 
         result = await execute_bash_command("nonexistentcommand12345")
         assert "not found" in result or "not recognized" in result
@@ -51,9 +51,9 @@ class TestExecuteBashCommand:
         """Output exceeding MAX_OUTPUT_LINES is truncated."""
         from unittest.mock import patch
 
-        from src.bash_tool import execute_bash_command
+        from bash_tool import execute_bash_command
 
-        with patch("src.bash_tool.MAX_OUTPUT_LINES", 5):
+        with patch("bash_tool.MAX_OUTPUT_LINES", 5):
             result = await execute_bash_command(
                 "python -c \"print('\\n'.join(f'line{i}' for i in range(1, 21)))\""
             )
@@ -64,7 +64,7 @@ class TestExecuteBashCommand:
 
     async def test_exit_code_nonzero(self):
         """Non-zero exit code still returns output (stderr)."""
-        from src.bash_tool import execute_bash_command
+        from bash_tool import execute_bash_command
 
         result = await execute_bash_command("ls /nonexistent_path_xyz")
         # Should contain error message from ls, not crash

@@ -1,6 +1,6 @@
 import pytest
 
-from src.memory import (
+from memory import (
     _resolve_safe_path,
     execute_memory_operation,
 )
@@ -9,7 +9,7 @@ from src.memory import (
 @pytest.fixture(autouse=True)
 def use_tmp_memories(tmp_path, monkeypatch):
     """Redirect MEMORIES_BASE_DIR to a temp directory for all tests."""
-    monkeypatch.setattr("src.memory.MEMORIES_BASE_DIR", tmp_path)
+    monkeypatch.setattr("memory.MEMORIES_BASE_DIR", tmp_path)
     return tmp_path
 
 
