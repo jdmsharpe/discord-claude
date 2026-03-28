@@ -51,7 +51,7 @@ Check if the bot has the necessary permissions in the current channel.
 
 ### Prerequisites
 
-- Python 3.12+
+- Python 3.13+
 - Discord Bot Token
 - Anthropic API Key
 
