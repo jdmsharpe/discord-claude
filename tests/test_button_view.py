@@ -1,0 +1,227 @@
+import sys
+from pathlib import Path
+from unittest.mock import AsyncMock, MagicMock
+
+import pytest
+from discord.ui import Select
+
+# Add src/ to path so imports work in Docker
+sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
+
+from button_view import ButtonView
+
+
+def _make_view(
+    conversation_starter=None,
+    conversation_key=None,
+    initial_tools=None,
+    get_conversation=None,
+    on_stop=None,
+):
+    return ButtonView(
+        conversation_starter=conversation_starter or MagicMock(),
+        conversation_key=conversation_key or (123, 456),
+        initial_tools=initial_tools,
+        get_conversation=get_conversation or MagicMock(return_value=None),
+        on_regenerate=AsyncMock(),
+        on_stop=on_stop or AsyncMock(),
+    )
+
+
+class TestButtonView:
+    @pytest.mark.asyncio
+    async def test_init_creates_select(self):
+        view = _make_view()
+        selects = [c for c in view.children if isinstance(c, Select)]
+        assert len(selects) == 1
+        assert selects[0].min_values == 0
+        assert selects[0].max_values == 5
+
+    @pytest.mark.asyncio
+    async def test_initial_tools_set_defaults(self):
+        view = _make_view(initial_tools=["web_search", "memory"])
+        select = next(c for c in view.children if isinstance(c, Select))
+        defaults = {o.value: o.default for o in select.options}
+        assert defaults["web_search"] is True
+        assert defaults["memory"] is True
+        assert defaults["code_execution"] is False
+        assert defaults["web_fetch"] is False
+        assert defaults["bash"] is False
+
+    @pytest.mark.asyncio
+    async def test_tool_select_updates_tools_and_defaults(self):
+        starter = MagicMock()
+        conversation = MagicMock()
+        conversation.params = MagicMock()
+        conversation.params.tools = []
+        view = _make_view(
+            conversation_starter=starter,
+            get_conversation=MagicMock(return_value=conversation),
+        )
+        # Get real select for verifying defaults afterward
+        real_select = next(c for c in view.children if isinstance(c, Select))
+        # Use a mock select for .values (read-only property in py-cord)
+        mock_select = MagicMock()
+        mock_select.values = ["web_search", "memory"]
+
+        interaction = MagicMock()
+        interaction.user = starter
+        interaction.response = MagicMock()
+        interaction.response.send_message = AsyncMock()
+        interaction.response.is_done = MagicMock(return_value=False)
+
+        await view.tool_select_callback(interaction, mock_select)
+
+        assert conversation.params.tools == ["web_search", "memory"]
+        # Check select defaults updated on the real Select widget
+        defaults = {o.value: o.default for o in real_select.options}
+        assert defaults["web_search"] is True
+        assert defaults["memory"] is True
+        assert defaults["code_execution"] is False
+        call_args = interaction.response.send_message.call_args
+        assert "Tools updated" in call_args.args[0]
+
+    @pytest.mark.asyncio
+    async def test_tool_select_rejects_non_owner(self):
+        starter = MagicMock()
+        view = _make_view(conversation_starter=starter)
+        mock_select = MagicMock()
+        mock_select.values = []
+
+        interaction = MagicMock()
+        interaction.user = MagicMock()
+        interaction.response = MagicMock()
+        interaction.response.send_message = AsyncMock()
+
+        await view.tool_select_callback(interaction, mock_select)
+        assert "not allowed" in interaction.response.send_message.call_args.args[0]
+
+    @pytest.mark.asyncio
+    async def test_tool_select_no_conversation(self):
+        starter = MagicMock()
+        view = _make_view(conversation_starter=starter)
+        mock_select = MagicMock()
+        mock_select.values = []
+
+        interaction = MagicMock()
+        interaction.user = starter
+        interaction.response = MagicMock()
+        interaction.response.send_message = AsyncMock()
+
+        await view.tool_select_callback(interaction, mock_select)
+        assert "No active conversation" in interaction.response.send_message.call_args.args[0]
+
+    @pytest.mark.asyncio
+    async def test_stop_button_calls_on_stop(self):
+        starter = MagicMock()
+        conversation = MagicMock()
+        on_stop = AsyncMock()
+        view = ButtonView(
+            conversation_starter=starter,
+            conversation_key=(123, 456),
+            get_conversation=MagicMock(return_value=conversation),
+            on_regenerate=AsyncMock(),
+            on_stop=on_stop,
+        )
+
+        interaction = MagicMock()
+        interaction.user = starter
+        interaction.response = MagicMock()
+        interaction.response.send_message = AsyncMock()
+        interaction.response.is_done = MagicMock(return_value=False)
+
+        await view.stop_button.callback(interaction)
+
+        on_stop.assert_awaited_once_with((123, 456), starter)
+        assert "ended" in interaction.response.send_message.call_args.args[0]
+
+    @pytest.mark.asyncio
+    async def test_stop_button_rejects_non_owner(self):
+        starter = MagicMock()
+        view = _make_view(conversation_starter=starter)
+
+        interaction = MagicMock()
+        interaction.user = MagicMock()
+        interaction.response = MagicMock()
+        interaction.response.send_message = AsyncMock()
+
+        await view.stop_button.callback(interaction)
+        assert "not allowed" in interaction.response.send_message.call_args.args[0]
+
+    @pytest.mark.asyncio
+    async def test_stop_button_no_conversation(self):
+        starter = MagicMock()
+        view = _make_view(conversation_starter=starter)
+
+        interaction = MagicMock()
+        interaction.user = starter
+        interaction.response = MagicMock()
+        interaction.response.send_message = AsyncMock()
+
+        await view.stop_button.callback(interaction)
+        assert "No active conversation" in interaction.response.send_message.call_args.args[0]
+
+    @pytest.mark.asyncio
+    async def test_play_pause_toggles(self):
+        starter = MagicMock()
+        conversation = MagicMock()
+        conversation.params = MagicMock()
+        conversation.params.paused = False
+        view = _make_view(
+            conversation_starter=starter,
+            get_conversation=MagicMock(return_value=conversation),
+        )
+
+        interaction = MagicMock()
+        interaction.user = starter
+        interaction.response = MagicMock()
+        interaction.response.send_message = AsyncMock()
+        interaction.response.is_done = MagicMock(return_value=False)
+
+        await view.play_pause_button.callback(interaction)
+        assert conversation.params.paused is True
+        assert "paused" in interaction.response.send_message.call_args.args[0]
+
+        interaction.response.send_message.reset_mock()
+        await view.play_pause_button.callback(interaction)
+        assert conversation.params.paused is False
+        assert "resumed" in interaction.response.send_message.call_args.args[0]
+
+    @pytest.mark.asyncio
+    async def test_play_pause_rejects_non_owner(self):
+        starter = MagicMock()
+        view = _make_view(conversation_starter=starter)
+
+        interaction = MagicMock()
+        interaction.user = MagicMock()
+        interaction.response = MagicMock()
+        interaction.response.send_message = AsyncMock()
+
+        await view.play_pause_button.callback(interaction)
+        assert "not allowed" in interaction.response.send_message.call_args.args[0]
+
+    @pytest.mark.asyncio
+    async def test_regenerate_rejects_non_owner(self):
+        starter = MagicMock()
+        view = _make_view(conversation_starter=starter)
+
+        interaction = MagicMock()
+        interaction.user = MagicMock()
+        interaction.response = MagicMock()
+        interaction.response.send_message = AsyncMock()
+
+        await view.regenerate_button.callback(interaction)
+        assert "not allowed" in interaction.response.send_message.call_args.args[0]
+
+    @pytest.mark.asyncio
+    async def test_regenerate_no_conversation(self):
+        starter = MagicMock()
+        view = _make_view(conversation_starter=starter)
+
+        interaction = MagicMock()
+        interaction.user = starter
+        interaction.response = MagicMock()
+        interaction.response.send_message = AsyncMock()
+
+        await view.regenerate_button.callback(interaction)
+        assert "No active conversation" in interaction.response.send_message.call_args.args[0]
