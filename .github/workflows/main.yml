@@ -1,4 +1,4 @@
-name: Docker CI
+name: CI
 
 on:
   push:
@@ -7,7 +7,32 @@ on:
     branches: [main]
 
 jobs:
-  build-and-test:
+  python-tests:
+    name: Python ${{ matrix.python-version }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.11", "3.12", "3.13"]
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run tests
+        run: pytest -q
+
+  docker-smoke-test:
     runs-on: ubuntu-latest
     steps:
       - name: Check out repository
@@ -24,26 +49,6 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-buildx-
 
-      - name: Login to Docker Hub
-        if: github.event_name == 'push'
-        uses: docker/login-action@v4
-        with:
-          username: ${{ secrets.DOCKER_HUB_USERNAME }}
-          password: ${{ secrets.DOCKER_HUB_TOKEN }}
-
-      - name: Build and push release image
-        if: github.event_name == 'push'
-        uses: docker/build-push-action@v7
-        with:
-          push: true
-          context: .
-          file: ./Dockerfile
-          tags: ${{ secrets.DOCKER_HUB_USERNAME }}/discord-claude:latest
-          cache-from: type=local,src=/tmp/.buildx-cache
-          cache-to: type=local,dest=/tmp/.buildx-cache-new,mode=max
-        env:
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-
       - name: Build test image
         uses: docker/build-push-action@v7
         with:
@@ -51,6 +56,7 @@ jobs:
           load: true
           context: .
           file: ./Dockerfile.test
+          build-args: PYTHON_VERSION=3.13
           tags: discord-claude-test:latest
           cache-from: type=local,src=/tmp/.buildx-cache
           cache-to: type=local,dest=/tmp/.buildx-cache-new,mode=max
@@ -64,3 +70,31 @@ jobs:
         run: |
           rm -rf /tmp/.buildx-cache
           mv /tmp/.buildx-cache-new /tmp/.buildx-cache
+
+  release-image:
+    if: github.event_name == 'push'
+    needs: [python-tests, docker-smoke-test]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Login to Docker Hub
+        uses: docker/login-action@v4
+        with:
+          username: ${{ secrets.DOCKER_HUB_USERNAME }}
+          password: ${{ secrets.DOCKER_HUB_TOKEN }}
+
+      - name: Build and push release image
+        uses: docker/build-push-action@v7
+        with:
+          push: true
+          context: .
+          file: ./Dockerfile
+          build-args: PYTHON_VERSION=3.13
+          tags: ${{ secrets.DOCKER_HUB_USERNAME }}/discord-claude:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

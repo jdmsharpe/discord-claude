@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from typing import Any, Protocol
 
 from discord import Embed, Member, User
@@ -184,7 +184,7 @@ class Conversation:
 
     params: ChatCompletionParameters
     messages: list[dict[str, Any]]
-    created_at: datetime = field(default_factory=lambda: datetime.now(UTC))
+    created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
 
 
 class ToolHandler(Protocol):

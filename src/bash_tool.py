@@ -1,4 +1,5 @@
 import asyncio
+import contextlib
 import logging
 
 logger = logging.getLogger(__name__)
@@ -25,9 +26,11 @@ async def execute_bash_command(command: str) -> str:
         )
         try:
             stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=BASH_TIMEOUT)
-        except TimeoutError:
-            process.kill()
-            await process.wait()
+        except asyncio.TimeoutError:
+            with contextlib.suppress(ProcessLookupError):
+                process.kill()
+            with contextlib.suppress(Exception):
+                await process.wait()
             return f"Error: Command timed out after {BASH_TIMEOUT} seconds"
 
         output = ""
