@@ -51,7 +51,7 @@ Check if the bot has the necessary permissions in the current channel.
 
 ### Prerequisites
 
-- Python 3.13+
+- Python 3.10+
 - Discord Bot Token
 - Anthropic API Key
 
@@ -136,13 +136,16 @@ docker-compose up -d
 
 Tests use pytest with pytest-asyncio (`asyncio_mode = "auto"`). All tests are mocked — no real API calls.
 
+GitHub Actions runs the test suite against Python 3.10, 3.11, 3.12, and 3.13. Docker images default to Python 3.13, but both `Dockerfile` and `Dockerfile.test` accept a `PYTHON_VERSION` build argument.
+
 ```bash
 # Run tests
 .venv/Scripts/python.exe -m pytest -q    # Windows
 .venv/bin/python -m pytest -q            # Unix
 
 # Run tests in Docker
-docker build -f Dockerfile.test -t discord-claude-test . && docker run --rm discord-claude-test
+docker build --build-arg PYTHON_VERSION=3.10 -f Dockerfile.test -t discord-claude-test:3.10 .
+docker run --rm discord-claude-test:3.10
 ```
 
 ### Linting & Type Checking

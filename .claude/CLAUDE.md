@@ -43,6 +43,13 @@ Discord bot wrapping Anthropic's Claude API using py-cord.
 - `py-cord` - Discord API wrapper (slash commands, embeds, views)
 - `python-dotenv` - Environment variable loading
 
+## Python Version
+
+- Minimum supported Python version is 3.10 (matches `pyproject.toml`)
+- Docker images currently use Python 3.13 for development/testing/runtime
+- CI runs tests on Python 3.10, 3.11, 3.12, and 3.13
+- If code starts relying on 3.11+ or 3.13-only features, bump `requires-python` and docs together
+
 ## Testing
 
 - `pytest` from project root — pytest-native with `asyncio_mode = "auto"` (no `@pytest.mark.asyncio` needed)
