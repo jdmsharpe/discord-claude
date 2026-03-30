@@ -2,7 +2,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 from discord.ui import Select
 
-from button_view import ButtonView
+from discord_claude.cogs.claude.views import ButtonView
 
 
 def _make_view(
