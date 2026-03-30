@@ -14,7 +14,7 @@ from discord import (
 )
 from discord.ui import Button, Select, View, button
 
-from util import AVAILABLE_TOOLS, ConversationKey
+from util import AVAILABLE_TOOLS, ConversationKey, ToolChoice
 
 
 async def _send_interaction_error(interaction: Interaction, context: str, error: Exception) -> None:
@@ -34,6 +34,7 @@ class ButtonView(View):
         conversation_starter: Member | User,
         conversation_key: ConversationKey,
         initial_tools: list[str] | None = None,
+        initial_tool_choice: ToolChoice | None = None,
         get_conversation: Callable[[ConversationKey], Any | None],
         on_regenerate: Callable[[Any, Any], Awaitable[None]],
         on_stop: Callable[[ConversationKey, Member | User], Awaitable[None]],
@@ -47,11 +48,17 @@ class ButtonView(View):
         self._get_conversation = get_conversation
         self._on_regenerate = on_regenerate
         self._on_stop = on_stop
-        self._add_tool_select(initial_tools)
+        self._add_tool_select(initial_tools, initial_tool_choice)
 
-    def _add_tool_select(self, initial_tools: list[str] | None = None) -> None:
+    def _add_tool_select(
+        self,
+        initial_tools: list[str] | None = None,
+        initial_tool_choice: ToolChoice | None = None,
+    ) -> None:
         """Add a Select Menu for toggling tools mid-conversation."""
-        selected_tools = set(initial_tools or [])
+        selected_tools = set()
+        if initial_tool_choice is None or initial_tool_choice["type"] != "none":
+            selected_tools = set(initial_tools or [])
 
         tool_select = Select(
             placeholder="Tools",
@@ -115,8 +122,16 @@ class ButtonView(View):
                 )
                 return
 
+            existing_tools = [
+                tool for tool in getattr(conversation.params, "tools", []) if tool in AVAILABLE_TOOLS
+            ]
             selected_values = [value for value in tool_select.values if value in AVAILABLE_TOOLS]
-            conversation.params.tools = selected_values
+            if selected_values:
+                conversation.params.tools = selected_values
+                conversation.params.tool_choice = {"type": "auto"}
+            else:
+                conversation.params.tools = existing_tools
+                conversation.params.tool_choice = {"type": "none"}
 
             # Update Select dropdown defaults
             selected_set = set(selected_values)
@@ -127,8 +142,9 @@ class ButtonView(View):
                     break
 
             status = ", ".join(selected_values) if selected_values else "none"
+            tool_behavior = conversation.params.tool_choice["type"]
             await interaction.response.send_message(
-                f"Tools updated: {status}.",
+                f"Tools updated: {status}. Tool behavior: {tool_behavior}.",
                 ephemeral=True,
                 delete_after=3,
             )

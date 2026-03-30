@@ -524,6 +524,76 @@ class TestAppendPricingEmbed:
         assert "code exec" not in desc
 
 
+class TestToolChoiceSupport:
+    """Tests for tool_choice request handling and validation."""
+
+    def test_build_api_params_omits_tool_choice_by_default(self):
+        """tool_choice is omitted unless explicitly provided."""
+        from anthropic_api import AnthropicAPI
+        from util import ChatCompletionParameters
+
+        params = ChatCompletionParameters(model="claude-haiku-4-5", tools=["web_search"])
+
+        api_params = AnthropicAPI._build_api_params(
+            params,
+            [{"role": "user", "content": "Hello"}],
+        )
+
+        assert "tool_choice" not in api_params
+
+    def test_build_api_params_includes_explicit_none(self):
+        """Explicit none is forwarded to the Anthropic request."""
+        from anthropic_api import AnthropicAPI
+        from util import ChatCompletionParameters
+
+        params = ChatCompletionParameters(
+            model="claude-haiku-4-5",
+            tools=["web_search"],
+            tool_choice={"type": "none"},
+        )
+
+        api_params = AnthropicAPI._build_api_params(
+            params,
+            [{"role": "user", "content": "Hello"}],
+        )
+
+        assert api_params["tool_choice"] == {"type": "none"}
+        assert api_params["tools"][0]["name"] == "web_search"
+
+    def test_validate_request_configuration_rejects_forced_any_with_thinking(self):
+        """Thinking mode rejects forced any-tool selection."""
+        from anthropic_api import AnthropicAPI
+        from util import ChatCompletionParameters
+
+        params = ChatCompletionParameters(
+            model="claude-opus-4-6",
+            tools=["web_search"],
+            tool_choice={"type": "any"},
+        )
+
+        error = AnthropicAPI._validate_request_configuration(params)
+
+        assert error is not None
+        assert "Thinking mode only supports tool behavior `auto` or `none`" in error
+
+    def test_validate_request_configuration_rejects_forced_tool_with_thinking(self):
+        """Thinking mode rejects a specific forced tool."""
+        from anthropic_api import AnthropicAPI
+        from util import ChatCompletionParameters
+
+        params = ChatCompletionParameters(
+            model="claude-haiku-4-5",
+            thinking_budget=5000,
+            tools=["memory"],
+            tool_choice={"type": "tool", "name": "memory"},
+        )
+
+        error = AnthropicAPI._validate_request_configuration(params)
+
+        assert error is not None
+        assert "Thinking mode only supports tool behavior `auto` or `none`" in error
+
+
 class TestAnthropicAPIIntegration:
     """Integration tests for the Anthropic API client (mocked)."""
 
@@ -772,6 +842,33 @@ class TestAnthropicAPICog:
         # Should raise CancelledError when awaited
         with pytest.raises(asyncio.CancelledError):
             await task
+
+    async def test_handle_new_message_rejects_invalid_tool_choice_before_api_call(
+        self, cog, mock_discord_message
+    ):
+        """Invalid thinking/tool_choice combos fail fast without hitting Anthropic."""
+        from util import ChatCompletionParameters, Conversation
+
+        params = ChatCompletionParameters(
+            model="claude-opus-4-6",
+            conversation_starter=mock_discord_message.author,
+            channel_id=mock_discord_message.channel.id,
+            conversation_id=123,
+            tools=["memory"],
+            tool_choice={"type": "tool", "name": "memory"},
+        )
+        conversation = Conversation(params=params, messages=[])
+
+        await cog.handle_new_message_in_conversation(mock_discord_message, conversation)
+
+        cog.client.messages.create.assert_not_called()
+        mock_discord_message.reply.assert_awaited_once()
+        reply_embed = mock_discord_message.reply.call_args.kwargs["embed"]
+        assert reply_embed.title == "Unsupported Tool Configuration"
+        assert "Thinking mode only supports tool behavior `auto` or `none`" in (
+            reply_embed.description
+        )
+        assert conversation.messages == []
 
 
 class TestCallApiWithToolLoop:

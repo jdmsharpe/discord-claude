@@ -127,6 +127,7 @@ class TestChatCompletionParameters:
         assert params.max_tokens == 16384
         assert params.paused is False
         assert params.tools == []
+        assert params.tool_choice is None
 
     def test_tools_isolation_between_instances(self):
         """Tools list should not be shared between instances."""

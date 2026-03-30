@@ -9,6 +9,7 @@ def _make_view(
     conversation_starter=None,
     conversation_key=None,
     initial_tools=None,
+    initial_tool_choice=None,
     get_conversation=None,
     on_stop=None,
 ):
@@ -16,6 +17,7 @@ def _make_view(
         conversation_starter=conversation_starter or MagicMock(),
         conversation_key=conversation_key or (123, 456),
         initial_tools=initial_tools,
+        initial_tool_choice=initial_tool_choice,
         get_conversation=get_conversation or MagicMock(return_value=None),
         on_regenerate=AsyncMock(),
         on_stop=on_stop or AsyncMock(),
@@ -40,11 +42,22 @@ class TestButtonView:
         assert defaults["web_fetch"] is False
         assert defaults["bash"] is False
 
+    async def test_initial_tool_choice_none_clears_defaults(self):
+        view = _make_view(
+            initial_tools=["web_search", "memory"],
+            initial_tool_choice={"type": "none"},
+        )
+        select = next(c for c in view.children if isinstance(c, Select))
+        defaults = {o.value: o.default for o in select.options}
+        assert defaults["web_search"] is False
+        assert defaults["memory"] is False
+
     async def test_tool_select_updates_tools_and_defaults(self):
         starter = MagicMock()
         conversation = MagicMock()
         conversation.params = MagicMock()
         conversation.params.tools = []
+        conversation.params.tool_choice = None
         view = _make_view(
             conversation_starter=starter,
             get_conversation=MagicMock(return_value=conversation),
@@ -64,6 +77,7 @@ class TestButtonView:
         await view.tool_select_callback(interaction, mock_select)
 
         assert conversation.params.tools == ["web_search", "memory"]
+        assert conversation.params.tool_choice == {"type": "auto"}
         # Check select defaults updated on the real Select widget
         defaults = {o.value: o.default for o in real_select.options}
         assert defaults["web_search"] is True
@@ -71,6 +85,38 @@ class TestButtonView:
         assert defaults["code_execution"] is False
         call_args = interaction.response.send_message.call_args
         assert "Tools updated" in call_args.args[0]
+        assert "Tool behavior: auto" in call_args.args[0]
+
+    async def test_tool_select_empty_sets_none_and_preserves_existing_tools(self):
+        starter = MagicMock()
+        conversation = MagicMock()
+        conversation.params = MagicMock()
+        conversation.params.tools = ["web_search", "memory"]
+        conversation.params.tool_choice = {"type": "auto"}
+        view = _make_view(
+            conversation_starter=starter,
+            initial_tools=["web_search", "memory"],
+            get_conversation=MagicMock(return_value=conversation),
+        )
+        real_select = next(c for c in view.children if isinstance(c, Select))
+        mock_select = MagicMock()
+        mock_select.values = []
+
+        interaction = MagicMock()
+        interaction.user = starter
+        interaction.response = MagicMock()
+        interaction.response.send_message = AsyncMock()
+        interaction.response.is_done = MagicMock(return_value=False)
+
+        await view.tool_select_callback(interaction, mock_select)
+
+        assert conversation.params.tools == ["web_search", "memory"]
+        assert conversation.params.tool_choice == {"type": "none"}
+        defaults = {o.value: o.default for o in real_select.options}
+        assert defaults["web_search"] is False
+        assert defaults["memory"] is False
+        call_args = interaction.response.send_message.call_args
+        assert "Tool behavior: none" in call_args.args[0]
 
     async def test_tool_select_rejects_non_owner(self):
         starter = MagicMock()

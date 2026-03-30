@@ -27,6 +27,8 @@ Discord bot wrapping Anthropic's Claude API using py-cord.
   3. `src/button_view.py` - `SelectOption` in `_add_tool_select()`
   4. `src/memory.py` or new handler module — implement `ToolHandler` Protocol (`async execute(tool_input, user_id) -> str`)
   5. `src/anthropic_api.py` - Add handler class instance to `_tool_handlers` registry
+- **Tool behavior** — `ChatCompletionParameters` carries both `tools` and optional `tool_choice`. `_build_api_params()` forwards `tool_choice` when set. `_validate_request_configuration()` fails fast on unsupported combinations such as thinking plus forced tool modes
+- **Tool toggle UX** — `ButtonView` uses the select menu for two states: selected values update `conversation.params.tools` and set `tool_choice` to `{"type": "auto"}`; clearing all selections sets `tool_choice` to `{"type": "none"}` while preserving previously configured tool definitions in `conversation.params.tools`
 - **Tool call flow** — `_call_api_with_tool_loop()`: uses `UsageTotals` for accumulation. `end_turn` = done, `pause_turn` = re-send, `tool_use` = execute via `_tool_handlers` registry (`ToolHandler` Protocol) and re-send. `COMPACTION_MODELS` use server-side compaction
 - **Conversation keying** — conversations stored by `ConversationKey = (user_id, channel_id)` for O(1) lookup. `_build_api_params()` centralizes API parameter construction from `ChatCompletionParameters`
 - **Context management** — 85% warning embed when approaching context window limit. Non-compaction models get automatic manual compaction at 75% via `_compact_conversation()` (uses Haiku for cheap summaries). `COMPACTION_MODELS` use server-side compaction instead
