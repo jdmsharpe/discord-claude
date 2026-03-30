@@ -1,55 +1,15 @@
-import asyncio
-import contextlib
-import logging
+# ruff: noqa: F403
 
-logger = logging.getLogger(__name__)
+"""Compatibility shim for the relocated bash_tool module."""
 
-BASH_TIMEOUT = 30  # seconds
-MAX_OUTPUT_LINES = 100
+from __future__ import annotations
 
+import warnings
 
-async def execute_bash_command(command: str) -> str:
-    """Execute a bash command and return combined stdout + stderr.
+from discord_claude.bash_tool import *
 
-    Args:
-        command: The shell command to run.
-
-    Returns:
-        The command output, or an error message on failure/timeout.
-    """
-    logger.info(f"Executing bash command: {command[:200]}")
-    try:
-        process = await asyncio.create_subprocess_shell(
-            command,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-        )
-        try:
-            stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=BASH_TIMEOUT)
-        except asyncio.TimeoutError:
-            with contextlib.suppress(ProcessLookupError):
-                process.kill()
-            with contextlib.suppress(Exception):
-                await process.wait()
-            return f"Error: Command timed out after {BASH_TIMEOUT} seconds"
-
-        output = ""
-        if stdout:
-            output += stdout.decode(errors="replace")
-        if stderr:
-            if output:
-                output += "\n"
-            output += stderr.decode(errors="replace")
-
-        if not output:
-            return "(no output)"
-
-        # Truncate large outputs
-        lines = output.split("\n")
-        if len(lines) > MAX_OUTPUT_LINES:
-            output = "\n".join(lines[:MAX_OUTPUT_LINES])
-            output += f"\n\n... Output truncated ({len(lines)} total lines) ..."
-
-        return output
-    except Exception as e:
-        return f"Error: {e}"
+warnings.warn(
+    "Importing from the legacy bash_tool module is deprecated; use discord_claude.bash_tool instead.",
+    DeprecationWarning,
+    stacklevel=2,
+)
