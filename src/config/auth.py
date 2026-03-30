@@ -1,10 +1,15 @@
-import os
+"""Compatibility shim that re-exports the namespaced configuration."""
 
-from dotenv import load_dotenv
+from __future__ import annotations
 
-load_dotenv()
+import warnings
 
-BOT_TOKEN = str(os.getenv("BOT_TOKEN"))
-GUILD_IDS = [int(id) for id in os.getenv("GUILD_IDS", "").split(",") if id]
-ANTHROPIC_API_KEY = str(os.getenv("ANTHROPIC_API_KEY"))
-SHOW_COST_EMBEDS = os.getenv("SHOW_COST_EMBEDS", "true").lower() == "true"
+from discord_claude.config.auth import ANTHROPIC_API_KEY, BOT_TOKEN, GUILD_IDS, SHOW_COST_EMBEDS
+
+warnings.warn(
+    "Importing config.auth directly is deprecated; import from discord_claude.config.auth instead.",
+    DeprecationWarning,
+    stacklevel=2,
+)
+
+__all__ = ["ANTHROPIC_API_KEY", "BOT_TOKEN", "GUILD_IDS", "SHOW_COST_EMBEDS"]

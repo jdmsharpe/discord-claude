@@ -1,75 +1,72 @@
-# Discord Claude Bot
+# Discord Claude Bot - Developer Reference
 
-Discord bot wrapping Anthropic's Claude API using py-cord.
+## Supported Entry Points
 
-## Architecture
+- Launcher: `python src/bot.py` remains supported and delegates to `discord_claude.bot.main`.
+- Cog composition contract:
 
-- `src/bot.py` - Entry point; creates the Discord bot and loads the cog
-- `src/anthropic_api.py` - Main cog: slash commands, conversation handling, tool call loop, `ParsedResponse` dataclass
-- `src/util.py` - Constants, dataclasses (`ChatCompletionParameters`, `Conversation`, `UsageTotals`), `ToolHandler` Protocol, `ConversationKey` type, `available_embed_space()`, cost calculation
-- `src/button_view.py` - Discord UI buttons and tool select menu
-- `src/memory.py` - Client-side memory tool handler
-- `src/bash_tool.py` - Client-side bash tool handler
-- `src/config/auth.py` - `.env` loading via python-dotenv (`SHOW_COST_EMBEDS` toggles pricing embeds)
-- `tests/` - pytest tests with mocked Discord and Anthropic clients
+  ```python
+  from discord_claude import AnthropicAPI
 
-## Key Patterns
+  bot.add_cog(AnthropicAPI(bot=bot))
+  ```
 
-- **Model updates** — update four places:
-  1. `src/anthropic_api.py` - `OptionChoice` list in the `chat` command's `model` option
-  2. `src/util.py` - `ADAPTIVE_THINKING_MODELS` set (if the model supports adaptive thinking)
-  3. `src/util.py` - `MODEL_CONTEXT_WINDOWS` dict (context window size for the model)
-  4. `src/util.py` - `MODEL_PRICING` dict (per-million-token pricing)
-- **Default model** — set in `chat()` signature and its `model` option description
-- **Tool updates** — update five places:
-  1. `src/util.py` - `AVAILABLE_TOOLS` dict with the tool definition
-  2. `src/anthropic_api.py` - Add `@option` decorator (bool) and parameter to `chat()`, append to `enabled_tools`
-  3. `src/button_view.py` - `SelectOption` in `_add_tool_select()`
-  4. `src/memory.py` or new handler module — implement `ToolHandler` Protocol (`async execute(tool_input, user_id) -> str`)
-  5. `src/anthropic_api.py` - Add handler class instance to `_tool_handlers` registry
-- **Tool behavior** — `ChatCompletionParameters` carries both `tools` and optional `tool_choice`. `_build_api_params()` forwards `tool_choice` when set. `_validate_request_configuration()` fails fast on unsupported combinations such as thinking plus forced tool modes
-- **Tool toggle UX** — `ButtonView` uses the select menu for two states: selected values update `conversation.params.tools` and set `tool_choice` to `{"type": "auto"}`; clearing all selections sets `tool_choice` to `{"type": "none"}` while preserving previously configured tool definitions in `conversation.params.tools`
-- **Tool call flow** — `_call_api_with_tool_loop()`: uses `UsageTotals` for accumulation. `end_turn` = done, `pause_turn` = re-send, `tool_use` = execute via `_tool_handlers` registry (`ToolHandler` Protocol) and re-send. `COMPACTION_MODELS` use server-side compaction
-- **Conversation keying** — conversations stored by `ConversationKey = (user_id, channel_id)` for O(1) lookup. `_build_api_params()` centralizes API parameter construction from `ChatCompletionParameters`
-- **Context management** — 85% warning embed when approaching context window limit. Non-compaction models get automatic manual compaction at 75% via `_compact_conversation()` (uses Haiku for cheap summaries). `COMPACTION_MODELS` use server-side compaction instead
-- **Context editing** — `context-management-2025-06-27` beta with `clear_thinking` (keeps last 2 turns) then `clear_tool_uses` (keeps last 5) edits. Thinking clearing must come before tool clearing
-- **Prompt caching** — 1-hour TTL via `CACHE_TTL` for extended caching across Discord conversation pauses
-- **Cost** — `calculate_cost()` handles cache write (2x), cache read (0.1x), and web search pricing. `_track_daily_cost()` emits structured `COST |` log lines
-- **Embed ordering** — all embeds sent in one message, ButtonView attaches below. `_strip_previous_view()` removes buttons from previous turn
-- **Multi-turn** — assistant messages stored as full `response.content` blocks to preserve encrypted server tool data for citations
-- **Document citations** — PDF/text attachments sent as document blocks with citations enabled. Response citations distinguished by `kind` field (`"web"` vs `"document"`)
+- Legacy shim: `src/anthropic_api.py` exists only for import compatibility and emits a `DeprecationWarning`.
 
-## Dependencies
+## Package Layout
 
-- `anthropic` - Anthropic Python SDK (AsyncAnthropic client)
-- `py-cord` - Discord API wrapper (slash commands, embeds, views)
-- `python-dotenv` - Environment variable loading
+```text
+src/
+├── bot.py                           # Thin repo-local launcher
+├── anthropic_api.py                 # Temporary compatibility shim
+├── bash_tool.py                     # Top-level compatibility shim
+├── memory.py                        # Top-level compatibility shim
+├── util.py                          # Top-level compatibility shim
+├── config/                          # Top-level compatibility shim
+└── discord_claude/
+    ├── __init__.py
+    ├── bash_tool.py
+    ├── bot.py
+    ├── memory.py
+    ├── util.py
+    ├── config/
+    │   ├── __init__.py
+    │   └── auth.py
+    └── cogs/claude/
+        ├── __init__.py
+        ├── client.py
+        ├── cog.py
+        ├── embeds.py
+        ├── models.py
+        ├── paths.py
+        ├── tooling.py
+        └── views.py
+```
 
-## Python Version
+The namespaced `discord_claude.bash_tool` and `discord_claude.memory` modules are the real owners now. The top-level files are compatibility-only.
 
-- Minimum supported Python version is 3.10 (matches `pyproject.toml`)
-- Docker images currently use Python 3.13 for development/testing/runtime
-- CI runs tests on Python 3.10, 3.11, 3.12, and 3.13
-- If code starts relying on 3.11+ or 3.13-only features, bump `requires-python` and docs together
+## Testing And Patch Targets
 
-## Testing
+- `pytest` runs with `pythonpath = ["src"]`.
+- New tests and patches should target real owners under `discord_claude...`, not `anthropic_api`, top-level `memory`, or top-level `bash_tool`.
+- Examples:
+  - `discord_claude.bash_tool.BASH_TIMEOUT`
+  - `discord_claude.memory.MEMORIES_BASE_DIR`
+  - `discord_claude.cogs.claude.cog.SUPPORTED_IMAGE_TYPES`
+- `tests/test_namespace.py` is the shim/namespace smoke test.
 
-- `pytest` from project root — pytest-native with `asyncio_mode = "auto"` (no `@pytest.mark.asyncio` needed)
-- `pythonpath = ["src"]` configured in `pyproject.toml` — use direct imports (`from util import ...`), no `sys.path` hacks
-- Mocked Discord/Anthropic clients, no real API calls
-- `conftest.py` provides shared fixtures (mock_bot, mock_anthropic_client, mock_discord_context, etc.)
+## Validation Commands
 
-## Type Checking
+```bash
+ruff check src/ tests/
+ruff format src/ tests/
+pyright src/
+pytest -q
+```
 
-- `pyright src/` — Pyright configured via `pyproject.toml`. Must pass with 0 errors before committing
+## Provider Notes
 
-## Linting
-
-- `ruff check src/ tests/` — configured via `pyproject.toml` (E/W/F/I/UP/B/SIM rules, E501 ignored)
-- `ruff format src/ tests/` — auto-formatting (100-col, double quotes)
-- Pre-commit hook (`.githooks/pre-commit`) auto-formats staged Python files and blocks on lint failures
-- After cloning, run `git config core.hooksPath .githooks` to enable hooks
-
-## Style
-
-Type hints, dataclasses, async/await, f-string logging
+- Memory storage root is resolved via `discord_claude.cogs.claude.paths`.
+- Client-side tool dispatch in `discord_claude.cogs.claude.cog` should call through the namespaced `discord_claude.memory` and `discord_claude.bash_tool` modules so tests can patch the live owners.
+- The bash runner prefers a real bash shell when available and normalizes `\r\n` to `\n` for consistent behavior across environments.
+- Conversations remain keyed by `(user_id, channel_id)`.
