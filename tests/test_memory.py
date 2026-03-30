@@ -1,6 +1,6 @@
 import pytest
 
-from memory import (
+from discord_claude.memory import (
     _resolve_safe_path,
     execute_memory_operation,
 )
@@ -9,7 +9,7 @@ from memory import (
 @pytest.fixture(autouse=True)
 def use_tmp_memories(tmp_path, monkeypatch):
     """Redirect MEMORIES_BASE_DIR to a temp directory for all tests."""
-    monkeypatch.setattr("memory.MEMORIES_BASE_DIR", tmp_path)
+    monkeypatch.setattr("discord_claude.memory.MEMORIES_BASE_DIR", tmp_path)
     return tmp_path
 
 

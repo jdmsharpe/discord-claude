@@ -102,6 +102,21 @@ Check if the bot has the necessary permissions in the current channel.
 python src/bot.py
 ```
 
+`src/bot.py` remains a thin repo-local launcher that delegates to `discord_claude.bot.main`.
+
+### Using as a Cog
+
+To compose this repo into a larger bot, import the namespaced package:
+
+```python
+from discord_claude import AnthropicAPI
+
+bot.add_cog(AnthropicAPI(bot=bot))
+```
+
+The legacy top-level `anthropic_api` module remains as a temporary compatibility shim and emits a `DeprecationWarning`.
+Top-level `bot.py`, `button_view.py`, `config`, `memory.py`, `bash_tool.py`, and `util.py` are compatibility layers or repo-local helpers, not the installed public API surface.
+
 **With Docker:**
 
 ```bash

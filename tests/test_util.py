@@ -2,7 +2,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from util import (
+from discord_claude.util import (
     CHUNK_TEXT_SIZE,
     DISCORD_EMBED_TOTAL_LIMIT,
     ChatCompletionParameters,
