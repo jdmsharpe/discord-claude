@@ -11,14 +11,14 @@ A Discord bot that wraps Anthropic's Claude API, providing an easy-to-use interf
 - **Multi-turn conversations**: Start conversations with Claude that maintain context across multiple messages
 - **Multiple Claude models**: Choose from Claude Opus 4.6, Sonnet 4.6, Opus 4.5, Sonnet 4.5, Opus 4.1, and Haiku 4.5
 - **Multimodal input**: Attach images (JPEG, PNG, GIF, WEBP), PDFs, or text files (TXT, MD, CSV)
-- **Tools**: Enable web search, web fetch, code execution, memory, and bash — toggleable mid-conversation
+- **Tools**: Enable web search, web fetch, code execution, memory, and bash, with `tool_choice` control (`auto` / `none`) and mid-conversation toggles
 - **Citations**: Web search and document citations displayed as a separate Sources embed
 - **Prompt caching**: Automatic prompt caching reduces costs (cache reads at 10% of input price) and latency on multi-turn conversations
 - **Context management**: Automatic compaction for non-compaction models at 75% context usage, server-side compaction for Opus/Sonnet 4.6, and an 85% context warning embed. Server-side clearing of old tool results and thinking blocks to manage context growth in long conversations
 - **Pricing display**: Per-request cost, token counts, cache hits, and daily spend shown as a separate embed after each response (configurable via `SHOW_COST_EMBEDS`)
 - **Conversation controls**: Pause, resume, regenerate responses, and end conversations with interactive buttons (previous turn's buttons are automatically removed)
 - **System prompts**: Customize Claude's behavior with system prompts
-- **Advanced parameters**: Fine-tune responses with temperature, top_p, top_k, effort, thinking budget, and max_tokens
+- **Advanced parameters**: Fine-tune responses with temperature, top_p, top_k, effort, thinking budget, max_tokens, and tool behavior
 
 ## Commands
 
@@ -40,6 +40,7 @@ Start a conversation with Claude.
 - `bash`: Enable bash to execute shell commands (default: false)
 - `effort`: Control response effort — low (fast), medium (balanced), high (thorough)
 - `thinking_budget`: Token budget for extended thinking on non-4.6 models
+- `tool_choice`: Tool behavior for enabled tools (`auto` or `none`)
 - `temperature`: Amount of randomness (0.0-1.0). Lower for analytical tasks, higher for creative (advanced)
 - `top_p`: Nucleus sampling threshold (0.0-1.0). Use temperature OR top_p, not both (advanced)
 - `top_k`: Only sample from top K tokens. Use temperature OR top_k, not both (advanced)
@@ -129,7 +130,7 @@ docker-compose up -d
    - 🔄 Regenerate the last response
    - ⏯️ Pause/resume the conversation
    - ⏹️ End the conversation
-   - 🔧 Toggle tools on/off mid-conversation via the select menu
+   - 🔧 Toggle tools mid-conversation via the select menu; clearing all selections sets tool behavior to `none` without discarding the conversation's tool definitions
 
 ## Development
 

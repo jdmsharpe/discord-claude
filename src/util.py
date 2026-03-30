@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from typing import Any, Protocol
+from typing import Any, Literal, Protocol, TypedDict
 
 from discord import Embed, Member, User
 
@@ -155,6 +155,34 @@ class UsageTotals:
         parsed.context_warning = self.input_tokens > context_window * CONTEXT_WARNING_THRESHOLD
 
 
+class ToolChoiceAuto(TypedDict):
+    """Allow Claude to decide whether to use available tools."""
+
+    type: Literal["auto"]
+
+
+class ToolChoiceAny(TypedDict):
+    """Require Claude to use one of the available tools."""
+
+    type: Literal["any"]
+
+
+class ToolChoiceNone(TypedDict):
+    """Disable tool invocation while still allowing tool definitions."""
+
+    type: Literal["none"]
+
+
+class ToolChoiceTool(TypedDict):
+    """Force Claude to call a specific available tool."""
+
+    type: Literal["tool"]
+    name: str
+
+
+ToolChoice = ToolChoiceAuto | ToolChoiceAny | ToolChoiceNone | ToolChoiceTool
+
+
 @dataclass
 class ChatCompletionParameters:
     """A dataclass to store the parameters for a chat completion."""
@@ -172,6 +200,7 @@ class ChatCompletionParameters:
     thinking_budget: int | None = None
     paused: bool | None = False
     tools: list[str] = field(default_factory=list)
+    tool_choice: ToolChoice | None = None
 
 
 # Conversation key: (user_id, channel_id) for O(1) lookup

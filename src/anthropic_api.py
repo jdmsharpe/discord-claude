@@ -43,6 +43,7 @@ from util import (
     ChatCompletionParameters,
     Conversation,
     ConversationKey,
+    ToolChoice,
     ToolHandler,
     UsageTotals,
     available_embed_space,
@@ -761,8 +762,53 @@ class AnthropicAPI(commands.Cog):
         return await handler.execute(tool_input, user_id)
 
     @staticmethod
+    def _build_thinking_config(params: ChatCompletionParameters) -> dict[str, Any] | None:
+        """Return the Anthropic thinking configuration for the current model/settings."""
+        if params.model in ADAPTIVE_THINKING_MODELS:
+            return {"type": "adaptive", "display": "summarized"}
+        if params.thinking_budget is not None and params.model in EXTENDED_THINKING_MODELS:
+            return {
+                "type": "enabled",
+                "budget_tokens": params.thinking_budget,
+            }
+        return None
+
+    @classmethod
+    def _validate_request_configuration(cls, params: ChatCompletionParameters) -> str | None:
+        """Validate request options before dispatching to Anthropic."""
+        tool_choice = params.tool_choice
+        if tool_choice is None:
+            return None
+
+        choice_type = tool_choice["type"]
+        has_thinking = cls._build_thinking_config(params) is not None
+
+        if has_thinking and choice_type in {"any", "tool"}:
+            return (
+                "Thinking mode only supports tool behavior `auto` or `none`. "
+                "Forced tool modes are not compatible with thinking."
+            )
+
+        if choice_type in {"any", "tool"} and not params.tools:
+            return "Forced tool behavior requires at least one enabled tool."
+
+        if choice_type == "tool":
+            tool_name = tool_choice.get("name")
+            if not tool_name:
+                return "Tool behavior `tool` requires a tool name."
+            if tool_name not in AVAILABLE_TOOLS:
+                return f"Unknown forced tool `{tool_name}`."
+            if tool_name not in params.tools:
+                return (
+                    f"Tool behavior `tool` requires `{tool_name}` to be enabled in the "
+                    "conversation tools."
+                )
+
+        return None
+
+    @classmethod
     def _build_api_params(
-        params: ChatCompletionParameters, messages: list[dict[str, Any]]
+        cls, params: ChatCompletionParameters, messages: list[dict[str, Any]]
     ) -> dict[str, Any]:
         """Build the API parameter dict from ChatCompletionParameters."""
         api_params: dict[str, Any] = {
@@ -770,13 +816,9 @@ class AnthropicAPI(commands.Cog):
             "max_tokens": params.max_tokens,
             "messages": messages,
         }
-        if params.model in ADAPTIVE_THINKING_MODELS:
-            api_params["thinking"] = {"type": "adaptive", "display": "summarized"}
-        elif params.thinking_budget is not None and params.model in EXTENDED_THINKING_MODELS:
-            api_params["thinking"] = {
-                "type": "enabled",
-                "budget_tokens": params.thinking_budget,
-            }
+        thinking_config = cls._build_thinking_config(params)
+        if thinking_config is not None:
+            api_params["thinking"] = thinking_config
         if params.effort is not None:
             api_params["effort"] = params.effort
         if params.system:
@@ -789,6 +831,8 @@ class AnthropicAPI(commands.Cog):
             api_params["top_k"] = params.top_k
         if params.tools:
             api_params["tools"] = [AVAILABLE_TOOLS[t] for t in params.tools if t in AVAILABLE_TOOLS]
+        if params.tool_choice is not None:
+            api_params["tool_choice"] = params.tool_choice
         return api_params
 
     async def handle_new_message_in_conversation(self, message, conversation: Conversation):
@@ -809,6 +853,17 @@ class AnthropicAPI(commands.Cog):
         try:
             # Only respond to the user who started the conversation and if not paused.
             if message.author != params.conversation_starter or params.paused:
+                return
+
+            validation_error = self._validate_request_configuration(params)
+            if validation_error:
+                await message.reply(
+                    embed=Embed(
+                        title="Unsupported Tool Configuration",
+                        description=validation_error,
+                        color=Colour.red(),
+                    )
+                )
                 return
 
             self.logger.debug(
@@ -1124,6 +1179,16 @@ class AnthropicAPI(commands.Cog):
         required=False,
         type=bool,
     )
+    @option(
+        "tool_choice",
+        description="Tool behavior when tools are enabled. (default: Anthropic default)",
+        required=False,
+        choices=[
+            OptionChoice(name="Auto", value="auto"),
+            OptionChoice(name="None", value="none"),
+        ],
+        type=str,
+    )
     async def chat(
         self,
         ctx: ApplicationContext,
@@ -1142,6 +1207,7 @@ class AnthropicAPI(commands.Cog):
         code_execution: bool = False,
         memory: bool = False,
         bash: bool = False,
+        tool_choice: str | None = None,
     ):
         """
         Creates a persistent conversation session with Claude.
@@ -1207,6 +1273,10 @@ class AnthropicAPI(commands.Cog):
             if bash:
                 enabled_tools.append("bash")
 
+            resolved_tool_choice: ToolChoice | None = None
+            if tool_choice in {"auto", "none"}:
+                resolved_tool_choice = {"type": tool_choice}
+
             # Build user content with optional attachment (image, PDF, or text file)
             user_content: list[dict[str, Any]] = [{"type": "text", "text": prompt}]
             if attachment:
@@ -1239,7 +1309,19 @@ class AnthropicAPI(commands.Cog):
                 channel_id=ctx.channel.id,
                 conversation_id=ctx.interaction.id,
                 tools=enabled_tools,
+                tool_choice=resolved_tool_choice,
             )
+
+            validation_error = self._validate_request_configuration(params)
+            if validation_error:
+                await ctx.send_followup(
+                    embed=Embed(
+                        title="Unsupported Tool Configuration",
+                        description=validation_error,
+                        color=Colour.red(),
+                    )
+                )
+                return
 
             api_params = self._build_api_params(params, conversation_messages)
             parsed = await self._call_api_with_tool_loop(
@@ -1271,6 +1353,8 @@ class AnthropicAPI(commands.Cog):
                 description += f"**Thinking Budget:** {thinking_budget} tokens\n"
             if enabled_tools:
                 description += f"**Tools:** {', '.join(enabled_tools)}\n"
+            if resolved_tool_choice is not None:
+                description += f"**Tool Choice:** {resolved_tool_choice['type']}\n"
 
             # Assemble all embeds for a single message
             embeds = [
@@ -1310,6 +1394,7 @@ class AnthropicAPI(commands.Cog):
                 conversation_starter=ctx.author,
                 conversation_key=conv_key,
                 initial_tools=enabled_tools,
+                initial_tool_choice=resolved_tool_choice,
                 get_conversation=lambda key: self.conversations.get(key),
                 on_regenerate=self.handle_new_message_in_conversation,
                 on_stop=self._stop_conversation,
