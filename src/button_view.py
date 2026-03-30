@@ -123,7 +123,9 @@ class ButtonView(View):
                 return
 
             existing_tools = [
-                tool for tool in getattr(conversation.params, "tools", []) if tool in AVAILABLE_TOOLS
+                tool
+                for tool in getattr(conversation.params, "tools", [])
+                if tool in AVAILABLE_TOOLS
             ]
             selected_values = [value for value in tool_select.values if value in AVAILABLE_TOOLS]
             if selected_values:
