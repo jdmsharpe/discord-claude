@@ -560,6 +560,25 @@ class TestToolChoiceSupport:
         assert api_params["tool_choice"] == {"type": "none"}
         assert api_params["tools"][0]["name"] == "web_search"
 
+    def test_build_api_params_omits_tool_choice_when_no_tools(self):
+        """tool_choice is not forwarded when no tools are enabled."""
+        from anthropic_api import AnthropicAPI
+        from util import ChatCompletionParameters
+
+        params = ChatCompletionParameters(
+            model="claude-haiku-4-5",
+            tools=[],
+            tool_choice={"type": "auto"},
+        )
+
+        api_params = AnthropicAPI._build_api_params(
+            params,
+            [{"role": "user", "content": "Hello"}],
+        )
+
+        assert "tool_choice" not in api_params
+        assert "tools" not in api_params
+
     def test_validate_request_configuration_rejects_forced_any_with_thinking(self):
         """Thinking mode rejects forced any-tool selection."""
         from anthropic_api import AnthropicAPI

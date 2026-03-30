@@ -831,8 +831,8 @@ class AnthropicAPI(commands.Cog):
             api_params["top_k"] = params.top_k
         if params.tools:
             api_params["tools"] = [AVAILABLE_TOOLS[t] for t in params.tools if t in AVAILABLE_TOOLS]
-        if params.tool_choice is not None:
-            api_params["tool_choice"] = params.tool_choice
+            if params.tool_choice is not None:
+                api_params["tool_choice"] = params.tool_choice
         return api_params
 
     async def handle_new_message_in_conversation(self, message, conversation: Conversation):
@@ -1274,8 +1274,10 @@ class AnthropicAPI(commands.Cog):
                 enabled_tools.append("bash")
 
             resolved_tool_choice: ToolChoice | None = None
-            if tool_choice in {"auto", "none"}:
-                resolved_tool_choice = {"type": tool_choice}
+            if tool_choice == "auto":
+                resolved_tool_choice = {"type": "auto"}
+            elif tool_choice == "none":
+                resolved_tool_choice = {"type": "none"}
 
             # Build user content with optional attachment (image, PDF, or text file)
             user_content: list[dict[str, Any]] = [{"type": "text", "text": prompt}]
