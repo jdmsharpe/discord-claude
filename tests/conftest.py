@@ -17,7 +17,7 @@ def mock_bot():
 @pytest.fixture
 def mock_anthropic_client():
     """Create a mock Anthropic client."""
-    with patch("anthropic.AsyncAnthropic") as mock_class:
+    with patch("discord_claude.cogs.claude.client.AsyncAnthropic") as mock_class:
         client = AsyncMock()
         mock_class.return_value = client
 

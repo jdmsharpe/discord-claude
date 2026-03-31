@@ -1,598 +1,142 @@
-# Standard library imports
+"""Thin Claude cog wrapper around extracted helper modules."""
+
+from __future__ import annotations
+
 import asyncio
-import base64
-import contextlib
 import logging
-import re
-from dataclasses import dataclass, field
-from datetime import date
 from typing import Any
 
-# Third-party imports
-import aiohttp
-
-# Anthropic imports
-from anthropic import APIConnectionError, APIError, AsyncAnthropic
-
-# Discord imports
-from discord import Attachment, Colour, Embed
-from discord.commands import (
-    ApplicationContext,
-    OptionChoice,
-    SlashCommandGroup,
-    option,
-)
+from discord import ApplicationContext, Attachment
+from discord.commands import OptionChoice, SlashCommandGroup, option
 from discord.ext import commands
 
-from discord_claude import bash_tool, memory
-from discord_claude.cogs.claude.views import ButtonView
-from discord_claude.config.auth import ANTHROPIC_API_KEY, GUILD_IDS, SHOW_COST_EMBEDS
-from discord_claude.util import (
-    ADAPTIVE_THINKING_MODELS,
-    AVAILABLE_TOOLS,
-    CACHE_TTL,
-    CITATION_EMBED_RESERVE,
-    COMPACTION_MODELS,
-    COMPACTION_SUMMARY_MODEL,
-    CONTEXT_COMPACTION_THRESHOLD,
-    EXTENDED_THINKING_MODELS,
-    MODEL_CONTEXT_WINDOWS,
-    ChatCompletionParameters,
-    Conversation,
-    ConversationKey,
-    ToolChoice,
-    ToolHandler,
-    UsageTotals,
-    available_embed_space,
-    calculate_cost,
-    chunk_text,
-    format_anthropic_error,
-    truncate_text,
+from discord_claude.config.auth import GUILD_IDS, SHOW_COST_EMBEDS
+from discord_claude.util import ChatCompletionParameters, Conversation, ConversationKey, ToolChoice
+
+from .attachments import (
+    SUPPORTED_DOCUMENT_TYPES,
+    SUPPORTED_IMAGE_TYPES,
+    build_attachment_content_block,
+    fetch_attachment_bytes,
 )
+from .chat import (
+    build_api_params,
+    build_thinking_config,
+    call_api_with_tool_loop,
+    compact_conversation,
+    handle_check_permissions,
+    handle_on_message,
+    run_chat_command,
+    validate_request_configuration,
+)
+from .chat import (
+    handle_new_message_in_conversation as run_followup_message,
+)
+from .chat import (
+    keep_typing as keep_typing_loop,
+)
+from .client import (
+    APIConnectionError,
+    APIError,
+    build_claude_client,
+    close_http_session,
+    get_http_session,
+)
+from .embeds import (
+    append_citations_embed,
+    append_compaction_embed,
+    append_context_warning_embed,
+    append_pricing_embed,
+    append_response_embeds,
+    append_stop_reason_embed,
+    append_thinking_embeds,
+)
+from .models import ParsedResponse, ToolHandler, UsageTotals
+from .responses import extract_response_content
+from .state import cleanup_conversation, stop_conversation, strip_previous_view, track_daily_cost
+from .tool_handlers import BashToolHandler, MemoryToolHandler
+from .tooling import execute_tool
 
-# Tool handler implementations (satisfy ToolHandler Protocol)
-
-
-class MemoryToolHandler:
-    """Executes memory tool operations (sync, wrapped as async)."""
-
-    async def execute(self, tool_input: dict[str, Any], user_id: int) -> str:
-        return memory.execute_memory_operation(user_id=user_id, tool_input=tool_input)
-
-
-class BashToolHandler:
-    """Executes bash tool operations."""
-
-    async def execute(self, tool_input: dict[str, Any], user_id: int) -> str:
-        if tool_input.get("restart"):
-            return "Bash session restarted."
-        command = tool_input.get("command", "")
-        if not command:
-            return "Error: No command provided."
-        return await bash_tool.execute_bash_command(command)
-
-
-SUPPORTED_IMAGE_TYPES = {"image/jpeg", "image/png", "image/gif", "image/webp"}
-SUPPORTED_DOCUMENT_TYPES = {
-    "application/pdf",
-    "text/plain",
-    "text/markdown",
-    "text/csv",
-}
-
-
-def build_attachment_content_block(
-    content_type: str, data: bytes, filename: str | None = None
-) -> dict[str, Any] | None:
-    """
-    Build the appropriate content block for an attachment based on its MIME type.
-
-    Args:
-        content_type: The MIME type of the attachment
-        data: The raw bytes of the attachment
-        filename: Optional filename for context
-
-    Returns:
-        A content block dict for the Anthropic API, or None if unsupported
-    """
-    if content_type in SUPPORTED_IMAGE_TYPES:
-        return {
-            "type": "image",
-            "source": {
-                "type": "base64",
-                "media_type": content_type,
-                "data": base64.b64encode(data).decode("utf-8"),
-            },
-        }
-    elif content_type == "application/pdf":
-        block: dict[str, Any] = {
-            "type": "document",
-            "source": {
-                "type": "base64",
-                "media_type": "application/pdf",
-                "data": base64.b64encode(data).decode("utf-8"),
-            },
-            "citations": {"enabled": True},
-        }
-        if filename:
-            block["title"] = filename
-        return block
-    elif content_type in SUPPORTED_DOCUMENT_TYPES or (
-        content_type and content_type.startswith("text/")
-    ):
-        # Send as a citable document block
-        try:
-            text_content = data.decode("utf-8")
-        except UnicodeDecodeError:
-            text_content = data.decode("latin-1")
-
-        text_block: dict[str, Any] = {
-            "type": "document",
-            "source": {
-                "type": "text",
-                "media_type": "text/plain",
-                "data": text_content,
-            },
-            "citations": {"enabled": True},
-        }
-        if filename:
-            text_block["title"] = filename
-        return text_block
-    return None
+__all__ = [
+    "APIConnectionError",
+    "APIError",
+    "BashToolHandler",
+    "ClaudeCog",
+    "MemoryToolHandler",
+    "ParsedResponse",
+    "SUPPORTED_DOCUMENT_TYPES",
+    "SUPPORTED_IMAGE_TYPES",
+    "ToolChoice",
+    "UsageTotals",
+    "append_citations_embed",
+    "append_compaction_embed",
+    "append_context_warning_embed",
+    "append_pricing_embed",
+    "append_response_embeds",
+    "append_stop_reason_embed",
+    "append_thinking_embeds",
+    "build_attachment_content_block",
+    "extract_response_content",
+]
 
 
-@dataclass
-class ParsedResponse:
-    """Structured result from parsing an API response."""
-
-    text: str = ""
-    thinking: str = ""
-    citations: list[dict[str, str]] = field(default_factory=list)
-    tool_use_blocks: list[Any] = field(default_factory=list)
-    stop_reason: str = "end_turn"
-    input_tokens: int = 0
-    output_tokens: int = 0
-    cache_creation_tokens: int = 0
-    cache_read_tokens: int = 0
-    web_search_requests: int = 0
-    web_fetch_requests: int = 0
-    code_execution_requests: int = 0
-    context_warning: bool = False
-    context_compacted: bool = False
-
-
-def extract_response_content(response) -> ParsedResponse:
-    """Extract response text, thinking, citations, and tool use from an API response.
-
-    Returns:
-        A ParsedResponse with text, thinking, citations, tool use blocks, and raw content.
-    """
-    text_parts: list[str] = []
-    thinking_parts: list[str] = []
-    citations: list[dict[str, str]] = []
-    tool_use_blocks: list[Any] = []
-    seen_urls: set[str] = set()
-    seen_cited_texts: set[str] = set()
-
-    for block in response.content:
-        if block.type == "thinking":
-            thinking_parts.append(block.thinking)
-        elif block.type == "text":
-            text_parts.append(block.text)
-            # Extract citations from text blocks
-            block_citations = getattr(block, "citations", None)
-            if block_citations:
-                for citation in block_citations:
-                    url = getattr(citation, "url", None)
-                    cited_text = getattr(citation, "cited_text", "")
-                    if url and url not in seen_urls:
-                        # Web search citation
-                        seen_urls.add(url)
-                        citations.append(
-                            {
-                                "kind": "web",
-                                "url": url,
-                                "title": getattr(citation, "title", url),
-                                "cited_text": cited_text,
-                            }
-                        )
-                    elif not url and cited_text and cited_text not in seen_cited_texts:
-                        # Document citation (char_location, page_location, content_block_location)
-                        seen_cited_texts.add(cited_text)
-                        doc_title = getattr(citation, "document_title", "Document")
-                        location = ""
-                        citation_type = getattr(citation, "type", "")
-                        if citation_type == "page_location":
-                            start = getattr(citation, "start_page_number", None)
-                            end = getattr(citation, "end_page_number", None)
-                            if start is not None:
-                                if end is not None and end > start + 1:
-                                    location = f"pp. {start}\u2013{end - 1}"
-                                else:
-                                    location = f"p. {start}"
-                        citations.append(
-                            {
-                                "kind": "document",
-                                "cited_text": cited_text,
-                                "document_title": doc_title,
-                                "location": location,
-                            }
-                        )
-        elif block.type == "tool_use":
-            tool_use_blocks.append(block)
-        # Skip server-side blocks: server_tool_use, web_search_tool_result,
-        # web_fetch_tool_result, bash_code_execution_tool_result,
-        # text_editor_code_execution_tool_result, redacted_thinking,
-        # compaction (context summary from server-side compaction)
-
-    response_text = "\n\n".join(text_parts) if text_parts else "No response."
-    thinking_text = "\n\n".join(thinking_parts)
-
-    return ParsedResponse(
-        text=response_text,
-        thinking=thinking_text,
-        citations=citations,
-        tool_use_blocks=tool_use_blocks,
-    )
-
-
-def append_thinking_embeds(embeds: list[Embed], thinking_text: str) -> None:
-    """Append thinking text as a spoilered Discord embed."""
-    if not thinking_text:
-        return
-
-    if len(thinking_text) > 3500:
-        thinking_text = thinking_text[:3450] + "\n\n... [thinking truncated]"
-
-    embeds.append(
-        Embed(
-            title="Thinking",
-            description=f"||{thinking_text}||",
-            color=Colour.light_grey(),
-        )
-    )
-
-
-def append_response_embeds(embeds: list[Embed], response_text: str) -> None:
-    """Append response text as Discord embeds, handling chunking for long responses."""
-    available = available_embed_space(embeds, reserve=CITATION_EMBED_RESERVE)
-    if available < 50:
-        return
-
-    if len(response_text) > available:
-        response_text = (
-            response_text[: available - 40] + "\n\n... [Response truncated due to length]"
-        )
-
-    response_text = re.sub(r"\n{3,}", "\n\n", response_text)
-
-    for index, chunk in enumerate(chunk_text(response_text, 3500), start=1):
-        embeds.append(
-            Embed(
-                title="Response" + (f" (Part {index})" if index > 1 else ""),
-                description=chunk,
-                color=Colour.orange(),
-            )
-        )
-
-
-def append_citations_embed(embeds: list[Embed], citations: list[dict[str, str]]) -> None:
-    """Append a Sources embed listing web search links and/or document citations."""
-    if not citations:
-        return
-
-    web_lines = []
-    doc_lines = []
-
-    for citation in citations:
-        kind = citation.get("kind", "web")
-        if kind == "web":
-            title = citation.get("title", citation.get("url", ""))
-            url = citation.get("url", "")
-            if url:
-                web_lines.append(f"[{title}]({url})")
-        elif kind == "document":
-            cited_text = citation.get("cited_text", "")
-            doc_title = citation.get("document_title", "")
-            location = citation.get("location", "")
-            if cited_text:
-                if len(cited_text) > 150:
-                    cited_text = cited_text[:147] + "..."
-                source = doc_title
-                if location:
-                    source += f", {location}"
-                doc_lines.append(f"> {cited_text}\n> \u2014 *{source}*")
-
-    parts = []
-    if web_lines:
-        numbered = [f"{i}. {line}" for i, line in enumerate(web_lines[:20], 1)]
-        parts.append("\n".join(numbered))
-    if doc_lines:
-        parts.append("\n\n".join(doc_lines[:10]))
-
-    if not parts:
-        return
-
-    description = "\n\n".join(parts)
-
-    # Respect Discord's embed limits
-    remaining_chars = available_embed_space(embeds, reserve=len("Sources"))
-
-    if remaining_chars < 50:
-        return
-
-    max_description_length = min(4000, remaining_chars)
-    if len(description) > max_description_length:
-        description = description[: max_description_length - 3] + "..."
-
-    embeds.append(
-        Embed(
-            title="Sources",
-            description=description,
-            color=Colour.orange(),
-        )
-    )
-
-
-def append_stop_reason_embed(embeds: list[Embed], stop_reason: str) -> None:
-    """Append a warning embed for non-standard stop reasons."""
-    if stop_reason == "max_tokens":
-        embeds.append(
-            Embed(
-                title="Response Truncated",
-                description="The response reached the maximum token limit and was cut short.",
-                color=Colour.yellow(),
-            )
-        )
-    elif stop_reason == "model_context_window_exceeded":
-        embeds.append(
-            Embed(
-                title="Context Limit Reached",
-                description="This conversation has exceeded the model's context window. Please start a new conversation.",
-                color=Colour.yellow(),
-            )
-        )
-    elif stop_reason == "refusal":
-        embeds.append(
-            Embed(
-                title="Request Declined",
-                description="Claude was unable to fulfill this request.",
-                color=Colour.yellow(),
-            )
-        )
-
-
-def append_context_warning_embed(embeds: list[Embed]) -> None:
-    """Append a warning embed when context usage exceeds 85% of the window."""
-    embeds.append(
-        Embed(
-            title="Context Window Warning",
-            description=(
-                "This conversation is using over 85% of the model's context window. "
-                "Consider starting a new conversation soon to avoid degraded responses."
-            ),
-            color=Colour.yellow(),
-        )
-    )
-
-
-def append_compaction_embed(embeds: list[Embed]) -> None:
-    """Append an info embed when context was automatically compacted."""
-    embeds.append(
-        Embed(
-            title="Context Compacted",
-            description=(
-                "This conversation's history was automatically summarized to stay "
-                "within the model's context window. Earlier details may be condensed."
-            ),
-            color=Colour.blue(),
-        )
-    )
-
-
-def append_pricing_embed(
-    embeds: list[Embed],
-    parsed: "ParsedResponse",
-    request_cost: float,
-    daily_cost: float,
-) -> None:
-    """Append a compact pricing embed showing cost and token usage."""
-    parts = [
-        f"${request_cost:.4f} · {parsed.input_tokens:,} tokens in / {parsed.output_tokens:,} tokens out"
-    ]
-    if parsed.cache_read_tokens:
-        parts.append(f"{parsed.cache_read_tokens:,} cached")
-    if parsed.web_search_requests:
-        parts.append(
-            f"{parsed.web_search_requests} search{'es' if parsed.web_search_requests != 1 else ''}"
-        )
-    if parsed.web_fetch_requests:
-        parts.append(
-            f"{parsed.web_fetch_requests} fetch{'es' if parsed.web_fetch_requests != 1 else ''}"
-        )
-    if parsed.code_execution_requests:
-        parts.append(
-            f"{parsed.code_execution_requests} code exec{'s' if parsed.code_execution_requests != 1 else ''}"
-        )
-    parts.append(f"daily ${daily_cost:.2f}")
-    embeds.append(Embed(description=" · ".join(parts), color=Colour.orange()))
-
-
-class AnthropicAPI(commands.Cog):
-    # Slash command group for all Claude commands: /claude <subcommand>
+class ClaudeCog(commands.Cog):
     claude = SlashCommandGroup("claude", "Claude AI commands", guild_ids=GUILD_IDS)
 
-    def __init__(self, bot):
-        """
-        Initialize the AnthropicAPI class.
+    _tool_handlers: dict[str, ToolHandler] = {
+        "memory": MemoryToolHandler(),
+        "bash": BashToolHandler(),
+    }
 
-        Args:
-            bot: The bot instance.
-        """
+    def __init__(self, bot):
         self.bot = bot
-        self.client = AsyncAnthropic(api_key=ANTHROPIC_API_KEY)
+        self.client = build_claude_client()
         logging.basicConfig(
             level=logging.DEBUG,
             format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
         )
         self.logger = logging.getLogger(__name__)
+        self.show_cost_embeds = SHOW_COST_EMBEDS
 
-        # Dictionary to store conversation state, keyed by (user_id, channel_id)
         self.conversations: dict[ConversationKey, Conversation] = {}
-        # Dictionary to store UI views for each conversation
         self.views = {}
-        # Last message with a ButtonView attached, keyed by user — used to strip old buttons
         self.last_view_messages = {}
-        # Daily cost tracking: (user_id, date_iso) -> cumulative cost
         self.daily_costs: dict[tuple[int, str], float] = {}
-        self._http_session: aiohttp.ClientSession | None = None
+        self._http_session = None
         self._session_lock = asyncio.Lock()
 
-    async def _get_http_session(self) -> aiohttp.ClientSession:
-        if self._http_session and not self._http_session.closed:
-            return self._http_session
-        async with self._session_lock:
-            if self._http_session is None or self._http_session.closed:
-                self._http_session = aiohttp.ClientSession()
-            return self._http_session
+    async def _get_http_session(self):
+        return await get_http_session(self)
 
     async def _compact_conversation(
         self,
         messages: list[dict[str, Any]],
         system: str | None = None,
     ) -> str:
-        """Compact conversation history into a summary for non-compaction models.
-
-        Sends the current messages plus a summary prompt to a cheap model,
-        then replaces the messages list with just the summary.
-
-        Returns the generated summary text (for logging).
-        """
-        summary_prompt = (
-            "You are summarizing a conversation to allow it to continue in a fresh context window. "
-            "Write a concise continuation summary that preserves:\n\n"
-            "1. **Task/Topic**: The user's core request or discussion topic\n"
-            "2. **Key Context**: Important facts, decisions, and constraints established\n"
-            "3. **Current State**: What has been discussed/completed so far\n"
-            "4. **Next Steps**: What the user is likely to ask about next\n\n"
-            "Be concise but complete — preserve information that prevents repeated work. "
-            "Wrap your summary in <summary></summary> tags."
-        )
-
-        summary_messages = list(messages) + [{"role": "user", "content": summary_prompt}]
-
-        create_kwargs: dict[str, Any] = {
-            "model": COMPACTION_SUMMARY_MODEL,
-            "max_tokens": 4096,
-            "messages": summary_messages,
-        }
-        if system:
-            create_kwargs["system"] = system
-
-        summary_response = await self.client.messages.create(**create_kwargs)
-
-        summary_text = "".join(
-            block.text for block in summary_response.content if block.type == "text"
-        )
-
-        # Replace messages in place with just the summary
-        messages.clear()
-        messages.append({"role": "user", "content": summary_text})
-
-        self.logger.info(
-            "Context compacted: conversation reduced to summary (%d chars)",
-            len(summary_text),
-        )
-        return summary_text
+        return await compact_conversation(self, messages, system=system)
 
     async def _strip_previous_view(self, user) -> None:
-        """Edit the last message that had buttons to remove its view."""
-        prev = self.last_view_messages.pop(user, None)
-        if prev is not None:
-            try:
-                await prev.edit(view=None)
-            except Exception as e:
-                self.logger.debug("Failed to strip previous view: %s", e)
+        await strip_previous_view(self, user)
 
     async def _cleanup_conversation(self, user) -> None:
-        """Remove button view from the last message and clean up view state."""
-        await self._strip_previous_view(user)
-        self.views.pop(user, None)
+        await cleanup_conversation(self, user)
 
     async def _stop_conversation(self, conversation_key: ConversationKey, user) -> None:
-        """Stop a conversation and clean up resources."""
-        self.conversations.pop(conversation_key, None)
-        await self._cleanup_conversation(user)
+        await stop_conversation(self, conversation_key, user)
 
     def _track_daily_cost(
         self,
         user_id: int,
         model: str,
-        parsed: "ParsedResponse",
+        parsed: ParsedResponse,
     ) -> tuple[float, float]:
-        """Add this request's cost to the user's daily total, log it, and return (request_cost, daily_total)."""
-        cost = calculate_cost(
-            model,
-            parsed.input_tokens,
-            parsed.output_tokens,
-            parsed.cache_creation_tokens,
-            parsed.cache_read_tokens,
-            parsed.web_search_requests,
-        )
-        key = (user_id, date.today().isoformat())
-        self.daily_costs[key] = self.daily_costs.get(key, 0.0) + cost
-
-        self.logger.info(
-            "COST | command=chat | user=%s | model=%s"
-            " | input=%d | output=%d"
-            " | cache_write=%d | cache_read=%d"
-            " | web_searches=%d | web_fetches=%d | code_execs=%d"
-            " | cost=$%.4f | daily=$%.4f",
-            user_id,
-            model,
-            parsed.input_tokens,
-            parsed.output_tokens,
-            parsed.cache_creation_tokens,
-            parsed.cache_read_tokens,
-            parsed.web_search_requests,
-            parsed.web_fetch_requests,
-            parsed.code_execution_requests,
-            cost,
-            self.daily_costs[key],
-        )
-
-        return cost, self.daily_costs[key]
+        return track_daily_cost(self, user_id, model, parsed)
 
     async def _fetch_attachment_bytes(self, attachment: Attachment) -> bytes | None:
-        session = await self._get_http_session()
-        try:
-            async with session.get(attachment.url) as response:
-                if response.status == 200:
-                    return await response.read()
-                self.logger.warning(
-                    "Failed to fetch attachment %s: HTTP %s",
-                    attachment.url,
-                    response.status,
-                )
-        except aiohttp.ClientError as error:
-            self.logger.warning("Error fetching attachment %s: %s", attachment.url, error)
-        return None
+        return await fetch_attachment_bytes(self, attachment)
 
     def cog_unload(self):
-        loop = getattr(self.bot, "loop", None)
-
-        # Close HTTP session
-        session = self._http_session
-        if session and not session.closed:
-            if loop and loop.is_running():
-                loop.create_task(session.close())
-            else:
-                new_loop = asyncio.new_event_loop()
-                try:
-                    new_loop.run_until_complete(session.close())
-                finally:
-                    new_loop.close()
-        self._http_session = None
+        close_http_session(self)
 
     async def _call_api_with_tool_loop(
         self,
@@ -600,479 +144,64 @@ class AnthropicAPI(commands.Cog):
         messages: list[dict[str, Any]],
         user_id: int,
         max_iterations: int = 10,
-    ) -> ParsedResponse:
-        """Call the Anthropic API, handling tool use loops.
-
-        For server-side tools (web_search, web_fetch, code_execution), the API
-        handles execution internally. We only need to handle:
-        1. stop_reason == "pause_turn": re-send to continue the turn
-        2. stop_reason == "tool_use": execute client-side tools (memory),
-           append tool_result, re-send
-
-        The messages list is mutated in place. On completion, the final assistant
-        message (with full content blocks) is appended to messages.
-
-        Args:
-            api_params: The API parameters dict (model, max_tokens, tools, etc.)
-            messages: The conversation messages list (mutated in place)
-            user_id: The Discord user ID (for memory tool file paths)
-            max_iterations: Safety limit on loop iterations
-
-        Returns:
-            The final ParsedResponse after all tool loops complete.
-        """
-        model = api_params.get("model", "")
-        use_compaction = model in COMPACTION_MODELS
-        has_tools = bool(api_params.get("tools"))
-        has_thinking = bool(api_params.get("thinking"))
-
-        # Build context_management edits and betas
-        betas: list[str] = []
-        edits: list[dict[str, Any]] = []
-
-        # Context editing strategies (thinking clearing must come first)
-        if has_thinking:
-            edits.append(
-                {
-                    "type": "clear_thinking_20251015",
-                    "keep": {"type": "thinking_turns", "value": 2},
-                }
-            )
-
-        if has_tools:
-            edits.append(
-                {
-                    "type": "clear_tool_uses_20250919",
-                    "trigger": {"type": "input_tokens", "value": 50000},
-                    "keep": {"type": "tool_uses", "value": 5},
-                }
-            )
-
-        # Context editing beta only needed for tool/thinking clearing
-        if edits:
-            betas.append("context-management-2025-06-27")
-
-        # Compaction has its own beta
-        if use_compaction:
-            betas.append("compact-2026-01-12")
-            edits.append({"type": "compact_20260112"})
-
-        totals = UsageTotals()
-        context_window = MODEL_CONTEXT_WINDOWS.get(model, 200_000)
-        parsed: ParsedResponse | None = None
-
-        for iteration in range(max_iterations):
-            # Manual compaction for non-compaction models when approaching context limit
-            if (
-                not use_compaction
-                and totals.input_tokens > context_window * CONTEXT_COMPACTION_THRESHOLD
-                and len(messages) > 1
-            ):
-                self.logger.info(
-                    "Input tokens (%d) exceeded %.0f%% of context window (%d), compacting...",
-                    totals.input_tokens,
-                    CONTEXT_COMPACTION_THRESHOLD * 100,
-                    context_window,
-                )
-                await self._compact_conversation(
-                    messages,
-                    system=api_params.get("system"),
-                )
-                totals.context_compacted = True
-
-            api_params["messages"] = messages
-            if betas:
-                response = await self.client.beta.messages.create(  # type: ignore[call-overload]
-                    **api_params,
-                    betas=betas,
-                    context_management={"edits": edits} if edits else None,  # type: ignore[arg-type]
-                    cache_control={"type": "ephemeral", "ttl": CACHE_TTL},
-                )
-            else:
-                response = await self.client.messages.create(
-                    **api_params,
-                    cache_control={"type": "ephemeral", "ttl": CACHE_TTL},
-                )
-            parsed = extract_response_content(response)
-            parsed.stop_reason = response.stop_reason
-            totals.accumulate(getattr(response, "usage", None))
-
-            if response.stop_reason == "end_turn":
-                messages.append({"role": "assistant", "content": response.content})
-                totals.apply_to(parsed, context_window)
-                return parsed
-
-            elif response.stop_reason == "pause_turn":
-                messages.append({"role": "assistant", "content": response.content})
-                self.logger.info(f"pause_turn received, continuing (iteration {iteration + 1})")
-                continue
-
-            elif response.stop_reason == "tool_use":
-                messages.append({"role": "assistant", "content": response.content})
-
-                tool_results = []
-                for tool_block in parsed.tool_use_blocks:
-                    result_text = await self._execute_tool(
-                        tool_block.name, tool_block.input, user_id
-                    )
-                    tool_results.append(
-                        {
-                            "type": "tool_result",
-                            "tool_use_id": tool_block.id,
-                            "content": result_text,
-                        }
-                    )
-
-                messages.append({"role": "user", "content": tool_results})
-                self.logger.info(f"tool_use handled, re-sending (iteration {iteration + 1})")
-                continue
-
-            else:
-                # max_tokens, refusal, model_context_window_exceeded, or unknown
-                messages.append({"role": "assistant", "content": response.content})
-                if response.stop_reason not in (
-                    "max_tokens",
-                    "refusal",
-                    "model_context_window_exceeded",
-                ):
-                    self.logger.warning(f"Unknown stop_reason: {response.stop_reason}")
-                totals.apply_to(parsed, context_window)
-                return parsed
-
-        self.logger.warning(f"Tool loop hit max_iterations ({max_iterations})")
-        if parsed is None:
-            raise RuntimeError("Tool loop completed without any API response")
-        totals.apply_to(parsed, context_window)
-        return parsed
-
-    # Tool handler registry: maps tool name -> ToolHandler implementation.
-    _tool_handlers: dict[str, ToolHandler] = {
-        "memory": MemoryToolHandler(),
-        "bash": BashToolHandler(),
-    }
+    ):
+        return await call_api_with_tool_loop(
+            self,
+            api_params=api_params,
+            messages=messages,
+            user_id=user_id,
+            max_iterations=max_iterations,
+        )
 
     async def _execute_tool(self, tool_name: str, tool_input: dict[str, Any], user_id: int) -> str:
-        """Execute a client-side tool via the handler registry."""
-        handler = self._tool_handlers.get(tool_name)
-        if handler is None:
-            return f"Error: Unknown tool '{tool_name}'"
-        return await handler.execute(tool_input, user_id)
+        return await execute_tool(tool_name, tool_input, user_id)
 
     @staticmethod
     def _build_thinking_config(params: ChatCompletionParameters) -> dict[str, Any] | None:
-        """Return the Anthropic thinking configuration for the current model/settings."""
-        if params.model in ADAPTIVE_THINKING_MODELS:
-            return {"type": "adaptive", "display": "summarized"}
-        if params.thinking_budget is not None and params.model in EXTENDED_THINKING_MODELS:
-            return {
-                "type": "enabled",
-                "budget_tokens": params.thinking_budget,
-            }
-        return None
+        return build_thinking_config(params)
 
     @classmethod
     def _validate_request_configuration(cls, params: ChatCompletionParameters) -> str | None:
-        """Validate request options before dispatching to Anthropic."""
-        tool_choice = params.tool_choice
-        if tool_choice is None:
-            return None
-
-        choice_type = tool_choice["type"]
-        has_thinking = cls._build_thinking_config(params) is not None
-
-        if has_thinking and choice_type in {"any", "tool"}:
-            return (
-                "Thinking mode only supports tool behavior `auto` or `none`. "
-                "Forced tool modes are not compatible with thinking."
-            )
-
-        if choice_type in {"any", "tool"} and not params.tools:
-            return "Forced tool behavior requires at least one enabled tool."
-
-        if choice_type == "tool":
-            tool_name = tool_choice.get("name")
-            if not tool_name:
-                return "Tool behavior `tool` requires a tool name."
-            if tool_name not in AVAILABLE_TOOLS:
-                return f"Unknown forced tool `{tool_name}`."
-            if tool_name not in params.tools:
-                return (
-                    f"Tool behavior `tool` requires `{tool_name}` to be enabled in the "
-                    "conversation tools."
-                )
-
-        return None
+        return validate_request_configuration(params)
 
     @classmethod
     def _build_api_params(
-        cls, params: ChatCompletionParameters, messages: list[dict[str, Any]]
+        cls,
+        params: ChatCompletionParameters,
+        messages: list[dict[str, Any]],
     ) -> dict[str, Any]:
-        """Build the API parameter dict from ChatCompletionParameters."""
-        api_params: dict[str, Any] = {
-            "model": params.model,
-            "max_tokens": params.max_tokens,
-            "messages": messages,
-        }
-        thinking_config = cls._build_thinking_config(params)
-        if thinking_config is not None:
-            api_params["thinking"] = thinking_config
-        if params.effort is not None:
-            api_params["effort"] = params.effort
-        if params.system:
-            api_params["system"] = params.system
-        if params.temperature is not None:
-            api_params["temperature"] = params.temperature
-        if params.top_p is not None:
-            api_params["top_p"] = params.top_p
-        if params.top_k is not None:
-            api_params["top_k"] = params.top_k
-        if params.tools:
-            api_params["tools"] = [AVAILABLE_TOOLS[t] for t in params.tools if t in AVAILABLE_TOOLS]
-            if params.tool_choice is not None:
-                api_params["tool_choice"] = params.tool_choice
-        return api_params
+        return build_api_params(params, messages)
 
     async def handle_new_message_in_conversation(self, message, conversation: Conversation):
-        """
-        Handles a new message in an ongoing conversation.
-
-        Args:
-            message: The incoming Discord Message object.
-            conversation: The conversation object.
-        """
-        params = conversation.params
-        messages = conversation.messages
-
-        self.logger.info(f"Handling new message in conversation {params.conversation_id}.")
-        typing_task = None
-        embeds = []
-
-        try:
-            # Only respond to the user who started the conversation and if not paused.
-            if message.author != params.conversation_starter or params.paused:
-                return
-
-            validation_error = self._validate_request_configuration(params)
-            if validation_error:
-                await message.reply(
-                    embed=Embed(
-                        title="Unsupported Tool Configuration",
-                        description=validation_error,
-                        color=Colour.red(),
-                    )
-                )
-                return
-
-            self.logger.debug(
-                f"Starting typing indicator for followup message from {message.author}"
-            )
-            typing_task = asyncio.create_task(self.keep_typing(message.channel))
-
-            # Build user message content with support for multiple attachments
-            user_content: list[dict[str, Any]] = []
-            if message.content:
-                user_content.append({"type": "text", "text": message.content})
-            if message.attachments:
-                for attachment in message.attachments:
-                    attachment_data = await self._fetch_attachment_bytes(attachment)
-                    if attachment_data is not None:
-                        content_block = build_attachment_content_block(
-                            attachment.content_type or "",
-                            attachment_data,
-                            attachment.filename,
-                        )
-                        if content_block:
-                            user_content.append(content_block)
-
-            messages.append({"role": "user", "content": user_content})
-
-            self.logger.debug(f"Sending messages to Claude: {len(messages)} messages")
-
-            api_params = self._build_api_params(params, messages)
-            parsed = await self._call_api_with_tool_loop(
-                api_params=api_params,
-                messages=messages,
-                user_id=message.author.id,
-            )
-            response_text = parsed.text
-            thinking_text = parsed.thinking
-            self.logger.debug(f"Received response from Claude: {response_text[:200]}...")
-
-            # Stop typing indicator as soon as we have the response
-            if typing_task:
-                self.logger.debug(
-                    f"Stopping typing indicator for conversation {params.conversation_id}"
-                )
-                typing_task.cancel()
-                typing_task = None
-
-            append_thinking_embeds(embeds, thinking_text)
-            append_response_embeds(embeds, response_text)
-            append_stop_reason_embed(embeds, parsed.stop_reason)
-            if parsed.context_compacted:
-                append_compaction_embed(embeds)
-            if parsed.context_warning:
-                append_context_warning_embed(embeds)
-
-            append_citations_embed(embeds, parsed.citations)
-            request_cost, daily_cost = self._track_daily_cost(
-                message.author.id,
-                params.model,
-                parsed,
-            )
-            if SHOW_COST_EMBEDS:
-                append_pricing_embed(embeds, parsed, request_cost, daily_cost)
-
-            main_conversation_id = conversation.params.conversation_id
-
-            if main_conversation_id is None:
-                self.logger.error("Conversation ID is None, cannot track message")
-                return
-
-            # Strip buttons from previous turn's message
-            await self._strip_previous_view(message.author)
-
-            view = self.views.get(message.author)
-
-            if embeds:
-                try:
-                    reply_message = await message.reply(embeds=embeds, view=view)
-                    self.last_view_messages[message.author] = reply_message
-                except Exception as embed_error:
-                    self.logger.warning(f"Embed failed, sending as text: {embed_error}")
-                    safe_response_text = response_text or "No response text available"
-                    reply_message = await message.reply(
-                        content=f"**Response:**\n{safe_response_text[:1900]}{'...' if len(safe_response_text) > 1900 else ''}",
-                        view=view,
-                    )
-                    self.last_view_messages[message.author] = reply_message
-
-                self.logger.debug("Replied with generated response.")
-            else:
-                self.logger.warning("No embeds to send in the reply.")
-                reply_message = await message.reply(
-                    content="An error occurred: No content to send.",
-                    view=view,
-                )
-                self.last_view_messages[message.author] = reply_message
-
-        except (APIError, APIConnectionError, aiohttp.ClientError) as e:
-            description = format_anthropic_error(e)
-            self.logger.error(
-                f"API error in handle_new_message_in_conversation: {description}",
-                exc_info=True,
-            )
-            if len(description) > 4000:
-                description = description[:4000] + "\n\n... (error message truncated)"
-            await self._cleanup_conversation(message.author)
-            await message.reply(
-                embed=Embed(title="Error", description=description, color=Colour.red())
-            )
-            # Remove the conversation so stale state doesn't linger
-            conv_key = (message.author.id, message.channel.id)
-            self.conversations.pop(conv_key, None)
-
-        except Exception as e:
-            self.logger.error(
-                f"Unexpected error in handle_new_message_in_conversation: {e}",
-                exc_info=True,
-            )
-            await self._cleanup_conversation(message.author)
-            conv_key = (message.author.id, message.channel.id)
-            self.conversations.pop(conv_key, None)
-            with contextlib.suppress(Exception):
-                await message.reply(
-                    embed=Embed(
-                        title="Error",
-                        description=f"An unexpected error occurred: {type(e).__name__}",
-                        color=Colour.red(),
-                    )
-                )
-
-        finally:
-            if typing_task:
-                typing_task.cancel()
+        await run_followup_message(self, message, conversation)
 
     async def keep_typing(self, channel):
-        """
-        Coroutine to keep the typing indicator alive in a channel.
-
-        Args:
-            channel: The Discord channel object.
-        """
-        try:
-            self.logger.debug(f"Starting typing indicator loop in channel {channel.id}")
-            while True:
-                async with channel.typing():
-                    self.logger.debug(f"Sent typing indicator to channel {channel.id}")
-                    await asyncio.sleep(5)
-        except asyncio.CancelledError:
-            self.logger.debug(f"Typing indicator cancelled for channel {channel.id}")
-            raise
+        await keep_typing_loop(self, channel)
 
     @commands.Cog.listener()
     async def on_ready(self):
-        """
-        Event listener that runs when the bot is ready.
-        Logs bot details and attempts to synchronize commands.
-        """
-        self.logger.info(f"Logged in as {self.bot.user} (ID: {self.bot.owner_id})")
-        self.logger.info(f"Attempting to sync commands for guilds: {GUILD_IDS}")
+        self.logger.info("Logged in as %s (ID: %s)", self.bot.user, self.bot.owner_id)
+        self.logger.info("Attempting to sync commands for guilds: %s", GUILD_IDS)
         try:
             await self.bot.sync_commands()
             self.logger.info("Commands synchronized successfully.")
-        except Exception as e:
-            self.logger.error(f"Error during command synchronization: {e}", exc_info=True)
+        except Exception as error:
+            self.logger.error("Error during command synchronization: %s", error, exc_info=True)
 
     @commands.Cog.listener()
     async def on_message(self, message):
-        """
-        Event listener that runs when a message is sent.
-        Generates a response using Claude when a new message from the conversation author is detected.
-
-        Args:
-            message: The incoming Discord Message object.
-        """
-        # Ignore messages from the bot itself
-        if message.author == self.bot.user:
-            return
-
-        self.logger.debug(
-            f"Received message from {message.author} in channel {message.channel.id}: '{message.content}'"
-        )
-
-        # Direct O(1) lookup for active conversation by (user_id, channel_id)
-        conv_key: ConversationKey = (message.author.id, message.channel.id)
-        conversation = self.conversations.get(conv_key)
-        if conversation is not None:
-            self.logger.info(
-                f"Processing followup message for conversation {conversation.params.conversation_id}"
-            )
-            await self.handle_new_message_in_conversation(message, conversation)
+        await handle_on_message(self, message)
 
     @commands.Cog.listener()
     async def on_error(self, event, *args, **kwargs):
-        """
-        Event listener that runs when an error occurs.
-        """
-        self.logger.error(f"Error in event {event}: {args} {kwargs}", exc_info=True)
+        self.logger.error("Error in event %s: %s %s", event, args, kwargs, exc_info=True)
 
     @claude.command(
         name="check_permissions",
         description="Check if bot has necessary permissions in this channel",
     )
     async def check_permissions(self, ctx: ApplicationContext):
-        """
-        Checks and reports the bot's permissions in the current channel.
-        """
-        if ctx.guild is None or not hasattr(ctx.channel, "permissions_for"):
-            await ctx.respond("This command must be used in a server channel.")
-            return
-        permissions = ctx.channel.permissions_for(ctx.guild.me)  # type: ignore[union-attr]
-        if permissions.read_messages and permissions.read_message_history:
-            await ctx.respond("Bot has permission to read messages and message history.")
-        else:
-            await ctx.respond("Bot is missing necessary permissions in this channel.")
+        await handle_check_permissions(ctx)
 
     @claude.command(
         name="chat",
@@ -1206,233 +335,23 @@ class AnthropicAPI(commands.Cog):
         bash: bool = False,
         tool_choice: str | None = None,
     ):
-        """
-        Creates a persistent conversation session with Claude.
-
-        Initiates an interactive conversation with context preservation across multiple exchanges.
-        Supports multimodal inputs (text + images) and provides interactive UI controls for
-        conversation management.
-
-        Args:
-            ctx: Discord application context
-            prompt: Initial conversation prompt or question
-            model: Claude model variant (default: claude-opus-4-6)
-            system: Optional system prompt to set Claude's behavior
-            attachment: Optional image attachment for multimodal input
-            max_tokens: Maximum tokens in the response (default: 16384)
-            temperature: Amount of randomness (0.0-1.0, default 1.0). Use lower for analytical tasks, higher for creative tasks
-            top_p: Nucleus sampling threshold (0.0-1.0). Use temperature OR top_p, not both. Advanced use only
-            top_k: Only sample from top K tokens. Use temperature OR top_k, not both. Advanced use only
-
-        Returns:
-            Discord response with initial AI message and interactive conversation controls
-
-        Note:
-            Only one conversation per user per channel allowed. Conversations persist until
-            explicitly ended or bot restarts. Follow-up messages automatically handled.
-        """
-        await ctx.defer()
-        typing_task = None
-
-        if ctx.channel is None:
-            await ctx.send_followup(
-                embed=Embed(
-                    title="Error",
-                    description="Cannot start conversation: channel context is unavailable.",
-                    color=Colour.red(),
-                )
-            )
-            return
-
-        if (ctx.author.id, ctx.channel.id) in self.conversations:
-            await ctx.send_followup(
-                embed=Embed(
-                    title="Error",
-                    description="You already have an active conversation in this channel. Please finish it before starting a new one.",
-                    color=Colour.red(),
-                )
-            )
-            return
-
-        try:
-            typing_task = asyncio.create_task(self.keep_typing(ctx.channel))
-
-            # Build enabled tools list from boolean options
-            enabled_tools: list[str] = []
-            if web_search:
-                enabled_tools.append("web_search")
-            if web_fetch:
-                enabled_tools.append("web_fetch")
-            if code_execution:
-                enabled_tools.append("code_execution")
-            if memory:
-                enabled_tools.append("memory")
-            if bash:
-                enabled_tools.append("bash")
-
-            resolved_tool_choice: ToolChoice | None = None
-            if tool_choice == "auto":
-                resolved_tool_choice = {"type": "auto"}
-            elif tool_choice == "none":
-                resolved_tool_choice = {"type": "none"}
-
-            # Build user content with optional attachment (image, PDF, or text file)
-            user_content: list[dict[str, Any]] = [{"type": "text", "text": prompt}]
-            if attachment:
-                attachment_data = await self._fetch_attachment_bytes(attachment)
-                if attachment_data is not None:
-                    content_block = build_attachment_content_block(
-                        attachment.content_type or "",
-                        attachment_data,
-                        attachment.filename,
-                    )
-                    if content_block:
-                        user_content.append(content_block)
-
-            # Build initial messages list (will be mutated by tool loop)
-            conversation_messages: list[dict[str, Any]] = [
-                {"role": "user", "content": user_content}
-            ]
-
-            # Create params early so _build_api_params can use them
-            params = ChatCompletionParameters(
-                model=model,
-                system=system,
-                max_tokens=max_tokens,
-                temperature=temperature,
-                top_p=top_p,
-                top_k=top_k,
-                effort=effort,
-                thinking_budget=thinking_budget,
-                conversation_starter=ctx.author,
-                channel_id=ctx.channel.id,
-                conversation_id=ctx.interaction.id,
-                tools=enabled_tools,
-                tool_choice=resolved_tool_choice,
-            )
-
-            validation_error = self._validate_request_configuration(params)
-            if validation_error:
-                await ctx.send_followup(
-                    embed=Embed(
-                        title="Unsupported Tool Configuration",
-                        description=validation_error,
-                        color=Colour.red(),
-                    )
-                )
-                return
-
-            api_params = self._build_api_params(params, conversation_messages)
-            parsed = await self._call_api_with_tool_loop(
-                api_params=api_params,
-                messages=conversation_messages,
-                user_id=ctx.author.id,
-            )
-            response_text = parsed.text
-            thinking_text = parsed.thinking
-
-            self.logger.debug(f"Received response from Claude: {response_text[:200]}...")
-
-            # Update initial response description based on input parameters
-            truncated_prompt = truncate_text(prompt, 2000)
-            description = f"**Prompt:** {truncated_prompt}\n"
-            description += f"**Model:** {model}\n"
-            if system:
-                description += f"**System:** {truncate_text(system, 500)}\n"
-            description += f"**Max Tokens:** {max_tokens}\n"
-            if temperature is not None:
-                description += f"**Temperature:** {temperature}\n"
-            if top_p is not None:
-                description += f"**Top P:** {top_p}\n"
-            if top_k is not None:
-                description += f"**Top K:** {top_k}\n"
-            if effort is not None:
-                description += f"**Effort:** {effort}\n"
-            if thinking_budget is not None:
-                description += f"**Thinking Budget:** {thinking_budget} tokens\n"
-            if enabled_tools:
-                description += f"**Tools:** {', '.join(enabled_tools)}\n"
-            if resolved_tool_choice is not None:
-                description += f"**Tool Choice:** {resolved_tool_choice['type']}\n"
-
-            # Assemble all embeds for a single message
-            embeds = [
-                Embed(
-                    title="Conversation Started",
-                    description=description,
-                    color=Colour.green(),
-                )
-            ]
-            append_thinking_embeds(embeds, thinking_text)
-            append_response_embeds(embeds, response_text)
-            append_stop_reason_embed(embeds, parsed.stop_reason)
-            if parsed.context_compacted:
-                append_compaction_embed(embeds)
-            if parsed.context_warning:
-                append_context_warning_embed(embeds)
-
-            append_citations_embed(embeds, parsed.citations)
-            request_cost, daily_cost = self._track_daily_cost(
-                ctx.author.id,
-                model,
-                parsed,
-            )
-            if SHOW_COST_EMBEDS:
-                append_pricing_embed(embeds, parsed, request_cost, daily_cost)
-
-            if len(embeds) == 1:
-                await ctx.send_followup("No response generated.")
-                return
-
-            # Strip buttons from any prior conversation's last message
-            await self._strip_previous_view(ctx.author)
-
-            # Create the view with buttons and tool select menu
-            conv_key: ConversationKey = (ctx.author.id, ctx.channel.id)
-            view = ButtonView(
-                conversation_starter=ctx.author,
-                conversation_key=conv_key,
-                initial_tools=enabled_tools,
-                initial_tool_choice=resolved_tool_choice,
-                get_conversation=lambda key: self.conversations.get(key),
-                on_regenerate=self.handle_new_message_in_conversation,
-                on_stop=self._stop_conversation,
-            )
-            self.views[ctx.author] = view
-
-            message = await ctx.send_followup(embeds=embeds, view=view)
-            self.last_view_messages[ctx.author] = message
-
-            # Store the conversation (params already created above)
-            conversation = Conversation(params=params, messages=conversation_messages)
-            self.conversations[conv_key] = conversation
-
-        except (APIError, APIConnectionError, aiohttp.ClientError) as e:
-            description = format_anthropic_error(e)
-            self.logger.error(
-                f"API error in chat: {description}",
-                exc_info=True,
-            )
-            await self._cleanup_conversation(ctx.author)
-            await ctx.send_followup(
-                embed=Embed(title="Error", description=description, color=Colour.red())
-            )
-
-        except Exception as e:
-            self.logger.error(
-                f"Unexpected error in chat: {e}",
-                exc_info=True,
-            )
-            await self._cleanup_conversation(ctx.author)
-            with contextlib.suppress(Exception):
-                await ctx.send_followup(
-                    embed=Embed(
-                        title="Error",
-                        description=f"An unexpected error occurred: {type(e).__name__}",
-                        color=Colour.red(),
-                    )
-                )
-
-        finally:
-            if typing_task:
-                typing_task.cancel()
+        await run_chat_command(
+            self,
+            ctx=ctx,
+            prompt=prompt,
+            model=model,
+            system=system,
+            attachment=attachment,
+            max_tokens=max_tokens,
+            temperature=temperature,
+            top_p=top_p,
+            top_k=top_k,
+            effort=effort,
+            thinking_budget=thinking_budget,
+            web_search=web_search,
+            web_fetch=web_fetch,
+            code_execution=code_execution,
+            memory=memory,
+            bash=bash,
+            tool_choice=tool_choice,
+        )

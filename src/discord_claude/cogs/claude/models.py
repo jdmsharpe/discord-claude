@@ -1,14 +1,15 @@
-"""Model type exports used by the cog."""
+"""Model and type exports used by the Claude cog."""
 
-from .cog import (
+from discord_claude.util import (
     ChatCompletionParameters,
     Conversation,
     ConversationKey,
-    ParsedResponse,
     ToolChoice,
     ToolHandler,
     UsageTotals,
 )
+
+from .responses import ParsedResponse
 
 __all__ = [
     "ChatCompletionParameters",

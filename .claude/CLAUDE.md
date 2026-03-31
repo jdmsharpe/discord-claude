@@ -6,9 +6,9 @@
 - Cog composition contract:
 
   ```python
-  from discord_claude import AnthropicAPI
+  from discord_claude import ClaudeCog
 
-  bot.add_cog(AnthropicAPI(bot=bot))
+  bot.add_cog(ClaudeCog(bot=bot))
   ```
 
 - Legacy shim: `src/anthropic_api.py` exists only for import compatibility and emits a `DeprecationWarning`.
@@ -34,11 +34,16 @@ src/
     │   └── auth.py
     └── cogs/claude/
         ├── __init__.py
+        ├── attachments.py
+        ├── chat.py
         ├── client.py
         ├── cog.py
         ├── embeds.py
         ├── models.py
         ├── paths.py
+        ├── responses.py
+        ├── state.py
+        ├── tool_handlers.py
         ├── tooling.py
         └── views.py
 ```
@@ -52,8 +57,11 @@ The namespaced `discord_claude.bash_tool` and `discord_claude.memory` modules ar
 - Examples:
   - `discord_claude.bash_tool.BASH_TIMEOUT`
   - `discord_claude.memory.MEMORIES_BASE_DIR`
-  - `discord_claude.cogs.claude.cog.SUPPORTED_IMAGE_TYPES`
-- `tests/test_namespace.py` is the shim/namespace smoke test.
+  - `discord_claude.cogs.claude.attachments.SUPPORTED_IMAGE_TYPES`
+  - `discord_claude.cogs.claude.client.AsyncAnthropic`
+  - `discord_claude.cogs.claude.chat.call_api_with_tool_loop`
+- `tests/test_namespace.py` is the package import smoke test.
+- `tests/test_anthropic_api_shim.py` is the legacy shim smoke test.
 
 ## Validation Commands
 
@@ -67,6 +75,6 @@ pytest -q
 ## Provider Notes
 
 - Memory storage root is resolved via `discord_claude.cogs.claude.paths`.
-- Client-side tool dispatch in `discord_claude.cogs.claude.cog` should call through the namespaced `discord_claude.memory` and `discord_claude.bash_tool` modules so tests can patch the live owners.
+- Client-side tool dispatch lives in `discord_claude.cogs.claude.tooling`, which calls through the namespaced `discord_claude.memory` and `discord_claude.bash_tool` modules so tests can patch the live owners.
 - The bash runner prefers a real bash shell when available and normalizes `\r\n` to `\n` for consistent behavior across environments.
 - Conversations remain keyed by `(user_id, channel_id)`.
