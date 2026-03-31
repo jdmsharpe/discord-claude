@@ -23,7 +23,8 @@ src/
     ├── util.py
     ├── config/
     │   ├── __init__.py
-    │   └── auth.py
+    │   ├── auth.py
+    │   └── mcp.py
     └── cogs/
         ├── __init__.py
         └── claude/
@@ -48,6 +49,7 @@ Only `src/bot.py` remains at the repo root; code imports should target `discord_
 
 - `pytest` runs with `pythonpath = ["src"]`.
 - The test suite is organized into module-aligned files such as `tests/test_claude_cog.py`, `tests/test_claude_chat.py`, `tests/test_claude_client.py`, and `tests/test_claude_tool_handlers.py`.
+- MCP-specific coverage lives primarily in `tests/test_claude_mcp_config.py`, `tests/test_claude_request_config.py`, and the MCP cases in `tests/test_claude_chat.py`.
 - `tests/test_package_import.py` is the package import smoke test.
 - New tests and patches should target real owners under `discord_claude...`.
 - Examples:
@@ -55,6 +57,8 @@ Only `src/bot.py` remains at the repo root; code imports should target `discord_
   - `discord_claude.cogs.claude.attachments.SUPPORTED_IMAGE_TYPES`
   - `discord_claude.cogs.claude.client.AsyncAnthropic`
   - `discord_claude.cogs.claude.chat.call_api_with_tool_loop`
+  - `discord_claude.config.mcp.ANTHROPIC_MCP_PRESETS`
+  - `discord_claude.cogs.claude.chat.build_api_params`
 - Import `ClaudeCog` from `discord_claude`; do not reintroduce legacy `anthropic_api` shim paths.
 
 ## Validation Commands
@@ -71,3 +75,7 @@ pytest -q
 - Memory storage root is resolved via `discord_claude.cogs.claude.paths`.
 - Client-side tool dispatch lives in `discord_claude.cogs.claude.tooling`, which calls through `discord_claude.memory` so tests can patch the live owner.
 - Conversations remain keyed by `(user_id, channel_id)`.
+- Named MCP presets are loaded from `ANTHROPIC_MCP_PRESETS_JSON` and `ANTHROPIC_MCP_PRESETS_PATH`.
+- MCP state persists independently from built-in tool names via `mcp_preset_names` on `ChatCompletionParameters`.
+- Anthropic MCP traffic is passed through with `mcp_servers` and `mcp_toolset`, and `call_api_with_tool_loop` adds the `mcp-client-2025-11-20` beta when MCP is active.
+- MCP content blocks are ignored by the local tool loop; only built-in Anthropic tool calls are executed client-side.

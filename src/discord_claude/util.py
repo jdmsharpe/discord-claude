@@ -196,6 +196,7 @@ class ChatCompletionParameters:
     thinking_budget: int | None = None
     paused: bool | None = False
     tools: list[str] = field(default_factory=list)
+    mcp_preset_names: list[str] = field(default_factory=list)
     tool_choice: ToolChoice | None = None
 
 

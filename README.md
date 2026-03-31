@@ -12,6 +12,7 @@ A Discord bot that wraps Anthropic's Claude API, providing an easy-to-use interf
 - **Multiple Claude models**: Choose from Claude Opus 4.6, Sonnet 4.6, Opus 4.5, Sonnet 4.5, Opus 4.1, and Haiku 4.5
 - **Multimodal input**: Attach images (JPEG, PNG, GIF, WEBP), PDFs, or text files (TXT, MD, CSV)
 - **Tools**: Enable web search, web fetch, code execution, and memory, with `tool_choice` control (`auto` / `none`) and mid-conversation toggles
+- **MCP presets**: Enable trusted remote MCP servers per conversation through named presets loaded from config, with optional authorization env bindings, allow-lists, and deferred tool loading
 - **Citations**: Web search and document citations displayed as a separate Sources embed
 - **Prompt caching**: Automatic prompt caching reduces costs (cache reads at 10% of input price) and latency on multi-turn conversations
 - **Context management**: Automatic compaction for non-compaction models at 75% context usage, server-side compaction for Opus/Sonnet 4.6, and an 85% context warning embed. Server-side clearing of old tool results and thinking blocks to manage context growth in long conversations
@@ -43,6 +44,28 @@ Start a conversation with Claude.
 - `temperature`: Amount of randomness (0.0-1.0). Lower for analytical tasks, higher for creative (advanced)
 - `top_p`: Nucleus sampling threshold (0.0-1.0). Use temperature OR top_p, not both (advanced)
 - `top_k`: Only sample from top K tokens. Use temperature OR top_k, not both (advanced)
+- `mcp`: Optional comma-separated MCP preset names. MCP presets persist for the life of the conversation and remain separate from the built-in tool dropdown.
+
+### MCP Setup For `/claude chat`
+
+Configure named presets in either `ANTHROPIC_MCP_PRESETS_JSON` or `ANTHROPIC_MCP_PRESETS_PATH`. Each preset is keyed by name and supports this schema:
+
+```json
+{
+  "github": {
+    "url": "https://api.githubcopilot.com/mcp/",
+    "authorization_env_var": "GITHUB_MCP_TOKEN",
+    "allowed_tools": ["search_issues"],
+    "defer_loading": true
+  }
+}
+```
+
+- `url` must be HTTPS.
+- `authorization_env_var` is optional. If it is set but missing at runtime, the preset is marked unavailable and the command returns a user-facing error instead of crashing the bot.
+- `allowed_tools` should be used for least privilege when the server exposes many tools.
+- `defer_loading` is passed through to Anthropic MCP server config.
+- Anthropic MCP execution is server-side. The bot does not implement a Discord approval loop here; tool execution is controlled by Anthropic’s MCP connector flow and preset selection.
 
 ### `/claude check_permissions`
 
@@ -87,11 +110,13 @@ Check if the bot has the necessary permissions in the current channel.
 5. Edit `.env` with your credentials:
 
    ```ini
-   BOT_TOKEN=your_discord_bot_token
-   GUILD_IDS=your_guild_id_1,your_guild_id_2
-   ANTHROPIC_API_KEY=your_anthropic_api_key
-   SHOW_COST_EMBEDS=true
-   ```
+  BOT_TOKEN=your_discord_bot_token
+  GUILD_IDS=your_guild_id_1,your_guild_id_2
+  ANTHROPIC_API_KEY=your_anthropic_api_key
+  ANTHROPIC_MCP_PRESETS_JSON=optional_inline_json_object
+  ANTHROPIC_MCP_PRESETS_PATH=optional_path_to_mcp_presets.json
+  SHOW_COST_EMBEDS=true
+  ```
 
 ### Running the Bot
 
@@ -143,14 +168,15 @@ docker-compose up -d
    - 🔄 Regenerate the last response
    - ⏯️ Pause/resume the conversation
    - ⏹️ End the conversation
-   - 🔧 Toggle tools mid-conversation via the select menu; clearing all selections sets tool behavior to `none` without discarding the conversation's tool definitions
+   - 🔧 Toggle built-in tools mid-conversation via the select menu; clearing all built-in selections sets tool behavior to `none` only when no MCP presets are active
+4. If MCP presets are enabled, the bot adds an explicit MCP safety note to the opening embeds and keeps those presets active for follow-up turns until the conversation ends
 
 ## Development
 
 ### Testing
 
 Tests use pytest with pytest-asyncio (`asyncio_mode = "auto"`). All tests are mocked — no real API calls.
-The suite is organized around the refactored package layout, with focused files such as `tests/test_claude_cog.py`, `tests/test_claude_chat.py`, `tests/test_claude_client.py`, and `tests/test_claude_tool_handlers.py`.
+The suite is organized around the refactored package layout, with focused files such as `tests/test_claude_cog.py`, `tests/test_claude_chat.py`, `tests/test_claude_client.py`, `tests/test_claude_tool_handlers.py`, `tests/test_claude_mcp_config.py`, and `tests/test_claude_request_config.py`.
 `tests/test_package_import.py` is the package import smoke test.
 Import from `discord_claude` directly; legacy top-level shim modules are no longer part of the supported workflow.
 
