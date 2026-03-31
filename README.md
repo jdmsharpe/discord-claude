@@ -113,7 +113,7 @@ from discord_claude import ClaudeCog
 bot.add_cog(ClaudeCog(bot=bot))
 ```
 
-Top-level `bot.py`, `button_view.py`, `config`, and `util.py` are repo-local helpers, not the installed public API surface.
+Only `src/bot.py` remains at the repository root as a thin launcher; package code should be imported from `discord_claude`.
 
 **With Docker:**
 
