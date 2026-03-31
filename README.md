@@ -109,9 +109,9 @@ python src/bot.py
 To compose this repo into a larger bot, import the namespaced package:
 
 ```python
-from discord_claude import AnthropicAPI
+from discord_claude import ClaudeCog
 
-bot.add_cog(AnthropicAPI(bot=bot))
+bot.add_cog(ClaudeCog(bot=bot))
 ```
 
 The legacy top-level `anthropic_api` module remains as a temporary compatibility shim and emits a `DeprecationWarning`.
