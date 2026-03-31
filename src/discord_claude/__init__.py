@@ -1,10 +1,10 @@
-"""Top-level namespace providing the Anthropic cog for easy imports."""
+"""Top-level namespace providing the Claude cog for easy imports."""
 
 from importlib import metadata
 
-from .cogs.claude.cog import AnthropicAPI
+from .cogs.claude.cog import ClaudeCog
 
-__all__ = ["AnthropicAPI"]
+__all__ = ["ClaudeCog"]
 
 try:
     __version__ = metadata.version("discord-claude")

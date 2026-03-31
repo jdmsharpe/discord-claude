@@ -21,7 +21,7 @@ class TestExtractResponseContent:
 
     def test_text_only(self):
         """Response with only text blocks."""
-        from discord_claude.cogs.claude.cog import extract_response_content
+        from discord_claude.cogs.claude.responses import extract_response_content
 
         response = MagicMock()
         text_block = MagicMock()
@@ -37,7 +37,7 @@ class TestExtractResponseContent:
 
     def test_thinking_and_text(self):
         """Response with thinking and text blocks."""
-        from discord_claude.cogs.claude.cog import extract_response_content
+        from discord_claude.cogs.claude.responses import extract_response_content
 
         response = MagicMock()
         thinking_block = MagicMock()
@@ -55,7 +55,7 @@ class TestExtractResponseContent:
 
     def test_redacted_thinking_ignored(self):
         """Redacted thinking blocks should be skipped."""
-        from discord_claude.cogs.claude.cog import extract_response_content
+        from discord_claude.cogs.claude.responses import extract_response_content
 
         response = MagicMock()
         redacted_block = MagicMock()
@@ -72,7 +72,7 @@ class TestExtractResponseContent:
 
     def test_empty_content(self):
         """Response with no content blocks."""
-        from discord_claude.cogs.claude.cog import extract_response_content
+        from discord_claude.cogs.claude.responses import extract_response_content
 
         response = MagicMock()
         response.content = []
@@ -83,7 +83,7 @@ class TestExtractResponseContent:
 
     def test_with_web_citations(self):
         """Response with text blocks containing web search citations."""
-        from discord_claude.cogs.claude.cog import extract_response_content
+        from discord_claude.cogs.claude.responses import extract_response_content
 
         response = MagicMock()
         text_block = MagicMock()
@@ -108,7 +108,7 @@ class TestExtractResponseContent:
 
     def test_with_document_citations(self):
         """Response with document citations (char_location, page_location)."""
-        from discord_claude.cogs.claude.cog import extract_response_content
+        from discord_claude.cogs.claude.responses import extract_response_content
 
         response = MagicMock()
         text_block = MagicMock()
@@ -148,7 +148,7 @@ class TestExtractResponseContent:
 
     def test_document_citations_multi_page(self):
         """Page citations spanning multiple pages show page range."""
-        from discord_claude.cogs.claude.cog import extract_response_content
+        from discord_claude.cogs.claude.responses import extract_response_content
 
         response = MagicMock()
         text_block = MagicMock()
@@ -169,7 +169,7 @@ class TestExtractResponseContent:
 
     def test_document_citations_deduplicated(self):
         """Duplicate document cited_text values are deduplicated."""
-        from discord_claude.cogs.claude.cog import extract_response_content
+        from discord_claude.cogs.claude.responses import extract_response_content
 
         response = MagicMock()
         block1 = MagicMock()
@@ -198,7 +198,7 @@ class TestExtractResponseContent:
 
     def test_web_citations_deduplicated(self):
         """Duplicate web citation URLs are deduplicated."""
-        from discord_claude.cogs.claude.cog import extract_response_content
+        from discord_claude.cogs.claude.responses import extract_response_content
 
         response = MagicMock()
         text_block1 = MagicMock()
@@ -226,7 +226,7 @@ class TestExtractResponseContent:
 
     def test_tool_use_detected(self):
         """Response with tool_use block is detected."""
-        from discord_claude.cogs.claude.cog import extract_response_content
+        from discord_claude.cogs.claude.responses import extract_response_content
 
         response = MagicMock()
         text_block = MagicMock()
@@ -246,7 +246,7 @@ class TestExtractResponseContent:
 
     def test_server_tool_blocks_skipped(self):
         """Server-side tool blocks don't appear in text or tool_use_blocks."""
-        from discord_claude.cogs.claude.cog import extract_response_content
+        from discord_claude.cogs.claude.responses import extract_response_content
 
         response = MagicMock()
         server_block = MagicMock()
@@ -269,7 +269,7 @@ class TestAppendThinkingEmbeds:
 
     def test_no_thinking(self):
         """Empty thinking text should not add an embed."""
-        from discord_claude.cogs.claude.cog import append_thinking_embeds
+        from discord_claude.cogs.claude.embeds import append_thinking_embeds
 
         embeds = []
         append_thinking_embeds(embeds, "")
@@ -277,7 +277,7 @@ class TestAppendThinkingEmbeds:
 
     def test_with_thinking(self):
         """Thinking text should be wrapped in spoiler tags."""
-        from discord_claude.cogs.claude.cog import append_thinking_embeds
+        from discord_claude.cogs.claude.embeds import append_thinking_embeds
 
         embeds = []
         append_thinking_embeds(embeds, "Some reasoning here")
@@ -287,7 +287,7 @@ class TestAppendThinkingEmbeds:
 
     def test_long_thinking_truncated(self):
         """Long thinking text should be truncated."""
-        from discord_claude.cogs.claude.cog import append_thinking_embeds
+        from discord_claude.cogs.claude.embeds import append_thinking_embeds
 
         embeds = []
         long_text = "a" * 4000
@@ -302,7 +302,7 @@ class TestAppendCitationsEmbed:
 
     def test_no_citations(self):
         """Empty citations list adds no embed."""
-        from discord_claude.cogs.claude.cog import append_citations_embed
+        from discord_claude.cogs.claude.embeds import append_citations_embed
 
         embeds = []
         append_citations_embed(embeds, [])
@@ -310,7 +310,7 @@ class TestAppendCitationsEmbed:
 
     def test_with_web_citations(self):
         """Web citations are rendered as a Sources embed with markdown links."""
-        from discord_claude.cogs.claude.cog import append_citations_embed
+        from discord_claude.cogs.claude.embeds import append_citations_embed
 
         embeds = []
         citations = [
@@ -325,7 +325,7 @@ class TestAppendCitationsEmbed:
 
     def test_web_citations_capped_at_20(self):
         """Only the first 20 web citations are included."""
-        from discord_claude.cogs.claude.cog import append_citations_embed
+        from discord_claude.cogs.claude.embeds import append_citations_embed
 
         embeds = []
         citations = [
@@ -339,7 +339,7 @@ class TestAppendCitationsEmbed:
 
     def test_with_document_citations(self):
         """Document citations are rendered as quoted text with source info."""
-        from discord_claude.cogs.claude.cog import append_citations_embed
+        from discord_claude.cogs.claude.embeds import append_citations_embed
 
         embeds = []
         citations = [
@@ -364,7 +364,7 @@ class TestAppendCitationsEmbed:
 
     def test_mixed_web_and_document_citations(self):
         """Both web and document citations appear in the same embed."""
-        from discord_claude.cogs.claude.cog import append_citations_embed
+        from discord_claude.cogs.claude.embeds import append_citations_embed
 
         embeds = []
         citations = [
@@ -387,7 +387,7 @@ class TestAppendStopReasonEmbed:
 
     def test_end_turn_no_embed(self):
         """end_turn should not add any embed."""
-        from discord_claude.cogs.claude.cog import append_stop_reason_embed
+        from discord_claude.cogs.claude.embeds import append_stop_reason_embed
 
         embeds = []
         append_stop_reason_embed(embeds, "end_turn")
@@ -395,7 +395,7 @@ class TestAppendStopReasonEmbed:
 
     def test_max_tokens(self):
         """max_tokens should add a truncation warning."""
-        from discord_claude.cogs.claude.cog import append_stop_reason_embed
+        from discord_claude.cogs.claude.embeds import append_stop_reason_embed
 
         embeds = []
         append_stop_reason_embed(embeds, "max_tokens")
@@ -404,7 +404,7 @@ class TestAppendStopReasonEmbed:
 
     def test_model_context_window_exceeded(self):
         """model_context_window_exceeded should add a context limit warning."""
-        from discord_claude.cogs.claude.cog import append_stop_reason_embed
+        from discord_claude.cogs.claude.embeds import append_stop_reason_embed
 
         embeds = []
         append_stop_reason_embed(embeds, "model_context_window_exceeded")
@@ -413,7 +413,7 @@ class TestAppendStopReasonEmbed:
 
     def test_refusal(self):
         """refusal should add a declined warning."""
-        from discord_claude.cogs.claude.cog import append_stop_reason_embed
+        from discord_claude.cogs.claude.embeds import append_stop_reason_embed
 
         embeds = []
         append_stop_reason_embed(embeds, "refusal")
@@ -422,7 +422,7 @@ class TestAppendStopReasonEmbed:
 
     def test_pause_turn_no_embed(self):
         """pause_turn should not add any embed."""
-        from discord_claude.cogs.claude.cog import append_stop_reason_embed
+        from discord_claude.cogs.claude.embeds import append_stop_reason_embed
 
         embeds = []
         append_stop_reason_embed(embeds, "pause_turn")
@@ -434,7 +434,7 @@ class TestAppendPricingEmbed:
 
     def _make_parsed(self, **kwargs):
         """Create a ParsedResponse with given token/tool counts."""
-        from discord_claude.cogs.claude.cog import ParsedResponse
+        from discord_claude.cogs.claude.models import ParsedResponse
 
         defaults = {
             "input_tokens": 1000,
@@ -453,7 +453,7 @@ class TestAppendPricingEmbed:
 
     def test_basic_pricing_embed(self):
         """Basic embed shows cost, token counts, and daily total."""
-        from discord_claude.cogs.claude.cog import append_pricing_embed
+        from discord_claude.cogs.claude.embeds import append_pricing_embed
 
         embeds = []
         parsed = self._make_parsed(input_tokens=1000, output_tokens=500)
@@ -466,7 +466,7 @@ class TestAppendPricingEmbed:
 
     def test_pricing_embed_with_cache_hits(self):
         """Cache hits are shown when present."""
-        from discord_claude.cogs.claude.cog import append_pricing_embed
+        from discord_claude.cogs.claude.embeds import append_pricing_embed
 
         embeds = []
         parsed = self._make_parsed(cache_read_tokens=5000)
@@ -475,7 +475,7 @@ class TestAppendPricingEmbed:
 
     def test_pricing_embed_with_web_searches(self):
         """Web search count is shown when present."""
-        from discord_claude.cogs.claude.cog import append_pricing_embed
+        from discord_claude.cogs.claude.embeds import append_pricing_embed
 
         embeds = []
         parsed = self._make_parsed(web_search_requests=3)
@@ -484,7 +484,7 @@ class TestAppendPricingEmbed:
 
     def test_pricing_embed_single_search_no_plural(self):
         """Single web search uses singular form."""
-        from discord_claude.cogs.claude.cog import append_pricing_embed
+        from discord_claude.cogs.claude.embeds import append_pricing_embed
 
         embeds = []
         parsed = self._make_parsed(web_search_requests=1)
@@ -494,7 +494,7 @@ class TestAppendPricingEmbed:
 
     def test_pricing_embed_with_web_fetches(self):
         """Web fetch count is shown when present."""
-        from discord_claude.cogs.claude.cog import append_pricing_embed
+        from discord_claude.cogs.claude.embeds import append_pricing_embed
 
         embeds = []
         parsed = self._make_parsed(web_fetch_requests=2)
@@ -503,7 +503,7 @@ class TestAppendPricingEmbed:
 
     def test_pricing_embed_with_code_execution(self):
         """Code execution count is shown when present."""
-        from discord_claude.cogs.claude.cog import append_pricing_embed
+        from discord_claude.cogs.claude.embeds import append_pricing_embed
 
         embeds = []
         parsed = self._make_parsed(code_execution_requests=1)
@@ -513,7 +513,7 @@ class TestAppendPricingEmbed:
 
     def test_pricing_embed_no_server_tools_hidden(self):
         """Server tool counts are hidden when zero."""
-        from discord_claude.cogs.claude.cog import append_pricing_embed
+        from discord_claude.cogs.claude.embeds import append_pricing_embed
 
         embeds = []
         parsed = self._make_parsed()
@@ -529,12 +529,12 @@ class TestToolChoiceSupport:
 
     def test_build_api_params_omits_tool_choice_by_default(self):
         """tool_choice is omitted unless explicitly provided."""
-        from discord_claude.cogs.claude.cog import AnthropicAPI
+        from discord_claude.cogs.claude.cog import ClaudeCog
         from discord_claude.util import ChatCompletionParameters
 
         params = ChatCompletionParameters(model="claude-haiku-4-5", tools=["web_search"])
 
-        api_params = AnthropicAPI._build_api_params(
+        api_params = ClaudeCog._build_api_params(
             params,
             [{"role": "user", "content": "Hello"}],
         )
@@ -543,7 +543,7 @@ class TestToolChoiceSupport:
 
     def test_build_api_params_includes_explicit_none(self):
         """Explicit none is forwarded to the Anthropic request."""
-        from discord_claude.cogs.claude.cog import AnthropicAPI
+        from discord_claude.cogs.claude.cog import ClaudeCog
         from discord_claude.util import ChatCompletionParameters
 
         params = ChatCompletionParameters(
@@ -552,7 +552,7 @@ class TestToolChoiceSupport:
             tool_choice={"type": "none"},
         )
 
-        api_params = AnthropicAPI._build_api_params(
+        api_params = ClaudeCog._build_api_params(
             params,
             [{"role": "user", "content": "Hello"}],
         )
@@ -562,7 +562,7 @@ class TestToolChoiceSupport:
 
     def test_build_api_params_omits_tool_choice_when_no_tools(self):
         """tool_choice is not forwarded when no tools are enabled."""
-        from discord_claude.cogs.claude.cog import AnthropicAPI
+        from discord_claude.cogs.claude.cog import ClaudeCog
         from discord_claude.util import ChatCompletionParameters
 
         params = ChatCompletionParameters(
@@ -571,7 +571,7 @@ class TestToolChoiceSupport:
             tool_choice={"type": "auto"},
         )
 
-        api_params = AnthropicAPI._build_api_params(
+        api_params = ClaudeCog._build_api_params(
             params,
             [{"role": "user", "content": "Hello"}],
         )
@@ -581,7 +581,7 @@ class TestToolChoiceSupport:
 
     def test_validate_request_configuration_rejects_forced_any_with_thinking(self):
         """Thinking mode rejects forced any-tool selection."""
-        from discord_claude.cogs.claude.cog import AnthropicAPI
+        from discord_claude.cogs.claude.cog import ClaudeCog
         from discord_claude.util import ChatCompletionParameters
 
         params = ChatCompletionParameters(
@@ -590,14 +590,14 @@ class TestToolChoiceSupport:
             tool_choice={"type": "any"},
         )
 
-        error = AnthropicAPI._validate_request_configuration(params)
+        error = ClaudeCog._validate_request_configuration(params)
 
         assert error is not None
         assert "Thinking mode only supports tool behavior `auto` or `none`" in error
 
     def test_validate_request_configuration_rejects_forced_tool_with_thinking(self):
         """Thinking mode rejects a specific forced tool."""
-        from discord_claude.cogs.claude.cog import AnthropicAPI
+        from discord_claude.cogs.claude.cog import ClaudeCog
         from discord_claude.util import ChatCompletionParameters
 
         params = ChatCompletionParameters(
@@ -607,13 +607,13 @@ class TestToolChoiceSupport:
             tool_choice={"type": "tool", "name": "memory"},
         )
 
-        error = AnthropicAPI._validate_request_configuration(params)
+        error = ClaudeCog._validate_request_configuration(params)
 
         assert error is not None
         assert "Thinking mode only supports tool behavior `auto` or `none`" in error
 
 
-class TestAnthropicAPIIntegration:
+class TestClaudeCogIntegration:
     """Integration tests for the Anthropic API client (mocked)."""
 
     async def test_messages_create_basic(self, mock_anthropic_client):
@@ -699,13 +699,13 @@ class TestAnthropicAPIIntegration:
         assert call_kwargs["messages"][0]["content"][1]["type"] == "text"
 
 
-class TestAnthropicAPICog:
-    """Tests for the AnthropicAPI Discord cog."""
+class TestClaudeCog:
+    """Tests for the Claude Discord cog."""
 
     @pytest.fixture
     def cog(self, mock_bot):
-        """Create an AnthropicAPI cog instance with mocked dependencies."""
-        with patch("anthropic.AsyncAnthropic") as mock_client_class:
+        """Create a ClaudeCog instance with mocked dependencies."""
+        with patch("discord_claude.cogs.claude.client.AsyncAnthropic") as mock_client_class:
             # Set up mock client
             mock_client = AsyncMock()
             mock_response = MagicMock()
@@ -721,9 +721,9 @@ class TestAnthropicAPICog:
             mock_client_class.return_value = mock_client
 
             # Import and create cog
-            from discord_claude.cogs.claude.cog import AnthropicAPI
+            from discord_claude.cogs.claude.cog import ClaudeCog
 
-            cog = AnthropicAPI(bot=mock_bot)
+            cog = ClaudeCog(bot=mock_bot)
             cog.client = mock_client
             return cog
 
@@ -895,14 +895,14 @@ class TestCallApiWithToolLoop:
 
     @pytest.fixture
     def cog(self, mock_bot):
-        """Create an AnthropicAPI cog instance."""
-        with patch("anthropic.AsyncAnthropic") as mock_client_class:
+        """Create a ClaudeCog instance."""
+        with patch("discord_claude.cogs.claude.client.AsyncAnthropic") as mock_client_class:
             mock_client = AsyncMock()
             mock_client_class.return_value = mock_client
 
-            from discord_claude.cogs.claude.cog import AnthropicAPI
+            from discord_claude.cogs.claude.cog import ClaudeCog
 
-            cog = AnthropicAPI(bot=mock_bot)
+            cog = ClaudeCog(bot=mock_bot)
             cog.client = mock_client
             return cog
 
@@ -1503,7 +1503,7 @@ class TestContextEmbeds:
     """Tests for context warning and compaction embed helpers."""
 
     def test_context_warning_embed(self):
-        from discord_claude.cogs.claude.cog import append_context_warning_embed
+        from discord_claude.cogs.claude.embeds import append_context_warning_embed
 
         embeds = []
         append_context_warning_embed(embeds)
@@ -1512,7 +1512,7 @@ class TestContextEmbeds:
         assert "85%" in embeds[0].description
 
     def test_compaction_embed(self):
-        from discord_claude.cogs.claude.cog import append_compaction_embed
+        from discord_claude.cogs.claude.embeds import append_compaction_embed
 
         embeds = []
         append_compaction_embed(embeds)
@@ -1526,10 +1526,10 @@ class TestToolHandlerRegistry:
 
     @pytest.fixture
     def cog(self, mock_bot):
-        with patch("anthropic.AsyncAnthropic"):
-            from discord_claude.cogs.claude.cog import AnthropicAPI
+        with patch("discord_claude.cogs.claude.client.AsyncAnthropic"):
+            from discord_claude.cogs.claude.cog import ClaudeCog
 
-            return AnthropicAPI(bot=mock_bot)
+            return ClaudeCog(bot=mock_bot)
 
     async def test_memory_tool_dispatches(self, cog):
         """Memory tool is dispatched via the registry."""

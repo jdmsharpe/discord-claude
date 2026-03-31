@@ -7,7 +7,7 @@ python -m pip install --upgrade --no-deps --force-reinstall git+https://github.c
 
 from discord import Bot, Intents
 
-from discord_claude import AnthropicAPI
+from discord_claude import ClaudeCog
 from discord_claude.config.auth import BOT_TOKEN
 
 
@@ -18,7 +18,7 @@ def main() -> None:
     intents.message_content = True
     intents.guilds = True
     bot = Bot(intents=intents)
-    bot.add_cog(AnthropicAPI(bot=bot))
+    bot.add_cog(ClaudeCog(bot=bot))
     bot.run(BOT_TOKEN)
 
 
