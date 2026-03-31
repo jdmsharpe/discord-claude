@@ -2,11 +2,10 @@ from typing import Any
 
 from discord_claude.util import ToolHandler
 
-from .tool_handlers import BashToolHandler, MemoryToolHandler
+from .tool_handlers import MemoryToolHandler
 
 TOOL_HANDLERS: dict[str, ToolHandler] = {
     "memory": MemoryToolHandler(),
-    "bash": BashToolHandler(),
 }
 
 
@@ -18,4 +17,4 @@ async def execute_tool(tool_name: str, tool_input: dict[str, Any], user_id: int)
     return await handler.execute(tool_input, user_id)
 
 
-__all__ = ["BashToolHandler", "MemoryToolHandler", "TOOL_HANDLERS", "execute_tool"]
+__all__ = ["MemoryToolHandler", "TOOL_HANDLERS", "execute_tool"]

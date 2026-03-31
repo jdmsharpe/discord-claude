@@ -5,7 +5,6 @@ from __future__ import annotations
 import warnings
 
 from discord_claude import ClaudeCog
-from discord_claude.bash_tool import execute_bash_command
 from discord_claude.cogs.claude.embeds import (
     append_citations_embed,
     append_compaction_embed,
@@ -39,5 +38,4 @@ __all__ = [
     "append_compaction_embed",
     "append_pricing_embed",
     "execute_memory_operation",
-    "execute_bash_command",
 ]

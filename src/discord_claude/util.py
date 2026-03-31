@@ -60,10 +60,6 @@ AVAILABLE_TOOLS: dict[str, dict[str, Any]] = {
         "type": "memory_20250818",
         "name": "memory",
     },
-    "bash": {
-        "type": "bash_20250124",
-        "name": "bash",
-    },
 }
 
 # Per-million-token pricing: (input_cost, output_cost)

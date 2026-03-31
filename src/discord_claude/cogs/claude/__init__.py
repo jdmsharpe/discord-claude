@@ -12,12 +12,11 @@ from .embeds import (
 )
 from .models import ParsedResponse
 from .responses import extract_response_content
-from .tool_handlers import BashToolHandler, MemoryToolHandler
+from .tool_handlers import MemoryToolHandler
 
 __all__ = [
     "ClaudeCog",
     "MemoryToolHandler",
-    "BashToolHandler",
     "ParsedResponse",
     "extract_response_content",
     "append_thinking_embeds",
