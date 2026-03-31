@@ -1,10 +1,7 @@
 """Claude cog package exports."""
 
-from .cog import (
-    AnthropicAPI,
-    BashToolHandler,
-    MemoryToolHandler,
-    ParsedResponse,
+from .cog import ClaudeCog
+from .embeds import (
     append_citations_embed,
     append_compaction_embed,
     append_context_warning_embed,
@@ -12,11 +9,13 @@ from .cog import (
     append_response_embeds,
     append_stop_reason_embed,
     append_thinking_embeds,
-    extract_response_content,
 )
+from .models import ParsedResponse
+from .responses import extract_response_content
+from .tool_handlers import BashToolHandler, MemoryToolHandler
 
 __all__ = [
-    "AnthropicAPI",
+    "ClaudeCog",
     "MemoryToolHandler",
     "BashToolHandler",
     "ParsedResponse",
