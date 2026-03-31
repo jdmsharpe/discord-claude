@@ -11,17 +11,13 @@
   bot.add_cog(ClaudeCog(bot=bot))
   ```
 
-- Legacy shim: `src/anthropic_api.py` exists only for import compatibility and emits a `DeprecationWarning`.
-
 ## Package Layout
 
 ```text
 src/
 ├── bot.py                           # Thin repo-local launcher
-├── anthropic_api.py                 # Temporary compatibility shim
-├── memory.py                        # Top-level compatibility shim
-├── util.py                          # Top-level compatibility shim
-├── config/                          # Top-level compatibility shim
+├── util.py                          # Repo-local helper
+├── config/                          # Repo-local helper
 └── discord_claude/
     ├── __init__.py
     ├── bot.py
@@ -46,19 +42,18 @@ src/
         └── views.py
 ```
 
-The namespaced `discord_claude.memory` module is the real owner now. The top-level file is compatibility-only.
-
 ## Testing And Patch Targets
 
 - `pytest` runs with `pythonpath = ["src"]`.
-- New tests and patches should target real owners under `discord_claude...`, not `anthropic_api` or top-level `memory`.
+- The test suite is organized into module-aligned files such as `tests/test_claude_cog.py`, `tests/test_claude_chat.py`, `tests/test_claude_client.py`, and `tests/test_claude_tool_handlers.py`.
+- New tests and patches should target real owners under `discord_claude...`.
 - Examples:
   - `discord_claude.memory.MEMORIES_BASE_DIR`
   - `discord_claude.cogs.claude.attachments.SUPPORTED_IMAGE_TYPES`
   - `discord_claude.cogs.claude.client.AsyncAnthropic`
   - `discord_claude.cogs.claude.chat.call_api_with_tool_loop`
 - `tests/test_namespace.py` is the package import smoke test.
-- `tests/test_anthropic_api_shim.py` is the legacy shim smoke test.
+- Import `ClaudeCog` from `discord_claude`; do not reintroduce legacy `anthropic_api` shim paths.
 
 ## Validation Commands
 
