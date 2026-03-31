@@ -16,8 +16,6 @@
 ```text
 src/
 ├── bot.py                           # Thin repo-local launcher
-├── util.py                          # Repo-local helper
-├── config/                          # Repo-local helper
 └── discord_claude/
     ├── __init__.py
     ├── bot.py
@@ -43,6 +41,8 @@ src/
             ├── tooling.py
             └── views.py
 ```
+
+Only `src/bot.py` remains at the repo root; code imports should target `discord_claude...`.
 
 ## Testing And Patch Targets
 
