@@ -6,6 +6,7 @@ import aiohttp
 from discord import ApplicationContext, Attachment, Colour, Embed
 
 from discord_claude.config.auth import SHOW_COST_EMBEDS
+from discord_claude.config.mcp import parse_mcp_preset_names, resolve_mcp_presets
 from discord_claude.util import (
     ADAPTIVE_THINKING_MODELS,
     AVAILABLE_TOOLS,
@@ -129,10 +130,45 @@ def build_api_params(
         api_params["top_p"] = params.top_p
     if params.top_k is not None:
         api_params["top_k"] = params.top_k
-    if params.tools:
-        api_params["tools"] = [
-            AVAILABLE_TOOLS[tool] for tool in params.tools if tool in AVAILABLE_TOOLS
-        ]
+    mcp_presets, mcp_error = resolve_mcp_presets(params.mcp_preset_names)
+    if mcp_error:
+        raise ValueError(mcp_error)
+
+    api_tools = [AVAILABLE_TOOLS[tool] for tool in params.tools if tool in AVAILABLE_TOOLS]
+    if mcp_presets:
+        api_params["mcp_servers"] = []
+        for preset in mcp_presets:
+            server_config: dict[str, Any] = {
+                "type": "url",
+                "url": preset.server_url,
+                "name": preset.name,
+            }
+            if preset.authorization_env_var:
+                from os import getenv
+
+                authorization_token = getenv(preset.authorization_env_var)
+                if authorization_token:
+                    server_config["authorization_token"] = authorization_token
+            api_params["mcp_servers"].append(server_config)
+
+            toolset: dict[str, Any] = {
+                "type": "mcp_toolset",
+                "mcp_server_name": preset.name,
+            }
+            default_config: dict[str, Any] = {}
+            if preset.allowed_tools:
+                default_config["enabled"] = False
+                toolset["configs"] = {
+                    tool_name: {"enabled": True} for tool_name in preset.allowed_tools
+                }
+            if preset.defer_loading:
+                default_config["defer_loading"] = True
+            if default_config:
+                toolset["default_config"] = default_config
+            api_tools.append(toolset)
+
+    if api_tools:
+        api_params["tools"] = api_tools
         if params.tool_choice is not None:
             api_params["tool_choice"] = params.tool_choice
     return api_params
@@ -150,6 +186,7 @@ async def call_api_with_tool_loop(
     use_compaction = model in COMPACTION_MODELS
     has_tools = bool(api_params.get("tools"))
     has_thinking = bool(api_params.get("thinking"))
+    has_mcp = bool(api_params.get("mcp_servers"))
 
     betas: list[str] = []
     edits: list[dict[str, Any]] = []
@@ -170,6 +207,8 @@ async def call_api_with_tool_loop(
         )
     if edits:
         betas.append("context-management-2025-06-27")
+    if has_mcp:
+        betas.append("mcp-client-2025-11-20")
     if use_compaction:
         betas.append("compact-2026-01-12")
         edits.append({"type": "compact_20260112"})
@@ -426,6 +465,7 @@ async def run_chat_command(
     web_fetch: bool = False,
     code_execution: bool = False,
     memory: bool = False,
+    mcp: str | None = None,
     tool_choice: str | None = None,
 ) -> None:
     """Run the /claude chat command."""
@@ -464,12 +504,25 @@ async def run_chat_command(
             enabled_tools.append("code_execution")
         if memory:
             enabled_tools.append("memory")
+        mcp_preset_names = parse_mcp_preset_names(mcp)
+        _, mcp_error = resolve_mcp_presets(mcp_preset_names)
+        if mcp_error:
+            await ctx.send_followup(
+                embed=Embed(
+                    title="Error",
+                    description=mcp_error,
+                    color=Colour.red(),
+                )
+            )
+            return
 
         resolved_tool_choice: ToolChoice | None = None
         if tool_choice == "auto":
             resolved_tool_choice = {"type": "auto"}
         elif tool_choice == "none":
             resolved_tool_choice = {"type": "none"}
+        if mcp_preset_names and resolved_tool_choice == {"type": "none"}:
+            resolved_tool_choice = {"type": "auto"}
 
         user_content: list[dict[str, Any]] = [{"type": "text", "text": prompt}]
         if attachment:
@@ -497,6 +550,7 @@ async def run_chat_command(
             channel_id=ctx.channel.id,
             conversation_id=ctx.interaction.id,
             tools=enabled_tools,
+            mcp_preset_names=mcp_preset_names,
             tool_choice=resolved_tool_choice,
         )
 
@@ -537,6 +591,8 @@ async def run_chat_command(
             description += f"**Thinking Budget:** {thinking_budget} tokens\n"
         if enabled_tools:
             description += f"**Tools:** {', '.join(enabled_tools)}\n"
+        if mcp_preset_names:
+            description += f"**MCP Presets:** {', '.join(mcp_preset_names)}\n"
         if resolved_tool_choice is not None:
             description += f"**Tool Choice:** {resolved_tool_choice['type']}\n"
 
@@ -547,6 +603,17 @@ async def run_chat_command(
                 color=Colour.green(),
             )
         ]
+        if mcp_preset_names:
+            embeds.append(
+                Embed(
+                    title="MCP Enabled",
+                    description=(
+                        "Trusted MCP presets are active for this conversation. "
+                        "Only enable servers you trust, because tool calls can share conversation data with them."
+                    ),
+                    color=Colour.orange(),
+                )
+            )
         append_thinking_embeds(embeds, parsed.thinking)
         append_response_embeds(embeds, response_text)
         append_stop_reason_embed(embeds, parsed.stop_reason)

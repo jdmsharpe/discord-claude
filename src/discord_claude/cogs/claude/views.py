@@ -116,18 +116,16 @@ class ButtonView(View):
                 )
                 return
 
-            existing_tools = [
-                tool
-                for tool in getattr(conversation.params, "tools", [])
-                if tool in AVAILABLE_TOOLS
-            ]
             selected_values = [value for value in tool_select.values if value in AVAILABLE_TOOLS]
             if selected_values:
                 conversation.params.tools = selected_values
                 conversation.params.tool_choice = {"type": "auto"}
             else:
-                conversation.params.tools = existing_tools
-                conversation.params.tool_choice = {"type": "none"}
+                conversation.params.tools = []
+                if getattr(conversation.params, "mcp_preset_names", []):
+                    conversation.params.tool_choice = {"type": "auto"}
+                else:
+                    conversation.params.tool_choice = {"type": "none"}
 
             # Update Select dropdown defaults
             selected_set = set(selected_values)

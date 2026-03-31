@@ -127,6 +127,7 @@ class TestChatCompletionParameters:
         assert params.max_tokens == 16384
         assert params.paused is False
         assert params.tools == []
+        assert params.mcp_preset_names == []
         assert params.tool_choice is None
 
     def test_tools_isolation_between_instances(self):
@@ -135,6 +136,12 @@ class TestChatCompletionParameters:
         params2 = ChatCompletionParameters(model="claude-sonnet-4")
         params1.tools.append("web_search")
         assert params2.tools == []
+
+    def test_mcp_preset_names_isolation_between_instances(self):
+        params1 = ChatCompletionParameters(model="claude-sonnet-4")
+        params2 = ChatCompletionParameters(model="claude-sonnet-4")
+        params1.mcp_preset_names.append("github")
+        assert params2.mcp_preset_names == []
 
 
 class TestConversation:

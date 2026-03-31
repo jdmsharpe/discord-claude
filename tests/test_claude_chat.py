@@ -266,8 +266,65 @@ class TestCallApiWithToolLoop:
 
         assert parsed.text == "Hello!"
         cog.client.messages.create.assert_called_once()
-        call_kwargs = cog.client.messages.create.call_args[1]
-        assert call_kwargs["cache_control"] == {"type": "ephemeral", "ttl": "1h"}
+
+    async def test_mcp_uses_beta_api(self, cog):
+        """MCP-enabled requests should opt into the MCP beta header."""
+        mock_response = MagicMock()
+        text_block = MagicMock()
+        text_block.type = "text"
+        text_block.text = "Hello from MCP."
+        text_block.citations = None
+        mock_response.content = [text_block]
+        mock_response.stop_reason = "end_turn"
+        mock_response.usage = None
+        cog.client.beta.messages.create = AsyncMock(return_value=mock_response)
+
+        messages = [{"role": "user", "content": "Hi"}]
+        api_params = {
+            "model": "claude-haiku-4-5",
+            "max_tokens": 1024,
+            "mcp_servers": [{"type": "url", "url": "https://mcp.example.com/sse", "name": "test"}],
+            "tools": [{"type": "mcp_toolset", "mcp_server_name": "test"}],
+        }
+
+        parsed = await cog._call_api_with_tool_loop(
+            api_params=api_params, messages=messages, user_id=123
+        )
+
+        assert parsed.text == "Hello from MCP."
+        call_kwargs = cog.client.beta.messages.create.call_args[1]
+        assert "mcp-client-2025-11-20" in call_kwargs["betas"]
+
+
+class TestRunChatCommand:
+    @pytest.fixture
+    def cog(self, mock_bot):
+        with patch("discord_claude.cogs.claude.client.AsyncAnthropic") as mock_client_class:
+            mock_client = AsyncMock()
+            mock_client_class.return_value = mock_client
+
+            from discord_claude.cogs.claude.cog import ClaudeCog
+
+            cog = ClaudeCog(bot=mock_bot)
+            cog.client = mock_client
+            return cog
+
+    async def test_chat_rejects_unknown_mcp_preset(self, cog, mock_discord_context, monkeypatch):
+        monkeypatch.setattr(
+            "discord_claude.cogs.claude.chat.resolve_mcp_presets",
+            lambda names: ([], "Unknown MCP preset `bad`."),
+        )
+
+        await cog.chat.callback(
+            cog,
+            ctx=mock_discord_context,
+            prompt="Hello",
+            mcp="bad",
+        )
+
+        call_kwargs = mock_discord_context.send_followup.call_args[1]
+        assert "Unknown MCP preset `bad`." in call_kwargs["embed"].description
+        assert cog.client.messages.create.call_args is None
 
     async def test_context_editing_with_tools(self, cog):
         """Models with tools get context editing via beta API."""

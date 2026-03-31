@@ -298,6 +298,12 @@ class ClaudeCog(commands.Cog):
         type=bool,
     )
     @option(
+        "mcp",
+        description="Optional comma-separated MCP preset names to enable for this conversation.",
+        required=False,
+        type=str,
+    )
+    @option(
         "tool_choice",
         description="Tool behavior when tools are enabled. (default: Anthropic default)",
         required=False,
@@ -324,6 +330,7 @@ class ClaudeCog(commands.Cog):
         web_fetch: bool = False,
         code_execution: bool = False,
         memory: bool = False,
+        mcp: str | None = None,
         tool_choice: str | None = None,
     ):
         await run_chat_command(
@@ -343,5 +350,6 @@ class ClaudeCog(commands.Cog):
             web_fetch=web_fetch,
             code_execution=code_execution,
             memory=memory,
+            mcp=mcp,
             tool_choice=tool_choice,
         )

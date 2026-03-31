@@ -56,6 +56,7 @@ class TestButtonView:
         conversation = MagicMock()
         conversation.params = MagicMock()
         conversation.params.tools = []
+        conversation.params.mcp_preset_names = []
         conversation.params.tool_choice = None
         view = _make_view(
             conversation_starter=starter,
@@ -91,6 +92,7 @@ class TestButtonView:
         conversation = MagicMock()
         conversation.params = MagicMock()
         conversation.params.tools = ["web_search", "memory"]
+        conversation.params.mcp_preset_names = []
         conversation.params.tool_choice = {"type": "auto"}
         view = _make_view(
             conversation_starter=starter,
@@ -109,13 +111,40 @@ class TestButtonView:
 
         await view.tool_select_callback(interaction, mock_select)
 
-        assert conversation.params.tools == ["web_search", "memory"]
+        assert conversation.params.tools == []
         assert conversation.params.tool_choice == {"type": "none"}
         defaults = {o.value: o.default for o in real_select.options}
         assert defaults["web_search"] is False
         assert defaults["memory"] is False
         call_args = interaction.response.send_message.call_args
         assert "Tool behavior: none" in call_args.args[0]
+
+    async def test_tool_select_empty_keeps_auto_when_mcp_active(self):
+        starter = MagicMock()
+        conversation = MagicMock()
+        conversation.params = MagicMock()
+        conversation.params.tools = ["web_search"]
+        conversation.params.mcp_preset_names = ["github"]
+        conversation.params.tool_choice = {"type": "auto"}
+        view = _make_view(
+            conversation_starter=starter,
+            initial_tools=["web_search"],
+            get_conversation=MagicMock(return_value=conversation),
+        )
+        mock_select = MagicMock()
+        mock_select.values = []
+
+        interaction = MagicMock()
+        interaction.user = starter
+        interaction.response = MagicMock()
+        interaction.response.send_message = AsyncMock()
+        interaction.response.is_done = MagicMock(return_value=False)
+
+        await view.tool_select_callback(interaction, mock_select)
+
+        assert conversation.params.tools == []
+        assert conversation.params.tool_choice == {"type": "auto"}
+        assert "Tool behavior: auto" in interaction.response.send_message.call_args.args[0]
 
     async def test_tool_select_rejects_non_owner(self):
         starter = MagicMock()

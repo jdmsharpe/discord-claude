@@ -74,6 +74,8 @@ def extract_response_content(response) -> ParsedResponse:
                         )
         elif block.type == "tool_use":
             tool_use_blocks.append(block)
+        elif block.type.startswith("mcp_"):
+            continue
 
     response_text = "\n\n".join(text_parts) if text_parts else "No response."
     thinking_text = "\n\n".join(thinking_parts)

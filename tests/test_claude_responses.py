@@ -236,3 +236,21 @@ class TestExtractResponseContent:
         parsed = extract_response_content(response)
         assert parsed.text == "Here are the results."
         assert len(parsed.tool_use_blocks) == 0
+
+    def test_mcp_blocks_skipped(self):
+        from discord_claude.cogs.claude.responses import extract_response_content
+
+        response = MagicMock()
+        mcp_tool_use = MagicMock()
+        mcp_tool_use.type = "mcp_tool_use"
+        mcp_tool_result = MagicMock()
+        mcp_tool_result.type = "mcp_tool_result"
+        text_block = MagicMock()
+        text_block.type = "text"
+        text_block.text = "MCP response complete."
+        text_block.citations = None
+        response.content = [mcp_tool_use, mcp_tool_result, text_block]
+
+        parsed = extract_response_content(response)
+        assert parsed.text == "MCP response complete."
+        assert parsed.tool_use_blocks == []
