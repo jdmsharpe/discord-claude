@@ -426,7 +426,6 @@ async def run_chat_command(
     web_fetch: bool = False,
     code_execution: bool = False,
     memory: bool = False,
-    bash: bool = False,
     tool_choice: str | None = None,
 ) -> None:
     """Run the /claude chat command."""
@@ -465,8 +464,6 @@ async def run_chat_command(
             enabled_tools.append("code_execution")
         if memory:
             enabled_tools.append("memory")
-        if bash:
-            enabled_tools.append("bash")
 
         resolved_tool_choice: ToolChoice | None = None
         if tool_choice == "auto":

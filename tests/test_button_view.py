@@ -30,7 +30,7 @@ class TestButtonView:
         selects = [c for c in view.children if isinstance(c, Select)]
         assert len(selects) == 1
         assert selects[0].min_values == 0
-        assert selects[0].max_values == 5
+        assert selects[0].max_values == 4
 
     async def test_initial_tools_set_defaults(self):
         view = _make_view(initial_tools=["web_search", "memory"])
@@ -40,7 +40,6 @@ class TestButtonView:
         assert defaults["memory"] is True
         assert defaults["code_execution"] is False
         assert defaults["web_fetch"] is False
-        assert defaults["bash"] is False
 
     async def test_initial_tool_choice_none_clears_defaults(self):
         view = _make_view(

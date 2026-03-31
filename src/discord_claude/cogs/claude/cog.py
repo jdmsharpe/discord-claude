@@ -54,13 +54,12 @@ from .embeds import (
 from .models import ParsedResponse, ToolHandler, UsageTotals
 from .responses import extract_response_content
 from .state import cleanup_conversation, stop_conversation, strip_previous_view, track_daily_cost
-from .tool_handlers import BashToolHandler, MemoryToolHandler
+from .tool_handlers import MemoryToolHandler
 from .tooling import execute_tool
 
 __all__ = [
     "APIConnectionError",
     "APIError",
-    "BashToolHandler",
     "ClaudeCog",
     "MemoryToolHandler",
     "ParsedResponse",
@@ -85,7 +84,6 @@ class ClaudeCog(commands.Cog):
 
     _tool_handlers: dict[str, ToolHandler] = {
         "memory": MemoryToolHandler(),
-        "bash": BashToolHandler(),
     }
 
     def __init__(self, bot):
@@ -300,12 +298,6 @@ class ClaudeCog(commands.Cog):
         type=bool,
     )
     @option(
-        "bash",
-        description="Enable bash to execute shell commands. (default: false)",
-        required=False,
-        type=bool,
-    )
-    @option(
         "tool_choice",
         description="Tool behavior when tools are enabled. (default: Anthropic default)",
         required=False,
@@ -332,7 +324,6 @@ class ClaudeCog(commands.Cog):
         web_fetch: bool = False,
         code_execution: bool = False,
         memory: bool = False,
-        bash: bool = False,
         tool_choice: str | None = None,
     ):
         await run_chat_command(
@@ -352,6 +343,5 @@ class ClaudeCog(commands.Cog):
             web_fetch=web_fetch,
             code_execution=code_execution,
             memory=memory,
-            bash=bash,
             tool_choice=tool_choice,
         )

@@ -11,7 +11,7 @@ A Discord bot that wraps Anthropic's Claude API, providing an easy-to-use interf
 - **Multi-turn conversations**: Start conversations with Claude that maintain context across multiple messages
 - **Multiple Claude models**: Choose from Claude Opus 4.6, Sonnet 4.6, Opus 4.5, Sonnet 4.5, Opus 4.1, and Haiku 4.5
 - **Multimodal input**: Attach images (JPEG, PNG, GIF, WEBP), PDFs, or text files (TXT, MD, CSV)
-- **Tools**: Enable web search, web fetch, code execution, memory, and bash, with `tool_choice` control (`auto` / `none`) and mid-conversation toggles
+- **Tools**: Enable web search, web fetch, code execution, and memory, with `tool_choice` control (`auto` / `none`) and mid-conversation toggles
 - **Citations**: Web search and document citations displayed as a separate Sources embed
 - **Prompt caching**: Automatic prompt caching reduces costs (cache reads at 10% of input price) and latency on multi-turn conversations
 - **Context management**: Automatic compaction for non-compaction models at 75% context usage, server-side compaction for Opus/Sonnet 4.6, and an 85% context warning embed. Server-side clearing of old tool results and thinking blocks to manage context growth in long conversations
@@ -37,7 +37,6 @@ Start a conversation with Claude.
 - `web_fetch`: Enable web fetch to retrieve full web page content (default: false)
 - `code_execution`: Enable code execution in a sandbox (default: false)
 - `memory`: Enable memory to save and recall information across conversations (default: false)
-- `bash`: Enable bash to execute shell commands (default: false)
 - `effort`: Control response effort — low (fast), medium (balanced), high (thorough)
 - `thinking_budget`: Token budget for extended thinking on non-4.6 models
 - `tool_choice`: Tool behavior for enabled tools (`auto` or `none`)
@@ -115,7 +114,7 @@ bot.add_cog(ClaudeCog(bot=bot))
 ```
 
 The legacy top-level `anthropic_api` module remains as a temporary compatibility shim and emits a `DeprecationWarning`.
-Top-level `bot.py`, `button_view.py`, `config`, `memory.py`, `bash_tool.py`, and `util.py` are compatibility layers or repo-local helpers, not the installed public API surface.
+Top-level `bot.py`, `button_view.py`, `config`, `memory.py`, and `util.py` are compatibility layers or repo-local helpers, not the installed public API surface.
 
 **With Docker:**
 
