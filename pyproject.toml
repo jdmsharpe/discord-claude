@@ -35,9 +35,6 @@ pythonVersion = "3.10"
 venvPath = "."
 venv = ".venv"
 
-[tool.setuptools]
-py-modules = ["anthropic_api"]
-
 [tool.setuptools.package-dir]
 "" = "src"
 

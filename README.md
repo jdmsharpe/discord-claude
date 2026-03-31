@@ -113,8 +113,7 @@ from discord_claude import ClaudeCog
 bot.add_cog(ClaudeCog(bot=bot))
 ```
 
-The legacy top-level `anthropic_api` module remains as a temporary compatibility shim and emits a `DeprecationWarning`.
-Top-level `bot.py`, `button_view.py`, `config`, `memory.py`, and `util.py` are compatibility layers or repo-local helpers, not the installed public API surface.
+Top-level `bot.py`, `button_view.py`, `config`, and `util.py` are repo-local helpers, not the installed public API surface.
 
 **With Docker:**
 
@@ -151,6 +150,8 @@ docker-compose up -d
 ### Testing
 
 Tests use pytest with pytest-asyncio (`asyncio_mode = "auto"`). All tests are mocked — no real API calls.
+The suite is organized around the refactored package layout, with focused files such as `tests/test_claude_cog.py`, `tests/test_claude_chat.py`, `tests/test_claude_client.py`, and `tests/test_claude_tool_handlers.py`.
+Import from `discord_claude` directly; legacy top-level shim modules are no longer part of the supported workflow.
 
 GitHub Actions runs the test suite against Python 3.10, 3.11, 3.12, and 3.13. Docker images default to Python 3.13, but both `Dockerfile` and `Dockerfile.test` accept a `PYTHON_VERSION` build argument.
 
