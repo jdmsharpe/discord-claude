@@ -75,7 +75,8 @@ pytest -q
 - Memory storage root is resolved via `discord_claude.cogs.claude.paths`.
 - Client-side tool dispatch lives in `discord_claude.cogs.claude.tooling`, which calls through `discord_claude.memory` so tests can patch the live owner.
 - Conversations remain keyed by `(user_id, channel_id)`.
-- Named MCP presets are loaded from `ANTHROPIC_MCP_PRESETS_JSON` and `ANTHROPIC_MCP_PRESETS_PATH`.
+- Named MCP presets are loaded from `ANTHROPIC_MCP_PRESETS_JSON` (inline JSON) and/or `ANTHROPIC_MCP_PRESETS_PATH` (path to a JSON file); both are additive and duplicate preset names across them are rejected at startup.
+- Claude MCP presets support only `url` (HTTPS), `authorization_env_var` (user-defined runtime token env var), `allowed_tools`, and `defer_loading` — no `kind` discriminator or approval loop.
 - MCP state persists independently from built-in tool names via `mcp_preset_names` on `ChatCompletionParameters`.
 - Anthropic MCP traffic is passed through with `mcp_servers` and `mcp_toolset`, and `call_api_with_tool_loop` adds the `mcp-client-2025-11-20` beta when MCP is active.
 - MCP content blocks are ignored by the local tool loop; only built-in Anthropic tool calls are executed client-side.

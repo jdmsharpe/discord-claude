@@ -48,7 +48,7 @@ Start a conversation with Claude.
 
 ### MCP Setup For `/claude chat`
 
-Configure named presets in either `ANTHROPIC_MCP_PRESETS_JSON` or `ANTHROPIC_MCP_PRESETS_PATH`. Each preset is keyed by name and supports this schema:
+Configure named presets in `ANTHROPIC_MCP_PRESETS_JSON` (inline JSON object), `ANTHROPIC_MCP_PRESETS_PATH` (path to a JSON file), or both — the two sources merge additively, and duplicate preset names across them are rejected. Each preset is keyed by name and supports this schema:
 
 ```json
 {
