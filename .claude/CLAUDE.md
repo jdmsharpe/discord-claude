@@ -11,6 +11,8 @@
   bot.add_cog(ClaudeCog(bot=bot))
   ```
 
+  `ClaudeCog.__init__` calls `validate_required_config()` automatically, so config is validated at cog construction regardless of whether `main()` is used. Note: `GUILD_IDS` format is validated at import time (it is captured at class-definition time by `SlashCommandGroup`); `BOT_TOKEN` and `ANTHROPIC_API_KEY` presence is validated at construction time.
+
 ## Package Layout
 
 ```text
@@ -60,6 +62,7 @@ Only `src/bot.py` remains at the repo root; code imports should target `discord_
   - `discord_claude.config.mcp.ANTHROPIC_MCP_PRESETS`
   - `discord_claude.cogs.claude.chat.build_api_params`
 - Import `ClaudeCog` from `discord_claude`; do not reintroduce legacy `anthropic_api` shim paths.
+- Auth config tests (`tests/test_config_auth.py`) use `importlib` to force a fresh module import per test. Because `load_dotenv()` runs at import time and restores values from the `.env` file, tests that control env state must suppress it: `monkeypatch.setattr("dotenv.load_dotenv", lambda *_, **__: None)`.
 
 ## Validation Commands
 
