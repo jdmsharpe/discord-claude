@@ -41,6 +41,7 @@ src/
             ├── responses.py
             ├── state.py
             ├── tool_handlers.py
+            ├── tool_registry.py
             ├── tooling.py
             └── views.py
 ```
@@ -55,12 +56,13 @@ Only `src/bot.py` remains at the repo root; code imports should target `discord_
 - `tests/test_package_import.py` is the package import smoke test.
 - New tests and patches should target real owners under `discord_claude...`.
 - Examples:
-  - `discord_claude.memory.MEMORIES_BASE_DIR`
+  - `discord_claude.memory.get_memories_base_dir`
   - `discord_claude.cogs.claude.attachments.SUPPORTED_IMAGE_TYPES`
   - `discord_claude.cogs.claude.client.AsyncAnthropic`
   - `discord_claude.cogs.claude.chat.call_api_with_tool_loop`
   - `discord_claude.config.mcp.ANTHROPIC_MCP_PRESETS`
   - `discord_claude.cogs.claude.chat.build_api_params`
+  - `discord_claude.cogs.claude.tool_registry.TOOL_REGISTRY`
 - Import `ClaudeCog` from `discord_claude`; do not reintroduce legacy `anthropic_api` shim paths.
 - Auth config tests (`tests/test_config_auth.py`) use `importlib` to force a fresh module import per test. Because `load_dotenv()` runs at import time and restores values from the `.env` file, tests that control env state must suppress it: `monkeypatch.setattr("dotenv.load_dotenv", lambda *_, **__: None)`.
 
@@ -76,7 +78,8 @@ pytest -q
 ## Provider Notes
 
 - Memory storage root is resolved via `discord_claude.cogs.claude.paths`.
-- Client-side tool dispatch lives in `ClaudeCog._execute_tool`, which looks up handlers in the per-cog `_tool_handlers` dict (initialized from `default_tool_handlers()` in `discord_claude.cogs.claude.tooling`). The `memory` handler calls through `discord_claude.memory` so tests can patch the live owner. Use `cog.register_tool_handler(name, handler)` / `cog.unregister_tool_handler(name)` to extend or replace handlers at runtime. The module-level `execute_tool` in `tooling.py` is deprecated (empty registry, kept for import compatibility only).
+- Tool metadata (Anthropic payload, UI label/description, execution mode) lives in `discord_claude.cogs.claude.tool_registry.TOOL_REGISTRY`. Adding a tool requires only a new `ToolRegistryEntry` there; `get_anthropic_tools` and `get_tool_select_options` derive the API and UI views automatically.
+- Client-side tool dispatch lives in `ClaudeCog._execute_tool`, which looks up handlers in the per-cog `_tool_handlers` dict (initialized from `default_tool_handlers()` in `discord_claude.cogs.claude.tooling`). The `memory` handler calls through `discord_claude.memory` so tests can patch the live owner. Use `cog.register_tool_handler(name, handler)` / `cog.unregister_tool_handler(name)` to extend or replace handlers at runtime. The module-level `execute_tool` and `TOOL_HANDLERS` have been removed; `tooling.py` now only exposes `default_tool_handlers()`.
 - Conversations remain keyed by `(user_id, channel_id)`.
 - Named MCP presets are loaded from `ANTHROPIC_MCP_PRESETS_JSON` (inline JSON) and/or `ANTHROPIC_MCP_PRESETS_PATH` (path to a JSON file); both are additive and duplicate preset names across them are rejected at startup.
 - Claude MCP presets support only `url` (HTTPS), `authorization_env_var` (user-defined runtime token env var), `allowed_tools`, and `defer_loading` — no `kind` discriminator or approval loop.

@@ -9,7 +9,6 @@ from discord_claude.config.auth import SHOW_COST_EMBEDS
 from discord_claude.config.mcp import parse_mcp_preset_names, resolve_mcp_presets
 from discord_claude.util import (
     ADAPTIVE_THINKING_MODELS,
-    AVAILABLE_TOOLS,
     CACHE_TTL,
     COMPACTION_MODELS,
     CONTEXT_COMPACTION_THRESHOLD,
@@ -36,6 +35,7 @@ from .embeds import (
 )
 from .responses import ParsedResponse, extract_response_content
 from .state import compact_conversation, create_button_view
+from .tool_registry import TOOL_REGISTRY, get_anthropic_tools
 
 
 async def keep_typing(cog, channel) -> None:
@@ -95,7 +95,7 @@ def validate_request_configuration(params: ChatCompletionParameters) -> str | No
         tool_name = tool_choice.get("name")
         if not tool_name:
             return "Tool behavior `tool` requires a tool name."
-        if tool_name not in AVAILABLE_TOOLS:
+        if tool_name not in TOOL_REGISTRY:
             return f"Unknown forced tool `{tool_name}`."
         if tool_name not in params.tools:
             return (
@@ -133,7 +133,7 @@ def build_api_params(
     if mcp_error:
         raise ValueError(mcp_error)
 
-    api_tools = [AVAILABLE_TOOLS[tool] for tool in params.tools if tool in AVAILABLE_TOOLS]
+    api_tools = get_anthropic_tools(params.tools)
     if mcp_presets:
         api_params["mcp_servers"] = []
         for preset in mcp_presets:

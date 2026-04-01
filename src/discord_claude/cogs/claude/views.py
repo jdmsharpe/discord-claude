@@ -14,7 +14,9 @@ from discord import (
 )
 from discord.ui import Button, Select, View, button
 
-from discord_claude.util import AVAILABLE_TOOLS, ConversationKey, ToolChoice
+from discord_claude.util import ConversationKey, ToolChoice
+
+from .tool_registry import TOOL_REGISTRY, get_tool_select_options
 
 
 async def _send_interaction_error(interaction: Interaction, context: str, error: Exception) -> None:
@@ -62,34 +64,9 @@ class ButtonView(View):
 
         tool_select = Select(
             placeholder="Tools",
-            options=[
-                SelectOption(
-                    label="Web Search",
-                    value="web_search",
-                    description="Search the web for current information.",
-                    default="web_search" in selected_tools,
-                ),
-                SelectOption(
-                    label="Web Fetch",
-                    value="web_fetch",
-                    description="Fetch full content from web pages.",
-                    default="web_fetch" in selected_tools,
-                ),
-                SelectOption(
-                    label="Code Execution",
-                    value="code_execution",
-                    description="Run code in a sandbox.",
-                    default="code_execution" in selected_tools,
-                ),
-                SelectOption(
-                    label="Memory",
-                    value="memory",
-                    description="Save and recall memories across conversations.",
-                    default="memory" in selected_tools,
-                ),
-            ],
+            options=[SelectOption(**option) for option in get_tool_select_options(selected_tools)],
             min_values=0,
-            max_values=4,
+            max_values=len(TOOL_REGISTRY),
             row=1,
         )
 
@@ -116,7 +93,7 @@ class ButtonView(View):
                 )
                 return
 
-            selected_values = [value for value in tool_select.values if value in AVAILABLE_TOOLS]
+            selected_values = [value for value in tool_select.values if value in TOOL_REGISTRY]
             if selected_values:
                 conversation.params.tools = selected_values
                 conversation.params.tool_choice = {"type": "auto"}
