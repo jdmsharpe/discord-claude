@@ -8,10 +8,12 @@ python -m pip install --upgrade --no-deps --force-reinstall git+https://github.c
 from discord import Bot, Intents
 
 from discord_claude import ClaudeCog
-from discord_claude.config.auth import BOT_TOKEN
+from discord_claude.config.auth import BOT_TOKEN, validate_required_config
 
 
 def main() -> None:
+    validate_required_config()
+
     intents = Intents.default()
     intents.presences = False
     intents.members = True

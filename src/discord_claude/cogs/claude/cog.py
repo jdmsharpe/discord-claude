@@ -10,7 +10,7 @@ from discord import ApplicationContext, Attachment
 from discord.commands import OptionChoice, SlashCommandGroup, option
 from discord.ext import commands
 
-from discord_claude.config.auth import GUILD_IDS, SHOW_COST_EMBEDS
+from discord_claude.config.auth import GUILD_IDS, SHOW_COST_EMBEDS, validate_required_config
 from discord_claude.util import ChatCompletionParameters, Conversation, ConversationKey, ToolChoice
 
 from .attachments import (
@@ -83,6 +83,7 @@ class ClaudeCog(commands.Cog):
     claude = SlashCommandGroup("claude", "Claude AI commands", guild_ids=GUILD_IDS)
 
     def __init__(self, bot):
+        validate_required_config()
         self.bot = bot
         self.client = build_claude_client()
         logging.basicConfig(
