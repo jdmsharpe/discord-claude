@@ -236,7 +236,8 @@ def format_anthropic_error(error: Exception) -> str:
         message = str(error).strip()
 
     status = getattr(error, "status_code", None)
-    error_type = type(error).__name__
+    api_error_type = getattr(error, "error_type", None)
+    error_type = api_error_type or type(error).__name__
 
     details = []
     if status is not None:
