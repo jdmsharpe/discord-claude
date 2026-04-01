@@ -1,55 +1,84 @@
 # Discord Claude Bot
 
-![Badge](https://hitscounter.dev/api/hit?url=https%3A%2F%2Fgithub.com%2Fjdmsharpe%2Fdiscord-claude%2F&label=discord-claude&icon=github&color=%23198754&message=&style=flat&tz=UTC)
+![Hits](https://hitscounter.dev/api/hit?url=https%3A%2F%2Fgithub.com%2Fjdmsharpe%2Fdiscord-claude&label=Hits&icon=github&color=%23198754&style=flat)
 [![CI](https://github.com/jdmsharpe/discord-claude/actions/workflows/main.yml/badge.svg)](https://github.com/jdmsharpe/discord-claude/actions/workflows/main.yml)
 [![Python](https://img.shields.io/badge/python-3.10%20%7C%203.11%20%7C%203.12%20%7C%203.13-3776AB?logo=python&logoColor=white)](https://www.python.org/downloads/)
 
-A Discord bot that wraps Anthropic's Claude API, providing an easy-to-use interface for conversing with Claude models directly in Discord.
+## Overview
+A Discord bot built on Pycord that wraps Anthropic's Claude API, providing an easy-to-use interface for conversing with Claude models directly in Discord.
 
 ## Features
-
-- **Multi-turn conversations**: Start conversations with Claude that maintain context across multiple messages
-- **Multiple Claude models**: Choose from Claude Opus 4.6, Sonnet 4.6, Opus 4.5, Sonnet 4.5, Opus 4.1, and Haiku 4.5
-- **Multimodal input**: Attach images (JPEG, PNG, GIF, WEBP), PDFs, or text files (TXT, MD, CSV)
-- **Tools**: Enable web search, web fetch, code execution, and memory, with `tool_choice` control (`auto` / `none`) and mid-conversation toggles
-- **MCP presets**: Enable trusted remote MCP servers per conversation through named presets loaded from config, with optional authorization env bindings, allow-lists, and deferred tool loading
-- **Citations**: Web search and document citations displayed as a separate Sources embed
-- **Prompt caching**: Automatic prompt caching reduces costs (cache reads at 10% of input price) and latency on multi-turn conversations
-- **Context management**: Automatic compaction for non-compaction models at 75% context usage, server-side compaction for Opus/Sonnet 4.6, and an 85% context warning embed. Server-side clearing of old tool results and thinking blocks to manage context growth in long conversations
-- **Pricing display**: Per-request cost, token counts, cache hits, and daily spend shown as a separate embed after each response (configurable via `SHOW_COST_EMBEDS`)
-- **Conversation controls**: Pause, resume, regenerate responses, and end conversations with interactive buttons (previous turn's buttons are automatically removed)
-- **System prompts**: Customize Claude's behavior with system prompts
-- **Advanced parameters**: Fine-tune responses with temperature, top_p, top_k, effort, thinking budget, max_tokens, and tool behavior
+- **Multi-turn Conversations:** Start conversations with Claude that maintain context across multiple messages.
+- **Multiple Claude Models:** Choose from Claude Opus (4.6, 4.5, 4.1), Sonnet (4.6, 4.5), and Haiku (4.5).
+- **Multimodal Input:** Attach images (JPEG, PNG, GIF, WEBP), PDFs, or text files (TXT, MD, CSV).
+- **Built-In Tools:** Enable web search, web fetch, code execution, and memory with `tool_choice` control (`auto` / `none`) and mid-conversation toggles.
+- **Remote MCP Support:** Enable trusted remote MCP servers per conversation through named presets, featuring optional authorization, allow-lists, and deferred tool loading.
+- **Citations:** Web search and document citations are displayed as a separate Sources embed.
+- **Prompt Caching:** Automatic prompt caching reduces costs (cache reads at 10% of input price) and latency on multi-turn conversations.
+- **Context Management:** Automatic compaction for non-compaction models at 75% context usage, server-side compaction for Opus/Sonnet 4.6, and an 85% context warning embed. Clears old tool results/thinking blocks to manage context growth.
+- **Pricing Display:** Per-request cost, token counts, cache hits, and daily spend shown as a separate embed after each response (configurable).
+- **Conversation Controls:** Pause, resume, regenerate responses, and end conversations with interactive buttons.
+- **Customization:** Fine-tune responses with system prompts, temperature, top_p, top_k, effort, thinking budget, and max_tokens.
 
 ## Commands
 
 ### `/claude chat`
-
 Start a conversation with Claude.
+* **`prompt`** *(required)*: Your initial message to Claude.
+* **`model`**: Choose the Claude model (default: Claude Opus 4.6).
+* **`system`**: System prompt to set Claude's behavior.
+* **`attachment`**: Attach an image, PDF, or text file.
+* **`max_tokens`**: Maximum tokens in the response (default: 16384).
+* **`web_search` / `web_fetch` / `code_execution` / `memory`**: Toggle individual tools (default: false).
+* **`effort`**: Control response effort — low (fast), medium (balanced), high (thorough).
+* **`thinking_budget`**: Token budget for extended thinking on non-4.6 models.
+* **`tool_choice`**: Tool behavior for enabled tools (`auto` or `none`).
+* **Advanced Tuning**: `temperature`, `top_p`, `top_k`.
+* **`mcp`**: Optional comma-separated MCP preset names (persists for the life of the conversation).
 
-**Parameters:**
+### `/claude check_permissions`
+Check if the bot has the necessary permissions in the current channel.
 
-- `prompt` (required): Your initial message to Claude
-- `model`: Choose the Claude model (default: Claude Opus 4.6)
-- `system`: System prompt to set Claude's behavior
-- `attachment`: Attach an image (JPEG, PNG, GIF, WEBP), a PDF, or a text file (TXT, MD, CSV)
-- `max_tokens`: Maximum tokens in the response (default: 16384)
-- `web_search`: Enable web search for current information (default: false)
-- `web_fetch`: Enable web fetch to retrieve full web page content (default: false)
-- `code_execution`: Enable code execution in a sandbox (default: false)
-- `memory`: Enable memory to save and recall information across conversations (default: false)
-- `effort`: Control response effort — low (fast), medium (balanced), high (thorough)
-- `thinking_budget`: Token budget for extended thinking on non-4.6 models
-- `tool_choice`: Tool behavior for enabled tools (`auto` or `none`)
-- `temperature`: Amount of randomness (0.0-1.0). Lower for analytical tasks, higher for creative (advanced)
-- `top_p`: Nucleus sampling threshold (0.0-1.0). Use temperature OR top_p, not both (advanced)
-- `top_k`: Only sample from top K tokens. Use temperature OR top_k, not both (advanced)
-- `mcp`: Optional comma-separated MCP preset names. MCP presets persist for the life of the conversation and remain separate from the built-in tool dropdown.
+## Setup & Installation
 
-### MCP Setup For `/claude chat`
+### Prerequisites
+- Python 3.10+
+- Discord Bot Token
+- Anthropic API Key
 
-Configure named presets in `ANTHROPIC_MCP_PRESETS_JSON` (inline JSON object), `ANTHROPIC_MCP_PRESETS_PATH` (path to a JSON file), or both — the two sources merge additively, and duplicate preset names across them are rejected. Each preset is keyed by name and supports this schema:
+### Installation
+1. Clone the repository:
+   ```bash
+   git clone https://github.com/jdmsharpe/discord-claude.git
+   cd discord-claude
+   ```
+2. Create and activate a virtual environment:
+   ```bash
+   python -m venv .venv
+   source .venv/bin/activate  # On Windows: .venv\Scripts\activate
+   ```
+3. Install dependencies:
+   ```bash
+   pip install -r requirements.txt
+   ```
+4. Configure your environment variables:
+   ```bash
+   cp .env.example .env
+   ```
 
+### Configuration (`.env`)
+| Variable | Required | Description |
+| --- | --- | --- |
+| `BOT_TOKEN` | **Yes** | Your Discord bot token |
+| `GUILD_IDS` | **Yes** | Comma-separated Discord server IDs |
+| `ANTHROPIC_API_KEY` | **Yes** | Your Anthropic API key |
+| `SHOW_COST_EMBEDS` | No | Show cost/spend embeds (`true`, `1`, or `yes` to enable) (Default: `true`) |
+| `MEMORIES_DIR` | No | Directory for per-user memory files (Default: `./memories`) |
+| `ANTHROPIC_MCP_PRESETS_JSON`| No | Inline JSON object of named MCP presets |
+| `ANTHROPIC_MCP_PRESETS_PATH`| No | Path to a JSON file of named MCP presets |
+
+#### MCP Setup
+Configure named presets in `ANTHROPIC_MCP_PRESETS_JSON` or `ANTHROPIC_MCP_PRESETS_PATH`. Duplicate names across both sources are rejected. Example schema:
 ```json
 {
   "github": {
@@ -61,138 +90,54 @@ Configure named presets in `ANTHROPIC_MCP_PRESETS_JSON` (inline JSON object), `A
 }
 ```
 
-- `url` must be HTTPS.
-- `authorization_env_var` is optional. If it is set but missing at runtime, the preset is marked unavailable and the command returns a user-facing error instead of crashing the bot.
-- `allowed_tools` should be used for least privilege when the server exposes many tools.
-- `defer_loading` is passed through to Anthropic MCP server config.
-- Anthropic MCP execution is server-side. The bot does not implement a Discord approval loop here; tool execution is controlled by Anthropic’s MCP connector flow and preset selection.
-
-### `/claude check_permissions`
-
-Check if the bot has the necessary permissions in the current channel.
-
-## Setup
-
-### Prerequisites
-
-- Python 3.10+
-- Discord Bot Token
-- Anthropic API Key
-
-### Installation
-
-1. Clone the repository:
-
-   ```bash
-   git clone https://github.com/yourusername/discord-claude.git
-   cd discord-claude
-   ```
-
-2. Create a virtual environment:
-
-   ```bash
-   python -m venv .venv
-   source .venv/bin/activate  # On Windows: .venv\Scripts\activate
-   ```
-
-3. Install dependencies:
-
-   ```bash
-   pip install -r requirements.txt
-   ```
-
-4. Copy the environment example file and fill in your values:
-
-   ```bash
-   cp .env.example .env
-   ```
-
-5. Edit `.env` with your credentials:
-
-   ```ini
-   BOT_TOKEN=your_discord_bot_token
-   GUILD_IDS=your_guild_id_1,your_guild_id_2
-   ANTHROPIC_API_KEY=your_anthropic_api_key
-   ```
-
-   Optional variables:
-
-   | Variable | Default | Description |
-   | --- | --- | --- |
-   | `SHOW_COST_EMBEDS` | `true` | Show per-request cost and daily spend embeds (`true`, `1`, or `yes` enable it) |
-   | `MEMORIES_DIR` | `./memories` | Directory for per-user memory files |
-   | `ANTHROPIC_MCP_PRESETS_JSON` | — | Inline JSON object of named MCP presets |
-   | `ANTHROPIC_MCP_PRESETS_PATH` | — | Path to a JSON file of named MCP presets |
-
 ### Running the Bot
-
-**Directly:**
-
+**Locally:**
 ```bash
 python src/bot.py
 ```
+*(Note: `src/bot.py` is a thin launcher that delegates to `discord_claude.bot.main`)*
 
-`src/bot.py` remains a thin repo-local launcher that delegates to `discord_claude.bot.main`.
+**With Docker:**
+```bash
+docker-compose up -d
+```
 
 ### Using as a Cog
-
 To compose this repo into a larger bot, import the namespaced package:
-
 ```python
 from discord_claude import ClaudeCog
 
 bot.add_cog(ClaudeCog(bot=bot))
 ```
 
-Only `src/bot.py` remains at the repository root as a thin launcher; package code should be imported from `discord_claude`.
-
-**With Docker:**
-
-```bash
-docker-compose up -d
-```
-
 ## Discord Bot Setup
-
-1. Go to the [Discord Developer Portal](https://discord.com/developers/applications)
-2. Create a new application
-3. Go to the "Bot" section and create a bot
-4. Enable the following Privileged Gateway Intents:
-   - Server Members Intent
-   - Message Content Intent
-5. Copy the bot token and add it to your `.env` file
-6. Go to OAuth2 > URL Generator
-7. Select scopes: `bot`, `applications.commands`
-8. Select permissions: `Send Messages`, `Read Message History`, `Use Slash Commands`, `Embed Links`, `Attach Files`
-9. Use the generated URL to invite the bot to your server
+1. Go to the [Discord Developer Portal](https://discord.com/developers/applications).
+2. Create a new application and add a bot in the "Bot" section.
+3. Enable **Server Members Intent** and **Message Content Intent** under Privileged Gateway Intents.
+4. Copy the bot token and add it to your `.env` file.
+5. Go to OAuth2 > URL Generator.
+6. Select scopes: `bot`, `applications.commands`.
+7. Select permissions: `Send Messages`, `Read Message History`, `Use Slash Commands`, `Embed Links`, `Attach Files`.
+8. Use the generated URL to invite the bot to your server.
 
 ## Usage
-
-1. Use `/claude chat` to start a conversation with Claude
-2. Once a conversation is started, simply type messages in the same channel to continue the conversation
-3. Use the interactive controls:
+1. Use `/claude chat` to start a conversation.
+2. Type messages in the same channel to continue the conversation seamlessly.
+3. Use the interactive controls below the message to:
    - 🔄 Regenerate the last response
    - ⏯️ Pause/resume the conversation
    - ⏹️ End the conversation
-   - 🔧 Toggle built-in tools mid-conversation via the select menu; clearing all built-in selections sets tool behavior to `none` only when no MCP presets are active
-4. If MCP presets are enabled, the bot adds an explicit MCP safety note to the opening embeds and keeps those presets active for follow-up turns until the conversation ends
+   - 🔧 Toggle built-in tools mid-conversation via the select menu.
+4. **Note on MCP:** If MCP presets are enabled, the bot adds an explicit MCP safety note to the opening embeds and keeps those presets active until the conversation ends.
 
 ## Development
 
 ### Testing
-
-Tests use pytest with pytest-asyncio (`asyncio_mode = "auto"`). All tests are mocked — no real API calls.
-The suite is organized around the refactored package layout, with focused files such as `tests/test_claude_cog.py`, `tests/test_claude_chat.py`, `tests/test_claude_client.py`, `tests/test_claude_tool_handlers.py`, `tests/test_claude_mcp_config.py`, `tests/test_claude_request_config.py`, `tests/test_memory.py`, `tests/test_config_auth.py`, `tests/test_tool_registry.py`, and `tests/test_lazy_imports.py`.
-`tests/test_package_import.py` is the package import smoke test, and `tests/test_lazy_imports.py` covers the lazy package exports used by `discord_claude` and `discord_claude.cogs.claude`.
-The lazy package exports are paired with type-only imports so `pyright src/` can validate public namespaced imports without eagerly importing the full cog modules at runtime.
-Import from `discord_claude` directly; legacy top-level shim modules are no longer part of the supported workflow.
-
-GitHub Actions runs the test suite against Python 3.10, 3.11, 3.12, and 3.13. Docker images default to Python 3.13, but both `Dockerfile` and `Dockerfile.test` accept a `PYTHON_VERSION` build argument.
-
+Tests use `pytest` with `pytest-asyncio` (`asyncio_mode = "auto"`). All tests are mocked (no real API calls).
 ```bash
-# Run tests
-.venv/Scripts/python.exe -m pytest -q    # Windows
+# Run tests locally
 .venv/bin/python -m pytest -q            # Unix
+.venv/Scripts/python.exe -m pytest -q    # Windows
 
 # Run tests in Docker
 docker build --build-arg PYTHON_VERSION=3.10 -f Dockerfile.test -t discord-claude-test:3.10 .
@@ -200,16 +145,12 @@ docker run --rm discord-claude-test:3.10
 ```
 
 ### Linting & Type Checking
-
 ```bash
 ruff check src/ tests/
 ruff format src/ tests/
 pyright src/
 ```
-
-After cloning, run `git config core.hooksPath .githooks` to enable the pre-commit hook.
-The pre-commit hook prefers a repo-local `.venv` Ruff binary when available and falls back to `PATH`.
+*Run `git config core.hooksPath .githooks` after cloning to enable the pre-commit hook.*
 
 ## License
-
 MIT License - see [LICENSE](LICENSE) for details.
