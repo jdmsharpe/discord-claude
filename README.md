@@ -110,14 +110,19 @@ Check if the bot has the necessary permissions in the current channel.
 5. Edit `.env` with your credentials:
 
    ```ini
-  BOT_TOKEN=your_discord_bot_token
-  GUILD_IDS=your_guild_id_1,your_guild_id_2
-  ANTHROPIC_API_KEY=your_anthropic_api_key
-  ANTHROPIC_MCP_PRESETS_JSON=optional_inline_json_object
-  ANTHROPIC_MCP_PRESETS_PATH=optional_path_to_mcp_presets.json
-  SHOW_COST_EMBEDS=true
-  MEMORIES_DIR=./memories
-  ```
+   BOT_TOKEN=your_discord_bot_token
+   GUILD_IDS=your_guild_id_1,your_guild_id_2
+   ANTHROPIC_API_KEY=your_anthropic_api_key
+   ```
+
+   Optional variables:
+
+   | Variable | Default | Description |
+   | --- | --- | --- |
+   | `SHOW_COST_EMBEDS` | `true` | Show per-request cost and daily spend embeds |
+   | `MEMORIES_DIR` | `./memories` | Directory for per-user memory files |
+   | `ANTHROPIC_MCP_PRESETS_JSON` | — | Inline JSON object of named MCP presets |
+   | `ANTHROPIC_MCP_PRESETS_PATH` | — | Path to a JSON file of named MCP presets |
 
 ### Running the Bot
 
@@ -177,7 +182,7 @@ docker-compose up -d
 ### Testing
 
 Tests use pytest with pytest-asyncio (`asyncio_mode = "auto"`). All tests are mocked — no real API calls.
-The suite is organized around the refactored package layout, with focused files such as `tests/test_claude_cog.py`, `tests/test_claude_chat.py`, `tests/test_claude_client.py`, `tests/test_claude_tool_handlers.py`, `tests/test_claude_mcp_config.py`, and `tests/test_claude_request_config.py`.
+The suite is organized around the refactored package layout, with focused files such as `tests/test_claude_cog.py`, `tests/test_claude_chat.py`, `tests/test_claude_client.py`, `tests/test_claude_tool_handlers.py`, `tests/test_claude_mcp_config.py`, `tests/test_claude_request_config.py`, `tests/test_memory.py`, and `tests/test_config_auth.py`.
 `tests/test_package_import.py` is the package import smoke test.
 Import from `discord_claude` directly; legacy top-level shim modules are no longer part of the supported workflow.
 

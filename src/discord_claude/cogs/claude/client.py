@@ -11,11 +11,6 @@ def build_claude_client(api_key: str | None = None) -> AsyncAnthropic:
     return AsyncAnthropic(api_key=api_key or ANTHROPIC_API_KEY)
 
 
-def build_anthropic_client(api_key: str | None = None) -> AsyncAnthropic:
-    """Backward-compatible alias for the Claude client factory."""
-    return build_claude_client(api_key)
-
-
 async def get_http_session(cog) -> aiohttp.ClientSession:
     """Get or lazily create the shared aiohttp session for attachment fetching."""
     if cog._http_session and not cog._http_session.closed:
@@ -47,7 +42,6 @@ __all__ = [
     "APIError",
     "AsyncAnthropic",
     "build_claude_client",
-    "build_anthropic_client",
     "close_http_session",
     "get_http_session",
 ]
