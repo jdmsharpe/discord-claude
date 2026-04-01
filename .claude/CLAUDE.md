@@ -42,7 +42,6 @@ src/
             ├── state.py
             ├── tool_handlers.py
             ├── tool_registry.py
-            ├── tooling.py
             └── views.py
 ```
 
@@ -79,7 +78,7 @@ pytest -q
 
 - Memory storage root is resolved via `discord_claude.cogs.claude.paths`.
 - Tool metadata (Anthropic payload, UI label/description, execution mode) lives in `discord_claude.cogs.claude.tool_registry.TOOL_REGISTRY`. Adding a tool requires only a new `ToolRegistryEntry` there; `get_anthropic_tools` and `get_tool_select_options` derive the API and UI views automatically.
-- Client-side tool dispatch lives in `ClaudeCog._execute_tool`, which looks up handlers in the per-cog `_tool_handlers` dict (initialized from `default_tool_handlers()` in `discord_claude.cogs.claude.tooling`). The `memory` handler calls through `discord_claude.memory` so tests can patch the live owner. Use `cog.register_tool_handler(name, handler)` / `cog.unregister_tool_handler(name)` to extend or replace handlers at runtime. The module-level `execute_tool` and `TOOL_HANDLERS` have been removed; `tooling.py` now only exposes `default_tool_handlers()`.
+- Client-side tool dispatch lives in `ClaudeCog._execute_tool`, which looks up handlers in the per-cog `_tool_handlers` dict (initialized from `default_tool_handlers()` in `discord_claude.cogs.claude.tooling`). The `memory` handler calls through `discord_claude.memory` so tests can patch the live owner. Use `cog.register_tool_handler(name, handler)` / `cog.unregister_tool_handler(name)` to extend or replace handlers at runtime. `tooling.py` has been deleted; `default_tool_handlers()` now lives in `discord_claude.cogs.claude.tool_handlers` alongside `MemoryToolHandler`.
 - Conversations remain keyed by `(user_id, channel_id)`.
 - Named MCP presets are loaded from `ANTHROPIC_MCP_PRESETS_JSON` (inline JSON) and/or `ANTHROPIC_MCP_PRESETS_PATH` (path to a JSON file); both are additive and duplicate preset names across them are rejected at startup.
 - Claude MCP presets support only `url` (HTTPS), `authorization_env_var` (user-defined runtime token env var), `allowed_tools`, and `defer_loading` — no `kind` discriminator or approval loop.
