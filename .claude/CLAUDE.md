@@ -1,5 +1,26 @@
 # Discord Claude Bot - Developer Reference
 
+## Quick Start
+
+```bash
+python -m venv .venv && source .venv/bin/activate  # Windows: .venv\Scripts\activate
+pip install -r requirements.txt
+cp .env.example .env   # then fill in required values
+python src/bot.py      # or: docker-compose up --build
+```
+
+## Environment Variables
+
+| Variable | Required | Description |
+| --- | --- | --- |
+| `BOT_TOKEN` | Yes | Discord bot token |
+| `GUILD_IDS` | Yes | Comma-separated Discord server IDs |
+| `ANTHROPIC_API_KEY` | Yes | Anthropic API key |
+| `SHOW_COST_EMBEDS` | No | Show cost embeds (`true`/`1`/`yes`, default: `true`) |
+| `MEMORIES_DIR` | No | Per-user memory directory (default: `./memories`) |
+| `ANTHROPIC_MCP_PRESETS_JSON` | No | Inline JSON of named MCP presets |
+| `ANTHROPIC_MCP_PRESETS_PATH` | No | Path to JSON file of named MCP presets |
+
 ## Supported Entry Points
 
 - Launcher: `python src/bot.py` remains supported and delegates to `discord_claude.bot.main`.
@@ -51,7 +72,7 @@ Only `src/bot.py` remains at the repo root; code imports should target `discord_
 ## Testing And Patch Targets
 
 - `pytest` runs with `pythonpath = ["src"]`.
-- The test suite is organized into module-aligned files such as `tests/test_claude_cog.py`, `tests/test_claude_chat.py`, `tests/test_claude_client.py`, `tests/test_claude_tool_handlers.py`, `tests/test_config_auth.py`, `tests/test_tool_registry.py`, and `tests/test_lazy_imports.py`.
+- The test suite is organized into module-aligned files such as `tests/test_claude_cog.py`, `tests/test_claude_chat.py`, `tests/test_claude_client.py`, `tests/test_claude_tool_handlers.py`, `tests/test_config_auth.py`, `tests/test_tool_registry.py`, `tests/test_lazy_imports.py`, `tests/test_claude_embeds.py`, `tests/test_claude_responses.py`, `tests/test_button_view.py`, `tests/test_memory.py`, and `tests/test_util.py`.
 - MCP-specific coverage lives primarily in `tests/test_claude_mcp_config.py`, `tests/test_claude_request_config.py`, and the MCP cases in `tests/test_claude_chat.py`.
 - `tests/test_package_import.py` is the package import smoke test.
 - New tests and patches should target real owners under `discord_claude...`.
