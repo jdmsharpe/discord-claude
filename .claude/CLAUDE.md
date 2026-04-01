@@ -12,7 +12,7 @@
   ```
 
   `ClaudeCog.__init__` calls `validate_required_config()` automatically, so config is validated at cog construction regardless of whether `main()` is used. Note: `GUILD_IDS` format is validated at import time (it is captured at class-definition time by `SlashCommandGroup`); `BOT_TOKEN` and `ANTHROPIC_API_KEY` missing or blank values are validated at construction time.
-- `discord_claude` and `discord_claude.cogs.claude` both use lazy `__getattr__` exports so helper imports do not eagerly pull in Discord-heavy modules.
+- `discord_claude` and `discord_claude.cogs.claude` both use lazy `__getattr__` exports so helper imports do not eagerly pull in Discord-heavy modules. Type-only imports keep `pyright src/` aware of those public exports.
 
 ## Package Layout
 
@@ -74,6 +74,8 @@ ruff format src/ tests/
 pyright src/
 pytest -q
 ```
+
+- The repo pre-commit hook prefers a repo-local `.venv` Ruff binary when available and falls back to `PATH`.
 
 ## Provider Notes
 

@@ -1,6 +1,10 @@
 """Top-level namespace providing the Claude cog for easy imports."""
 
 from importlib import metadata
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from .cogs.claude.cog import ClaudeCog
 
 __all__ = ["ClaudeCog"]
 
