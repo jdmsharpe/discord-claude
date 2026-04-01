@@ -3,7 +3,7 @@
 Implements client-side file operations for the memory tool:
 view, create, str_replace, insert, delete, rename.
 
-Memory files are stored per-user in: ./memories/{user_discord_id}/
+Memory files are stored per-user in: {MEMORIES_DIR or ./memories}/{user_discord_id}/
 """
 
 import logging
@@ -11,7 +11,7 @@ import shutil
 from pathlib import Path
 from typing import Any
 
-from discord_claude.cogs.claude.paths import MEMORIES_BASE_DIR
+from discord_claude.cogs.claude.paths import get_memories_base_dir
 
 logger = logging.getLogger(__name__)
 
@@ -24,7 +24,7 @@ def _resolve_safe_path(user_id: int, file_path: str) -> Path:
     Raises ValueError if the resolved path escapes the user directory
     (path traversal attack).
     """
-    user_dir = MEMORIES_BASE_DIR / str(user_id)
+    user_dir = get_memories_base_dir() / str(user_id)
     # Strip leading /memories or /memories/ prefix that Claude sends
     cleaned = file_path.strip()
     if cleaned.startswith("/memories/"):
@@ -55,6 +55,8 @@ def execute_memory_operation(user_id: int, tool_input: dict[str, Any]) -> str:
     if command not in VALID_COMMANDS:
         return f"Error: Unknown command '{command}'. Valid commands: {', '.join(sorted(VALID_COMMANDS))}"
 
+    _ensure_user_memory_dir(user_id)
+
     try:
         if command == "view":
             return _handle_view(user_id, tool_input)
@@ -75,6 +77,13 @@ def execute_memory_operation(user_id: int, tool_input: dict[str, Any]) -> str:
     except Exception as e:
         logger.error(f"Memory operation error: {e}", exc_info=True)
         return f"Error: {e}"
+
+
+def _ensure_user_memory_dir(user_id: int) -> Path:
+    """Create configured memory directories at runtime before operations."""
+    user_dir = get_memories_base_dir() / str(user_id)
+    user_dir.mkdir(parents=True, exist_ok=True)
+    return user_dir
 
 
 def _handle_view(user_id: int, tool_input: dict[str, Any]) -> str:

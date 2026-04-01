@@ -3,6 +3,13 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 
+@pytest.fixture(autouse=True)
+def _set_required_env_vars(monkeypatch):
+    """Set dummy required env vars so ClaudeCog can be instantiated in tests."""
+    monkeypatch.setenv("BOT_TOKEN", "dummy-token")
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "dummy-key")
+
+
 @pytest.fixture
 def mock_bot():
     """Create a mock Discord bot instance."""
