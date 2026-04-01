@@ -2,9 +2,15 @@
 
 from importlib import metadata
 
-from .cogs.claude.cog import ClaudeCog
-
 __all__ = ["ClaudeCog"]
+
+
+def __getattr__(name: str):
+    if name == "ClaudeCog":
+        from .cogs.claude import ClaudeCog
+
+        return ClaudeCog
+    raise AttributeError(name)
 
 try:
     __version__ = metadata.version("discord-claude")

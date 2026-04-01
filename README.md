@@ -119,7 +119,7 @@ Check if the bot has the necessary permissions in the current channel.
 
    | Variable | Default | Description |
    | --- | --- | --- |
-   | `SHOW_COST_EMBEDS` | `true` | Show per-request cost and daily spend embeds |
+   | `SHOW_COST_EMBEDS` | `true` | Show per-request cost and daily spend embeds (`true`, `1`, or `yes` enable it) |
    | `MEMORIES_DIR` | `./memories` | Directory for per-user memory files |
    | `ANTHROPIC_MCP_PRESETS_JSON` | — | Inline JSON object of named MCP presets |
    | `ANTHROPIC_MCP_PRESETS_PATH` | — | Path to a JSON file of named MCP presets |
@@ -182,8 +182,8 @@ docker-compose up -d
 ### Testing
 
 Tests use pytest with pytest-asyncio (`asyncio_mode = "auto"`). All tests are mocked — no real API calls.
-The suite is organized around the refactored package layout, with focused files such as `tests/test_claude_cog.py`, `tests/test_claude_chat.py`, `tests/test_claude_client.py`, `tests/test_claude_tool_handlers.py`, `tests/test_claude_mcp_config.py`, `tests/test_claude_request_config.py`, `tests/test_memory.py`, `tests/test_config_auth.py`, and `tests/test_tool_registry.py`.
-`tests/test_package_import.py` is the package import smoke test.
+The suite is organized around the refactored package layout, with focused files such as `tests/test_claude_cog.py`, `tests/test_claude_chat.py`, `tests/test_claude_client.py`, `tests/test_claude_tool_handlers.py`, `tests/test_claude_mcp_config.py`, `tests/test_claude_request_config.py`, `tests/test_memory.py`, `tests/test_config_auth.py`, `tests/test_tool_registry.py`, and `tests/test_lazy_imports.py`.
+`tests/test_package_import.py` is the package import smoke test, and `tests/test_lazy_imports.py` covers the lazy package exports used by `discord_claude` and `discord_claude.cogs.claude`.
 Import from `discord_claude` directly; legacy top-level shim modules are no longer part of the supported workflow.
 
 GitHub Actions runs the test suite against Python 3.10, 3.11, 3.12, and 3.13. Docker images default to Python 3.13, but both `Dockerfile` and `Dockerfile.test` accept a `PYTHON_VERSION` build argument.

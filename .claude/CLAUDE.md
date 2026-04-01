@@ -11,7 +11,8 @@
   bot.add_cog(ClaudeCog(bot=bot))
   ```
 
-  `ClaudeCog.__init__` calls `validate_required_config()` automatically, so config is validated at cog construction regardless of whether `main()` is used. Note: `GUILD_IDS` format is validated at import time (it is captured at class-definition time by `SlashCommandGroup`); `BOT_TOKEN` and `ANTHROPIC_API_KEY` presence is validated at construction time.
+  `ClaudeCog.__init__` calls `validate_required_config()` automatically, so config is validated at cog construction regardless of whether `main()` is used. Note: `GUILD_IDS` format is validated at import time (it is captured at class-definition time by `SlashCommandGroup`); `BOT_TOKEN` and `ANTHROPIC_API_KEY` missing or blank values are validated at construction time.
+- `discord_claude` and `discord_claude.cogs.claude` both use lazy `__getattr__` exports so helper imports do not eagerly pull in Discord-heavy modules.
 
 ## Package Layout
 
@@ -50,7 +51,7 @@ Only `src/bot.py` remains at the repo root; code imports should target `discord_
 ## Testing And Patch Targets
 
 - `pytest` runs with `pythonpath = ["src"]`.
-- The test suite is organized into module-aligned files such as `tests/test_claude_cog.py`, `tests/test_claude_chat.py`, `tests/test_claude_client.py`, and `tests/test_claude_tool_handlers.py`.
+- The test suite is organized into module-aligned files such as `tests/test_claude_cog.py`, `tests/test_claude_chat.py`, `tests/test_claude_client.py`, `tests/test_claude_tool_handlers.py`, `tests/test_config_auth.py`, `tests/test_tool_registry.py`, and `tests/test_lazy_imports.py`.
 - MCP-specific coverage lives primarily in `tests/test_claude_mcp_config.py`, `tests/test_claude_request_config.py`, and the MCP cases in `tests/test_claude_chat.py`.
 - `tests/test_package_import.py` is the package import smoke test.
 - New tests and patches should target real owners under `discord_claude...`.
@@ -78,7 +79,7 @@ pytest -q
 
 - Memory storage root is resolved via `discord_claude.cogs.claude.paths`.
 - Tool metadata (Anthropic payload, UI label/description, execution mode) lives in `discord_claude.cogs.claude.tool_registry.TOOL_REGISTRY`. Adding a tool requires only a new `ToolRegistryEntry` there; `get_anthropic_tools` and `get_tool_select_options` derive the API and UI views automatically.
-- Client-side tool dispatch lives in `ClaudeCog._execute_tool`, which looks up handlers in the per-cog `_tool_handlers` dict (initialized from `default_tool_handlers()` in `discord_claude.cogs.claude.tooling`). The `memory` handler calls through `discord_claude.memory` so tests can patch the live owner. Use `cog.register_tool_handler(name, handler)` / `cog.unregister_tool_handler(name)` to extend or replace handlers at runtime. `tooling.py` has been deleted; `default_tool_handlers()` now lives in `discord_claude.cogs.claude.tool_handlers` alongside `MemoryToolHandler`.
+- Client-side tool dispatch lives in `ClaudeCog._execute_tool`, which looks up handlers in the per-cog `_tool_handlers` dict (initialized from `default_tool_handlers()` in `discord_claude.cogs.claude.tool_handlers`). The `memory` handler calls through `discord_claude.memory` so tests can patch the live owner. Use `cog.register_tool_handler(name, handler)` / `cog.unregister_tool_handler(name)` to extend or replace handlers at runtime.
 - Conversations remain keyed by `(user_id, channel_id)`.
 - Named MCP presets are loaded from `ANTHROPIC_MCP_PRESETS_JSON` (inline JSON) and/or `ANTHROPIC_MCP_PRESETS_PATH` (path to a JSON file); both are additive and duplicate preset names across them are rejected at startup.
 - Claude MCP presets support only `url` (HTTPS), `authorization_env_var` (user-defined runtime token env var), `allowed_tools`, and `defer_loading` — no `kind` discriminator or approval loop.
