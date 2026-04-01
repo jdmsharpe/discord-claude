@@ -116,6 +116,7 @@ Check if the bot has the necessary permissions in the current channel.
   ANTHROPIC_MCP_PRESETS_JSON=optional_inline_json_object
   ANTHROPIC_MCP_PRESETS_PATH=optional_path_to_mcp_presets.json
   SHOW_COST_EMBEDS=true
+  MEMORIES_DIR=./memories
   ```
 
 ### Running the Bot

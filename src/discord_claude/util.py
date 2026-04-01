@@ -39,29 +39,6 @@ EXTENDED_THINKING_MODELS = {
     "claude-haiku-4-5",
 }
 
-# Tool definitions for the Anthropic API
-AVAILABLE_TOOLS: dict[str, dict[str, Any]] = {
-    "web_search": {
-        "type": "web_search_20260209",
-        "name": "web_search",
-        "max_uses": 5,
-    },
-    "web_fetch": {
-        "type": "web_fetch_20260309",
-        "name": "web_fetch",
-        "max_uses": 5,
-        "use_cache": False,
-    },
-    "code_execution": {
-        "type": "code_execution_20250825",
-        "name": "code_execution",
-    },
-    "memory": {
-        "type": "memory_20250818",
-        "name": "memory",
-    },
-}
-
 # Per-million-token pricing: (input_cost, output_cost)
 MODEL_PRICING: dict[str, tuple[float, float]] = {
     "claude-opus-4-6": (5.0, 25.0),
