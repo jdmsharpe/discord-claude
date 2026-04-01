@@ -4,7 +4,16 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+TRUE_ENV_VALUES = frozenset({"true", "1", "yes"})
 REQUIRED_ENV_VARS = ("BOT_TOKEN", "ANTHROPIC_API_KEY")
+
+
+def _get_env_or_none(name: str) -> str | None:
+    value = os.getenv(name)
+    if value is None:
+        return None
+    stripped_value = value.strip()
+    return stripped_value or None
 
 
 def _parse_guild_ids(raw_guild_ids: str) -> list[int]:
@@ -25,8 +34,12 @@ def _parse_guild_ids(raw_guild_ids: str) -> list[int]:
     return guild_ids
 
 
+def _parse_bool_env(name: str, default: str = "true") -> bool:
+    return os.getenv(name, default).strip().lower() in TRUE_ENV_VALUES
+
+
 def validate_required_config() -> None:
-    missing_vars = [name for name in REQUIRED_ENV_VARS if not os.getenv(name)]
+    missing_vars = [name for name in REQUIRED_ENV_VARS if _get_env_or_none(name) is None]
     if missing_vars:
         missing_list = ", ".join(missing_vars)
         raise RuntimeError(
@@ -35,7 +48,7 @@ def validate_required_config() -> None:
         )
 
 
-BOT_TOKEN = os.getenv("BOT_TOKEN")
+BOT_TOKEN = _get_env_or_none("BOT_TOKEN")
 GUILD_IDS = _parse_guild_ids(os.getenv("GUILD_IDS", ""))
-ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY")
-SHOW_COST_EMBEDS = os.getenv("SHOW_COST_EMBEDS", "true").lower() == "true"
+ANTHROPIC_API_KEY = _get_env_or_none("ANTHROPIC_API_KEY")
+SHOW_COST_EMBEDS = _parse_bool_env("SHOW_COST_EMBEDS")

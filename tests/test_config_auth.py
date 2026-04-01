@@ -33,6 +33,16 @@ def test_validate_required_config_allows_present_vars(monkeypatch):
     auth.validate_required_config()
 
 
+def test_validate_required_config_rejects_whitespace_only_values(monkeypatch):
+    monkeypatch.setenv("BOT_TOKEN", "   ")
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "\t")
+
+    auth = _import_fresh_auth_module(monkeypatch)
+
+    with pytest.raises(RuntimeError, match="BOT_TOKEN, ANTHROPIC_API_KEY"):
+        auth.validate_required_config()
+
+
 def test_invalid_guild_ids_raise_clear_error(monkeypatch):
     monkeypatch.setenv("GUILD_IDS", "123, abc, 456")
 
@@ -46,3 +56,20 @@ def test_guild_ids_parsing_ignores_whitespace_and_empty_tokens(monkeypatch):
     auth = _import_fresh_auth_module()
 
     assert auth.GUILD_IDS == [123, 456]
+
+
+@pytest.mark.parametrize(
+    ("raw_value", "expected"),
+    [
+        ("true", True),
+        ("1", True),
+        ("yes", True),
+        ("false", False),
+    ],
+)
+def test_show_cost_embeds_uses_standard_boolean_parser(monkeypatch, raw_value, expected):
+    monkeypatch.setenv("SHOW_COST_EMBEDS", raw_value)
+
+    auth = _import_fresh_auth_module()
+
+    assert auth.SHOW_COST_EMBEDS is expected
