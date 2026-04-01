@@ -73,7 +73,7 @@ pytest -q
 ## Provider Notes
 
 - Memory storage root is resolved via `discord_claude.cogs.claude.paths`.
-- Client-side tool dispatch lives in `discord_claude.cogs.claude.tooling`, which calls through `discord_claude.memory` so tests can patch the live owner.
+- Client-side tool dispatch lives in `ClaudeCog._execute_tool`, which looks up handlers in the per-cog `_tool_handlers` dict (initialized from `default_tool_handlers()` in `discord_claude.cogs.claude.tooling`). The `memory` handler calls through `discord_claude.memory` so tests can patch the live owner. Use `cog.register_tool_handler(name, handler)` / `cog.unregister_tool_handler(name)` to extend or replace handlers at runtime. The module-level `execute_tool` in `tooling.py` is deprecated (empty registry, kept for import compatibility only).
 - Conversations remain keyed by `(user_id, channel_id)`.
 - Named MCP presets are loaded from `ANTHROPIC_MCP_PRESETS_JSON` (inline JSON) and/or `ANTHROPIC_MCP_PRESETS_PATH` (path to a JSON file); both are additive and duplicate preset names across them are rejected at startup.
 - Claude MCP presets support only `url` (HTTPS), `authorization_env_var` (user-defined runtime token env var), `allowed_tools`, and `defer_loading` — no `kind` discriminator or approval loop.

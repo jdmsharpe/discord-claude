@@ -30,3 +30,38 @@ class TestClaudeToolHandlers:
         """Unknown tool names return an error string."""
         result = await cog._execute_tool("nonexistent", {}, user_id=123)
         assert "Error: Unknown tool" in result
+
+    async def test_runtime_registration_and_unregistration(self, cog):
+        """Handlers can be registered and unregistered on a cog instance at runtime."""
+
+        class RuntimeHandler:
+            async def execute(self, tool_input, user_id):
+                return f"runtime:{user_id}:{tool_input['value']}"
+
+        handler = RuntimeHandler()
+        cog.register_tool_handler("runtime_tool", handler)
+
+        result = await cog._execute_tool("runtime_tool", {"value": "ok"}, user_id=321)
+        assert result == "runtime:321:ok"
+
+        removed = cog.unregister_tool_handler("runtime_tool")
+        assert removed is handler
+        missing_result = await cog._execute_tool("runtime_tool", {"value": "ok"}, user_id=321)
+        assert "Error: Unknown tool" in missing_result
+
+    async def test_dispatch_uses_cog_owned_registry(self, cog):
+        """Dispatch uses the cog instance registry, not a module-global mapping."""
+
+        class OverrideMemoryHandler:
+            async def execute(self, tool_input, user_id):
+                return f"override:{tool_input['command']}:{user_id}"
+
+        cog.register_tool_handler("memory", OverrideMemoryHandler())
+
+        with patch("discord_claude.memory.execute_memory_operation") as mock_exec:
+            result = await cog._execute_tool(
+                "memory", {"command": "view", "path": "/memories"}, user_id=777
+            )
+
+        assert result == "override:view:777"
+        mock_exec.assert_not_called()

@@ -55,7 +55,7 @@ from .models import ParsedResponse, ToolHandler, UsageTotals
 from .responses import extract_response_content
 from .state import cleanup_conversation, stop_conversation, strip_previous_view, track_daily_cost
 from .tool_handlers import MemoryToolHandler
-from .tooling import execute_tool
+from .tooling import default_tool_handlers
 
 __all__ = [
     "APIConnectionError",
@@ -82,10 +82,6 @@ __all__ = [
 class ClaudeCog(commands.Cog):
     claude = SlashCommandGroup("claude", "Claude AI commands", guild_ids=GUILD_IDS)
 
-    _tool_handlers: dict[str, ToolHandler] = {
-        "memory": MemoryToolHandler(),
-    }
-
     def __init__(self, bot):
         self.bot = bot
         self.client = build_claude_client()
@@ -102,6 +98,7 @@ class ClaudeCog(commands.Cog):
         self.daily_costs: dict[tuple[int, str], float] = {}
         self._http_session = None
         self._session_lock = asyncio.Lock()
+        self._tool_handlers: dict[str, ToolHandler] = default_tool_handlers()
 
     async def _get_http_session(self):
         return await get_http_session(self)
@@ -152,7 +149,16 @@ class ClaudeCog(commands.Cog):
         )
 
     async def _execute_tool(self, tool_name: str, tool_input: dict[str, Any], user_id: int) -> str:
-        return await execute_tool(tool_name, tool_input, user_id)
+        handler = self._tool_handlers.get(tool_name)
+        if handler is None:
+            return f"Error: Unknown tool '{tool_name}'"
+        return await handler.execute(tool_input, user_id)
+
+    def register_tool_handler(self, tool_name: str, handler: ToolHandler) -> None:
+        self._tool_handlers[tool_name] = handler
+
+    def unregister_tool_handler(self, tool_name: str) -> ToolHandler | None:
+        return self._tool_handlers.pop(tool_name, None)
 
     @staticmethod
     def _build_thinking_config(params: ChatCompletionParameters) -> dict[str, Any] | None:

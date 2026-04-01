@@ -36,7 +36,6 @@ from .embeds import (
 )
 from .responses import ParsedResponse, extract_response_content
 from .state import compact_conversation, create_button_view
-from .tooling import execute_tool
 
 
 async def keep_typing(cog, channel) -> None:
@@ -262,7 +261,7 @@ async def call_api_with_tool_loop(
             messages.append({"role": "assistant", "content": response.content})
             tool_results = []
             for tool_block in parsed.tool_use_blocks:
-                result_text = await execute_tool(tool_block.name, tool_block.input, user_id)
+                result_text = await cog._execute_tool(tool_block.name, tool_block.input, user_id)
                 tool_results.append(
                     {
                         "type": "tool_result",
