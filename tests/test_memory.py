@@ -1,3 +1,5 @@
+import importlib
+
 import pytest
 
 from discord_claude.memory import (
@@ -8,8 +10,8 @@ from discord_claude.memory import (
 
 @pytest.fixture(autouse=True)
 def use_tmp_memories(tmp_path, monkeypatch):
-    """Redirect MEMORIES_BASE_DIR to a temp directory for all tests."""
-    monkeypatch.setattr("discord_claude.memory.MEMORIES_BASE_DIR", tmp_path)
+    """Redirect memory base dir to a temp directory for all tests."""
+    monkeypatch.setattr("discord_claude.memory.get_memories_base_dir", lambda: tmp_path)
     return tmp_path
 
 
@@ -331,3 +333,30 @@ class TestInvalidCommand:
         """Returns error when command is missing."""
         result = execute_memory_operation(user_id=123, tool_input={})
         assert "Unknown command" in result
+
+
+class TestConfiguredMemoryPath:
+    """Tests for MEMORIES_DIR configuration behavior."""
+
+    def test_memories_dir_env_overrides_default(self, monkeypatch, tmp_path):
+        """MEMORIES_DIR env var controls the resolved base path."""
+        monkeypatch.setenv("MEMORIES_DIR", str(tmp_path / "custom-memories"))
+
+        from discord_claude.cogs.claude import paths as paths_module
+
+        reloaded = importlib.reload(paths_module)
+        assert reloaded.get_memories_base_dir() == (tmp_path / "custom-memories")
+
+    def test_operation_creates_configured_base_dir(self, tmp_path, monkeypatch):
+        """Runtime operations create configured directory tree before use."""
+        configured = tmp_path / "configured-base"
+        monkeypatch.setattr("discord_claude.memory.get_memories_base_dir", lambda: configured)
+
+        result = execute_memory_operation(
+            user_id=999,
+            tool_input={"command": "view", "path": "/memories"},
+        )
+
+        assert configured.exists()
+        assert (configured / "999").exists()
+        assert "No memory files found" in result
