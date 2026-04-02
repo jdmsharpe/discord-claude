@@ -247,6 +247,13 @@ async def call_api_with_tool_loop(
 
         parsed = extract_response_content(response)
         parsed.stop_reason = response.stop_reason
+        stop_details = getattr(response, "stop_details", None)
+        if stop_details is not None:
+            parsed.stop_details = {
+                "type": getattr(stop_details, "type", None),
+                "category": getattr(stop_details, "category", None),
+                "explanation": getattr(stop_details, "explanation", None),
+            }
         totals.accumulate(getattr(response, "usage", None))
 
         if response.stop_reason == "end_turn":
@@ -348,7 +355,7 @@ async def handle_new_message_in_conversation(cog, message, conversation: Convers
 
         append_thinking_embeds(embeds, parsed.thinking)
         append_response_embeds(embeds, response_text)
-        append_stop_reason_embed(embeds, parsed.stop_reason)
+        append_stop_reason_embed(embeds, parsed.stop_reason, parsed.stop_details)
         if parsed.context_compacted:
             append_compaction_embed(embeds)
         if parsed.context_warning:
@@ -615,7 +622,7 @@ async def run_chat_command(
             )
         append_thinking_embeds(embeds, parsed.thinking)
         append_response_embeds(embeds, response_text)
-        append_stop_reason_embed(embeds, parsed.stop_reason)
+        append_stop_reason_embed(embeds, parsed.stop_reason, parsed.stop_details)
         if parsed.context_compacted:
             append_compaction_embed(embeds)
         if parsed.context_warning:
