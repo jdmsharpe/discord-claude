@@ -102,7 +102,11 @@ def append_citations_embed(embeds: list[Embed], citations: list[dict[str, str]])
     )
 
 
-def append_stop_reason_embed(embeds: list[Embed], stop_reason: str) -> None:
+def append_stop_reason_embed(
+    embeds: list[Embed],
+    stop_reason: str,
+    stop_details: dict[str, str | None] | None = None,
+) -> None:
     """Append a warning embed for non-standard stop reasons."""
     if stop_reason == "max_tokens":
         embeds.append(
@@ -121,10 +125,21 @@ def append_stop_reason_embed(embeds: list[Embed], stop_reason: str) -> None:
             )
         )
     elif stop_reason == "refusal":
+        description = "Claude was unable to fulfill this request."
+        if stop_details:
+            details_lines = []
+            category = stop_details.get("category")
+            explanation = stop_details.get("explanation")
+            if category:
+                details_lines.append(f"Category: `{category}`")
+            if explanation:
+                details_lines.append(f"Explanation: {explanation}")
+            if details_lines:
+                description += "\n\n" + "\n".join(details_lines)
         embeds.append(
             Embed(
                 title="Request Declined",
-                description="Claude was unable to fulfill this request.",
+                description=description,
                 color=Colour.yellow(),
             )
         )

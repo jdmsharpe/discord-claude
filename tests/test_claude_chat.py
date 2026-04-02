@@ -186,6 +186,11 @@ class TestCallApiWithToolLoop:
         text_block.citations = None
         mock_response.content = [text_block]
         mock_response.stop_reason = "refusal"
+        mock_response.stop_details = MagicMock(
+            type="refusal",
+            category="cyber",
+            explanation="This request would facilitate cyber abuse.",
+        )
         mock_response.usage = None
         cog.client.messages.create = AsyncMock(return_value=mock_response)
 
@@ -197,6 +202,11 @@ class TestCallApiWithToolLoop:
         )
 
         assert parsed.stop_reason == "refusal"
+        assert parsed.stop_details == {
+            "type": "refusal",
+            "category": "cyber",
+            "explanation": "This request would facilitate cyber abuse.",
+        }
 
     async def test_context_window_exceeded_stop_reason(self, cog):
         """model_context_window_exceeded stop reason is propagated."""

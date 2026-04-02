@@ -11,6 +11,7 @@ class ParsedResponse:
     citations: list[dict[str, str]] = field(default_factory=list)
     tool_use_blocks: list[Any] = field(default_factory=list)
     stop_reason: str = "end_turn"
+    stop_details: dict[str, str | None] | None = None
     input_tokens: int = 0
     output_tokens: int = 0
     cache_creation_tokens: int = 0

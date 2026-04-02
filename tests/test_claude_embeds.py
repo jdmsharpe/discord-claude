@@ -145,6 +145,24 @@ class TestAppendStopReasonEmbed:
         assert len(embeds) == 1
         assert embeds[0].title == "Request Declined"
 
+    def test_refusal_with_stop_details(self):
+        from discord_claude.cogs.claude.embeds import append_stop_reason_embed
+
+        embeds = []
+        append_stop_reason_embed(
+            embeds,
+            "refusal",
+            {
+                "type": "refusal",
+                "category": "cyber",
+                "explanation": "This request would provide harmful cyber guidance.",
+            },
+        )
+        assert len(embeds) == 1
+        assert embeds[0].title == "Request Declined"
+        assert "Category: `cyber`" in embeds[0].description
+        assert "harmful cyber guidance" in embeds[0].description
+
     def test_pause_turn_no_embed(self):
         from discord_claude.cogs.claude.embeds import append_stop_reason_embed
 
