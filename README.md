@@ -57,18 +57,20 @@ Check if the bot has the necessary permissions in the current channel.
    python -m venv .venv
    source .venv/bin/activate  # On Windows: .venv\Scripts\activate
    ```
-3. Install production dependencies:
+3. Install the package and its runtime dependencies:
    ```bash
    python -m pip install .
    ```
-4. (Optional) Install development and test tools:
-   ```bash
-   python -m pip install -e ".[dev]"
-   ```
-5. Configure your environment variables:
+4. Configure your environment variables:
    ```bash
    cp .env.example .env
    ```
+
+### Contributor Setup
+Install development tooling for tests, linting, and type checking:
+```bash
+python -m pip install -e ".[dev]"
+```
 
 ### Configuration (`.env`)
 | Variable | Required | Description |
@@ -103,7 +105,7 @@ python src/bot.py
 
 **With Docker:**
 ```bash
-docker-compose up -d
+docker compose up -d --build
 ```
 
 ### Using as a Cog
