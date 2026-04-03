@@ -1,7 +1,4 @@
 aiohttp~=3.13
 anthropic~=0.88
 py-cord~=2.7
-pytest~=9.0
-pytest-asyncio~=1.3
 python-dotenv~=1.2
-ruff~=0.15
