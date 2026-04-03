@@ -40,7 +40,16 @@ def _resolve_safe_path(user_id: int, file_path: str) -> Path:
     target = (user_dir / cleaned).resolve()
     user_dir_resolved = user_dir.resolve()
 
-    if not str(target).startswith(str(user_dir_resolved)):
+    try:
+        is_within_user_dir = target.is_relative_to(user_dir_resolved)
+    except AttributeError:
+        try:
+            target.relative_to(user_dir_resolved)
+            is_within_user_dir = True
+        except ValueError:
+            is_within_user_dir = False
+
+    if not is_within_user_dir:
         raise ValueError(f"Path traversal detected: {file_path} resolves outside user directory")
     return target
 
