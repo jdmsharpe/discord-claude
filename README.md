@@ -59,11 +59,11 @@ Check if the bot has the necessary permissions in the current channel.
    ```
 3. Install production dependencies:
    ```bash
-   pip install -r requirements.txt
+   python -m pip install .
    ```
 4. (Optional) Install development and test tools:
    ```bash
-   pip install -r requirements-dev.txt
+   python -m pip install -e ".[dev]"
    ```
 5. Configure your environment variables:
    ```bash
@@ -138,11 +138,12 @@ bot.add_cog(ClaudeCog(bot=bot))
 
 ### Testing
 Tests use `pytest` with `pytest-asyncio` (`asyncio_mode = "auto"`). All tests are mocked (no real API calls).
-Install developer dependencies first with `pip install -r requirements-dev.txt`.
 ```bash
+# Install developer tooling if you have not already
+python -m pip install -e ".[dev]"
+
 # Run tests locally
-.venv/bin/python -m pytest -q            # Unix
-.venv/Scripts/python.exe -m pytest -q    # Windows
+python -m pytest -q
 
 # Run tests in Docker
 docker build --build-arg PYTHON_VERSION=3.10 -f Dockerfile.test -t discord-claude-test:3.10 .

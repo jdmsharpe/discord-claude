@@ -1,4 +1,0 @@
-aiohttp~=3.13
-anthropic~=0.88
-py-cord~=2.7
-python-dotenv~=1.2
