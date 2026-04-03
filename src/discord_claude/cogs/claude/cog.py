@@ -7,7 +7,7 @@ import logging
 from typing import Any
 
 from discord import ApplicationContext, Attachment
-from discord.commands import OptionChoice, SlashCommandGroup, option
+from discord.commands import SlashCommandGroup, option
 from discord.ext import commands
 
 from discord_claude.config.auth import GUILD_IDS, SHOW_COST_EMBEDS, validate_required_config
@@ -42,6 +42,7 @@ from .client import (
     close_http_session,
     get_http_session,
 )
+from .command_options import CHAT_MODEL_CHOICES, RESPONSE_EFFORT_CHOICES, TOOL_CHOICE_CHOICES
 from .embeds import (
     append_citations_embed,
     append_compaction_embed,
@@ -220,14 +221,7 @@ class ClaudeCog(commands.Cog):
         "model",
         description="Choose from the following Claude models. (default: Claude Opus 4.6. warning: Opus is expensive!)",
         required=False,
-        choices=[
-            OptionChoice(name="Claude Opus 4.6", value="claude-opus-4-6"),
-            OptionChoice(name="Claude Sonnet 4.6", value="claude-sonnet-4-6"),
-            OptionChoice(name="Claude Opus 4.5", value="claude-opus-4-5"),
-            OptionChoice(name="Claude Sonnet 4.5", value="claude-sonnet-4-5"),
-            OptionChoice(name="Claude Opus 4.1", value="claude-opus-4-1"),
-            OptionChoice(name="Claude Haiku 4.5", value="claude-haiku-4-5"),
-        ],
+        choices=CHAT_MODEL_CHOICES,
         type=str,
     )
     @option(
@@ -264,11 +258,7 @@ class ClaudeCog(commands.Cog):
         "effort",
         description="Control response effort: low (fast, concise), medium (balanced), high (thorough). (default: not set)",
         required=False,
-        choices=[
-            OptionChoice(name="Low", value="low"),
-            OptionChoice(name="Medium", value="medium"),
-            OptionChoice(name="High", value="high"),
-        ],
+        choices=RESPONSE_EFFORT_CHOICES,
         type=str,
     )
     @option(
@@ -311,10 +301,7 @@ class ClaudeCog(commands.Cog):
         "tool_choice",
         description="Tool behavior when tools are enabled. (default: Anthropic default)",
         required=False,
-        choices=[
-            OptionChoice(name="Auto", value="auto"),
-            OptionChoice(name="None", value="none"),
-        ],
+        choices=TOOL_CHOICE_CHOICES,
         type=str,
     )
     async def chat(

@@ -66,9 +66,7 @@ def _validate_preset(name: str, raw_value: object) -> AnthropicMcpPreset:
     supported_keys = {"url", "authorization_env_var", "allowed_tools", "defer_loading"}
     extra_keys = sorted(set(raw_value) - supported_keys)
     if extra_keys:
-        raise ValueError(
-            f"MCP preset `{name}` contains unsupported keys: {', '.join(extra_keys)}."
-        )
+        raise ValueError(f"MCP preset `{name}` contains unsupported keys: {', '.join(extra_keys)}.")
 
     authorization_env_var = raw_value.get("authorization_env_var")
     if authorization_env_var is not None and not isinstance(authorization_env_var, str):
