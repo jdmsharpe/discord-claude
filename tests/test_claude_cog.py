@@ -3,6 +3,12 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from discord_claude.cogs.claude.command_options import (
+    CHAT_MODEL_CHOICES,
+    RESPONSE_EFFORT_CHOICES,
+    TOOL_CHOICE_CHOICES,
+)
+
 
 def _make_usage(**kwargs):
     """Create a mock usage object with proper numeric values and server_tool_use=None."""
@@ -190,3 +196,17 @@ class TestClaudeCog:
             reply_embed.description
         )
         assert conversation.messages == []
+
+
+def test_critical_choice_values_present():
+    assert any(choice.value == "claude-opus-4-6" for choice in CHAT_MODEL_CHOICES)
+
+
+def test_effort_choice_set():
+    values = {choice.value for choice in RESPONSE_EFFORT_CHOICES}
+    assert values == {"low", "medium", "high"}
+
+
+def test_tool_choice_set():
+    values = {choice.value for choice in TOOL_CHOICE_CHOICES}
+    assert values == {"auto", "none"}

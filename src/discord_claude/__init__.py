@@ -16,6 +16,7 @@ def __getattr__(name: str):
         return ClaudeCog
     raise AttributeError(name)
 
+
 try:
     __version__ = metadata.version("discord-claude")
 except metadata.PackageNotFoundError:
