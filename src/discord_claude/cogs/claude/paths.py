@@ -3,7 +3,7 @@
 import os
 from pathlib import Path
 
-ROOT_DIR = Path(__file__).resolve().parents[2]
+ROOT_DIR = Path(__file__).resolve().parents[4]
 DEFAULT_MEMORIES_BASE_DIR = ROOT_DIR / "memories"
 
 
