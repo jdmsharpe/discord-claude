@@ -57,11 +57,15 @@ Check if the bot has the necessary permissions in the current channel.
    python -m venv .venv
    source .venv/bin/activate  # On Windows: .venv\Scripts\activate
    ```
-3. Install dependencies:
+3. Install production dependencies:
    ```bash
    pip install -r requirements.txt
    ```
-4. Configure your environment variables:
+4. (Optional) Install development and test tools:
+   ```bash
+   pip install -r requirements-dev.txt
+   ```
+5. Configure your environment variables:
    ```bash
    cp .env.example .env
    ```
@@ -134,6 +138,7 @@ bot.add_cog(ClaudeCog(bot=bot))
 
 ### Testing
 Tests use `pytest` with `pytest-asyncio` (`asyncio_mode = "auto"`). All tests are mocked (no real API calls).
+Install developer dependencies first with `pip install -r requirements-dev.txt`.
 ```bash
 # Run tests locally
 .venv/bin/python -m pytest -q            # Unix
