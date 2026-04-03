@@ -1,4 +1,5 @@
 import importlib
+from pathlib import Path
 
 import pytest
 
@@ -337,6 +338,16 @@ class TestInvalidCommand:
 
 class TestConfiguredMemoryPath:
     """Tests for MEMORIES_DIR configuration behavior."""
+
+    def test_default_base_dir_uses_repo_memories_when_env_unset(self, monkeypatch):
+        """Default memory base path resolves to <repo_root>/memories."""
+        monkeypatch.delenv("MEMORIES_DIR", raising=False)
+
+        from discord_claude.cogs.claude import paths as paths_module
+
+        reloaded = importlib.reload(paths_module)
+        expected = Path(__file__).resolve().parents[1] / "memories"
+        assert reloaded.get_memories_base_dir() == expected
 
     def test_memories_dir_env_overrides_default(self, monkeypatch, tmp_path):
         """MEMORIES_DIR env var controls the resolved base path."""
