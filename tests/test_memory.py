@@ -34,6 +34,11 @@ class TestResolveSafePath:
         with pytest.raises(ValueError, match="Path traversal"):
             _resolve_safe_path(123, "/memories/../456/secrets.txt")
 
+    def test_prefix_collision_traversal_blocked(self):
+        """Traversal to a sibling dir with a shared prefix is blocked."""
+        with pytest.raises(ValueError, match="Path traversal"):
+            _resolve_safe_path(12, "/memories/../123/secrets.txt")
+
     def test_empty_path_returns_user_dir(self, tmp_path):
         """Empty path resolves to the user directory."""
         target = _resolve_safe_path(123, "/memories")
