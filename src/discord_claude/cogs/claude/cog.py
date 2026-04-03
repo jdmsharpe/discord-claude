@@ -85,10 +85,8 @@ class ClaudeCog(commands.Cog):
         validate_required_config()
         self.bot = bot
         self.client = build_claude_client()
-        logging.basicConfig(
-            level=logging.DEBUG,
-            format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-        )
+        # Use a module logger only; host applications should configure logging
+        # centrally at process startup (handlers/levels/formatters).
         self.logger = logging.getLogger(__name__)
         self.show_cost_embeds = SHOW_COST_EMBEDS
 
