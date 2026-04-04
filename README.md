@@ -5,7 +5,7 @@
 [![Python](https://img.shields.io/badge/python-3.10%20%7C%203.11%20%7C%203.12%20%7C%203.13-3776AB?logo=python&logoColor=white)](https://www.python.org/downloads/)
 
 ## Overview
-A Discord bot built on Pycord that wraps Anthropic's Claude API, providing an easy-to-use interface for conversing with Claude models directly in Discord.
+A Discord bot built on Pycord 2.0 that wraps Anthropic's Claude API, providing an easy-to-use interface for conversing with Claude models directly in Discord.
 
 ## Features
 - **Multi-turn Conversations:** Start conversations with Claude that maintain context across multiple messages.
