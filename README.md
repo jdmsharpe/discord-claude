@@ -7,9 +7,11 @@
 [![Python](https://img.shields.io/badge/python-3.10%20%7C%203.11%20%7C%203.12%20%7C%203.13-3776AB?logo=python&logoColor=white)](https://www.python.org/downloads/)
 
 ## Overview
+
 A Discord bot built on Pycord 2.0 that wraps Anthropic's Claude API, providing an easy-to-use interface for conversing with Claude models directly in Discord.
 
 ## Features
+
 - **Multi-turn Conversations:** Start conversations with Claude that maintain context across multiple messages.
 - **Multiple Claude Models:** Choose from Claude Opus (4.6, 4.5, 4.1), Sonnet (4.6, 4.5), Haiku (4.5), and Claude Mythos Preview.
 - **Multimodal Input:** Attach images (JPEG, PNG, GIF, WEBP), PDFs, or text files (TXT, MD, CSV).
@@ -25,56 +27,71 @@ A Discord bot built on Pycord 2.0 that wraps Anthropic's Claude API, providing a
 ## Commands
 
 ### `/claude chat`
+
 Start a conversation with Claude.
-* **`prompt`** *(required)*: Your initial message to Claude.
-* **`model`**: Choose the Claude model (default: Claude Opus 4.6).
-* **`system`**: System prompt to set Claude's behavior.
-* **`attachment`**: Attach an image, PDF, or text file.
-* **`max_tokens`**: Maximum tokens in the response (default: 16384).
-* **`web_search` / `web_fetch` / `code_execution` / `memory`**: Toggle individual tools (default: false).
-* **`effort`**: Control response effort — low (fast), medium (balanced), high (thorough).
-* **`thinking_budget`**: Token budget for extended thinking on non-4.6 models.
-* **`tool_choice`**: Tool behavior for enabled tools (`auto` or `none`).
-* **Advanced Tuning**: `temperature`, `top_p`, `top_k`.
-* **`mcp`**: Optional comma-separated MCP preset names (persists for the life of the conversation).
+
+- **`prompt`** *(required)*: Your initial message to Claude.
+- **`model`**: Choose the Claude model (default: Claude Opus 4.6).
+- **`system`**: System prompt to set Claude's behavior.
+- **`attachment`**: Attach an image, PDF, or text file.
+- **`max_tokens`**: Maximum tokens in the response (default: 16384).
+- **`web_search` / `web_fetch` / `code_execution` / `memory`**: Toggle individual tools (default: false).
+- **`effort`**: Control response effort — low (fast), medium (balanced), high (thorough).
+- **`thinking_budget`**: Token budget for extended thinking on non-4.6 models.
+- **`tool_choice`**: Tool behavior for enabled tools (`auto` or `none`).
+- **Advanced Tuning**: `temperature`, `top_p`, `top_k`.
+- **`mcp`**: Optional comma-separated MCP preset names (persists for the life of the conversation).
 
 ### `/claude check_permissions`
+
 Check if the bot has the necessary permissions in the current channel.
 
 ## Setup & Installation
 
 ### Prerequisites
+
 - Python 3.10+
 - Discord Bot Token
 - Anthropic API Key
 
 ### Installation
+
 1. Clone the repository:
+
    ```bash
    git clone https://github.com/jdmsharpe/discord-claude.git
    cd discord-claude
    ```
+
 2. Create and activate a virtual environment:
+
    ```bash
    python -m venv .venv
    source .venv/bin/activate  # On Windows: .venv\Scripts\activate
    ```
+
 3. Install the package and its runtime dependencies:
+
    ```bash
    python -m pip install .
    ```
+
 4. Configure your environment variables:
+
    ```bash
    cp .env.example .env
    ```
 
 ### Contributor Setup
+
 Install development tooling for tests, linting, and type checking:
+
 ```bash
 python -m pip install -e ".[dev]"
 ```
 
 ### Configuration (`.env`)
+
 | Variable | Required | Description |
 | --- | --- | --- |
 | `BOT_TOKEN` | **Yes** | Your Discord bot token |
@@ -82,11 +99,13 @@ python -m pip install -e ".[dev]"
 | `ANTHROPIC_API_KEY` | **Yes** | Your Anthropic API key |
 | `SHOW_COST_EMBEDS` | No | Show cost/spend embeds (`true`, `1`, or `yes` to enable) (Default: `true`) |
 | `MEMORIES_DIR` | No | Directory for per-user memory files (Default: `./memories`) |
-| `ANTHROPIC_MCP_PRESETS_JSON`| No | Inline JSON object of named MCP presets |
-| `ANTHROPIC_MCP_PRESETS_PATH`| No | Path to a JSON file of named MCP presets |
+| `ANTHROPIC_MCP_PRESETS_JSON` | No | Inline JSON object of named MCP presets |
+| `ANTHROPIC_MCP_PRESETS_PATH` | No | Path to a JSON file of named MCP presets |
 
 #### MCP Setup
+
 Configure named presets in `ANTHROPIC_MCP_PRESETS_JSON` or `ANTHROPIC_MCP_PRESETS_PATH`. Duplicate names across both sources are rejected. Example schema:
+
 ```json
 {
   "github": {
@@ -99,19 +118,25 @@ Configure named presets in `ANTHROPIC_MCP_PRESETS_JSON` or `ANTHROPIC_MCP_PRESET
 ```
 
 ### Running the Bot
+
 **Locally:**
+
 ```bash
 python src/bot.py
 ```
+
 *(Note: `src/bot.py` is a thin launcher that delegates to `discord_claude.bot.main`)*
 
 **With Docker:**
+
 ```bash
 docker compose up -d --build
 ```
 
 ### Using as a Cog
+
 To compose this repo into a larger bot, import the namespaced package:
+
 ```python
 from discord_claude import ClaudeCog
 
@@ -119,6 +144,7 @@ bot.add_cog(ClaudeCog(bot=bot))
 ```
 
 ## Discord Bot Setup
+
 1. Go to the [Discord Developer Portal](https://discord.com/developers/applications).
 2. Create a new application and add a bot in the "Bot" section.
 3. Enable **Server Members Intent** and **Message Content Intent** under Privileged Gateway Intents.
@@ -129,6 +155,7 @@ bot.add_cog(ClaudeCog(bot=bot))
 8. Use the generated URL to invite the bot to your server.
 
 ## Usage
+
 1. Use `/claude chat` to start a conversation.
 2. Type messages in the same channel to continue the conversation seamlessly.
 3. Use the interactive controls below the message to:
@@ -142,7 +169,9 @@ bot.add_cog(ClaudeCog(bot=bot))
 ## Development
 
 ### Testing
+
 Tests use `pytest` with `pytest-asyncio` (`asyncio_mode = "auto"`). All tests are mocked (no real API calls).
+
 ```bash
 # Install developer tooling if you have not already
 python -m pip install -e ".[dev]"
@@ -159,12 +188,15 @@ docker run --rm discord-claude-test:3.10 sh -lc 'ruff check src tests && ruff fo
 ```
 
 ### Linting & Type Checking
+
 ```bash
 ruff check src tests
 ruff format --check src tests
 pyright
 ```
+
 *Run `git config core.hooksPath .githooks` after cloning to enable the pre-commit hook.*
 
 ## License
+
 MIT License - see [LICENSE](LICENSE) for details.
