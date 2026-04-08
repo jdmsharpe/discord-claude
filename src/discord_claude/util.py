@@ -41,6 +41,7 @@ EXTENDED_THINKING_MODELS = {
 
 # Per-million-token pricing: (input_cost, output_cost)
 MODEL_PRICING: dict[str, tuple[float, float]] = {
+    "claude-mythos-preview": (25.0, 125.0),
     "claude-opus-4-6": (5.0, 25.0),
     "claude-opus-4-5": (5.0, 25.0),
     "claude-opus-4-1": (15.0, 75.0),

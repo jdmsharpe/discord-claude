@@ -11,7 +11,7 @@ A Discord bot built on Pycord 2.0 that wraps Anthropic's Claude API, providing a
 
 ## Features
 - **Multi-turn Conversations:** Start conversations with Claude that maintain context across multiple messages.
-- **Multiple Claude Models:** Choose from Claude Opus (4.6, 4.5, 4.1), Sonnet (4.6, 4.5), and Haiku (4.5).
+- **Multiple Claude Models:** Choose from Claude Opus (4.6, 4.5, 4.1), Sonnet (4.6, 4.5), Haiku (4.5), and Claude Mythos Preview.
 - **Multimodal Input:** Attach images (JPEG, PNG, GIF, WEBP), PDFs, or text files (TXT, MD, CSV).
 - **Built-In Tools:** Enable web search, web fetch, code execution, and memory with `tool_choice` control (`auto` / `none`) and mid-conversation toggles.
 - **Remote MCP Support:** Enable trusted remote MCP servers per conversation through named presets, featuring optional authorization, allow-lists, and deferred tool loading.
@@ -137,6 +137,7 @@ bot.add_cog(ClaudeCog(bot=bot))
    - ⏹️ End the conversation
    - 🔧 Toggle built-in tools mid-conversation via the select menu.
 4. **Note on MCP:** If MCP presets are enabled, the bot adds an explicit MCP safety note to the opening embeds and keeps those presets active until the conversation ends.
+5. **Note on Mythos Preview:** Anthropic currently treats `claude-mythos-preview` as a restricted preview model, so access may depend on your Anthropic account or program enrollment.
 
 ## Development
 
