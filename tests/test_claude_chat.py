@@ -336,6 +336,18 @@ class TestRunChatCommand:
         assert "Unknown MCP preset `bad`." in call_kwargs["embed"].description
         assert cog.client.messages.create.call_args is None
 
+    async def test_chat_rejects_unsupported_advisor_model(self, cog, mock_discord_context):
+        await cog.chat.callback(
+            cog,
+            ctx=mock_discord_context,
+            prompt="Hello",
+            model="claude-opus-4-5",
+            advisor=True,
+        )
+
+        call_kwargs = mock_discord_context.send_followup.call_args[1]
+        assert "Advisor is not supported" in call_kwargs["embed"].description
+
     async def test_context_editing_with_tools(self, cog):
         """Models with tools get context editing via beta API."""
         mock_response = MagicMock()
@@ -363,6 +375,76 @@ class TestRunChatCommand:
         edits = call_kwargs["context_management"]["edits"]
         tool_edits = [edit for edit in edits if edit["type"] == "clear_tool_uses_20250919"]
         assert len(tool_edits) == 1
+
+    async def test_advisor_uses_beta_api_without_clear_tool_uses(self, cog):
+        """Advisor requests opt into the beta header and skip clear_tool_uses edits."""
+        mock_response = MagicMock()
+        text_block = MagicMock()
+        text_block.type = "text"
+        text_block.text = "Hello!"
+        text_block.citations = None
+        mock_response.content = [text_block]
+        mock_response.stop_reason = "end_turn"
+        mock_response.usage = None
+        cog.client.beta.messages.create = AsyncMock(return_value=mock_response)
+
+        messages = [{"role": "user", "content": "Hi"}]
+        api_params = {
+            "model": "claude-sonnet-4-6",
+            "max_tokens": 1024,
+            "tools": [
+                {
+                    "type": "advisor_20260301",
+                    "name": "advisor",
+                    "model": "claude-opus-4-6",
+                    "max_uses": 3,
+                }
+            ],
+        }
+
+        await cog._call_api_with_tool_loop(api_params=api_params, messages=messages, user_id=123)
+
+        cog.client.beta.messages.create.assert_called_once()
+        call_kwargs = cog.client.beta.messages.create.call_args[1]
+        assert "advisor-tool-2026-03-01" in call_kwargs["betas"]
+        context_management = call_kwargs.get("context_management")
+        edits = [] if context_management is None else context_management.get("edits", [])
+        assert all(edit["type"] != "clear_tool_uses_20250919" for edit in edits)
+
+    async def test_advisor_on_non_compaction_model_uses_beta_api_without_context_management(
+        self, cog
+    ):
+        """Advisor-only Haiku requests should use beta API without context-management edits."""
+        mock_response = MagicMock()
+        text_block = MagicMock()
+        text_block.type = "text"
+        text_block.text = "Hello!"
+        text_block.citations = None
+        mock_response.content = [text_block]
+        mock_response.stop_reason = "end_turn"
+        mock_response.usage = None
+        cog.client.beta.messages.create = AsyncMock(return_value=mock_response)
+
+        messages = [{"role": "user", "content": "Hi"}]
+        api_params = {
+            "model": "claude-haiku-4-5",
+            "max_tokens": 1024,
+            "tools": [
+                {
+                    "type": "advisor_20260301",
+                    "name": "advisor",
+                    "model": "claude-opus-4-6",
+                    "max_uses": 3,
+                }
+            ],
+        }
+
+        await cog._call_api_with_tool_loop(api_params=api_params, messages=messages, user_id=123)
+
+        cog.client.beta.messages.create.assert_called_once()
+        call_kwargs = cog.client.beta.messages.create.call_args[1]
+        assert call_kwargs["betas"] == ["advisor-tool-2026-03-01"]
+        assert call_kwargs.get("context_management") is None
 
     async def test_context_editing_with_thinking(self, cog):
         """Models with thinking get thinking block clearing."""
@@ -435,6 +517,60 @@ class TestRunChatCommand:
         assert parsed.output_tokens == 80
         assert parsed.cache_creation_tokens == 200
         assert parsed.cache_read_tokens == 200
+
+    async def test_advisor_iterations_are_accumulated(self, cog):
+        """Advisor token usage is tracked from usage.iterations."""
+        mock_response = MagicMock()
+        text_block = MagicMock()
+        text_block.type = "text"
+        text_block.text = "Done!"
+        text_block.citations = None
+        mock_response.content = [text_block]
+        mock_response.stop_reason = "end_turn"
+        mock_response.usage = MagicMock(
+            iterations=[
+                MagicMock(
+                    type="message",
+                    input_tokens=100,
+                    output_tokens=50,
+                    cache_creation_input_tokens=0,
+                    cache_read_input_tokens=0,
+                ),
+                MagicMock(
+                    type="advisor_message",
+                    input_tokens=250,
+                    output_tokens=600,
+                    cache_creation_input_tokens=75,
+                    cache_read_input_tokens=20,
+                ),
+                MagicMock(
+                    type="message",
+                    input_tokens=30,
+                    output_tokens=15,
+                    cache_creation_input_tokens=0,
+                    cache_read_input_tokens=10,
+                ),
+            ],
+            server_tool_use=None,
+        )
+
+        cog.client.messages.create = AsyncMock(return_value=mock_response)
+
+        messages = [{"role": "user", "content": "Hi"}]
+        api_params = {"model": "claude-haiku-4-5", "max_tokens": 1024}
+
+        parsed = await cog._call_api_with_tool_loop(
+            api_params=api_params, messages=messages, user_id=123
+        )
+
+        assert parsed.input_tokens == 130
+        assert parsed.output_tokens == 65
+        assert parsed.cache_read_tokens == 10
+        assert parsed.advisor_calls == 1
+        assert parsed.advisor_input_tokens == 250
+        assert parsed.advisor_output_tokens == 600
+        assert parsed.advisor_cache_creation_tokens == 75
+        assert parsed.advisor_cache_read_tokens == 20
 
     async def test_server_tool_use_accumulated(self, cog):
         """Server tool use counts are accumulated across iterations."""

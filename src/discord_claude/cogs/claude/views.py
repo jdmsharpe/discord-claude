@@ -99,7 +99,9 @@ class ButtonView(View):
                 conversation.params.tool_choice = {"type": "auto"}
             else:
                 conversation.params.tools = []
-                if getattr(conversation.params, "mcp_preset_names", []):
+                advisor_model = getattr(conversation.params, "advisor_model", None)
+                has_advisor = isinstance(advisor_model, str) and bool(advisor_model.strip())
+                if getattr(conversation.params, "mcp_preset_names", []) or has_advisor:
                     conversation.params.tool_choice = {"type": "auto"}
                 else:
                     conversation.params.tool_choice = {"type": "none"}

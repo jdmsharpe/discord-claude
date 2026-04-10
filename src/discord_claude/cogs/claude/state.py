@@ -3,10 +3,49 @@ from typing import Any
 
 from discord import Member, User
 
-from discord_claude.util import COMPACTION_SUMMARY_MODEL, ConversationKey, calculate_cost
+from discord_claude.util import (
+    ADVISOR_TOOL_NAME,
+    COMPACTION_SUMMARY_MODEL,
+    ConversationKey,
+    calculate_cost,
+)
 
 from .responses import ParsedResponse
 from .views import ButtonView
+
+
+def _copy_messages_without_advisor_blocks(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Clone message history while removing advisor-only transcript blocks.
+
+    Anthropic requires the advisor tool definition to be present when replaying
+    `advisor_tool_result` blocks. Manual compaction replays history without tools,
+    so we strip those blocks for the summarization pass.
+    """
+    sanitized_messages: list[dict[str, Any]] = []
+    for message in messages:
+        content = message.get("content")
+        if not isinstance(content, list):
+            sanitized_messages.append(dict(message))
+            continue
+
+        filtered_content = []
+        for block in content:
+            block_type = getattr(block, "type", None)
+            block_name = getattr(block, "name", None)
+            if isinstance(block, dict):
+                block_type = block.get("type")
+                block_name = block.get("name")
+            if block_type == "advisor_tool_result":
+                continue
+            if block_type == "server_tool_use" and block_name == ADVISOR_TOOL_NAME:
+                continue
+            filtered_content.append(block)
+
+        sanitized_message = dict(message)
+        sanitized_message["content"] = filtered_content
+        sanitized_messages.append(sanitized_message)
+
+    return sanitized_messages
 
 
 async def compact_conversation(
@@ -26,7 +65,9 @@ async def compact_conversation(
         "Wrap your summary in <summary></summary> tags."
     )
 
-    summary_messages = list(messages) + [{"role": "user", "content": summary_prompt}]
+    summary_messages = _copy_messages_without_advisor_blocks(messages) + [
+        {"role": "user", "content": summary_prompt}
+    ]
     create_kwargs: dict[str, Any] = {
         "model": COMPACTION_SUMMARY_MODEL,
         "max_tokens": 4096,
@@ -75,6 +116,7 @@ def track_daily_cost(
     user_id: int,
     model: str,
     parsed: ParsedResponse,
+    advisor_model: str | None = None,
 ) -> tuple[float, float]:
     """Add this request's cost to the user's daily total and return request and daily totals."""
     cost = calculate_cost(
@@ -85,6 +127,14 @@ def track_daily_cost(
         parsed.cache_read_tokens,
         parsed.web_search_requests,
     )
+    if advisor_model and parsed.advisor_calls:
+        cost += calculate_cost(
+            advisor_model,
+            parsed.advisor_input_tokens,
+            parsed.advisor_output_tokens,
+            parsed.advisor_cache_creation_tokens,
+            parsed.advisor_cache_read_tokens,
+        )
     key = (user_id, date.today().isoformat())
     cog.daily_costs[key] = cog.daily_costs.get(key, 0.0) + cost
 
@@ -92,6 +142,9 @@ def track_daily_cost(
         "COST | command=chat | user=%s | model=%s"
         " | input=%d | output=%d"
         " | cache_write=%d | cache_read=%d"
+        " | advisor=%s | advisor_calls=%d"
+        " | advisor_input=%d | advisor_output=%d"
+        " | advisor_cache_write=%d | advisor_cache_read=%d"
         " | web_searches=%d | web_fetches=%d | code_execs=%d"
         " | cost=$%.4f | daily=$%.4f",
         user_id,
@@ -100,6 +153,12 @@ def track_daily_cost(
         parsed.output_tokens,
         parsed.cache_creation_tokens,
         parsed.cache_read_tokens,
+        advisor_model or "none",
+        parsed.advisor_calls,
+        parsed.advisor_input_tokens,
+        parsed.advisor_output_tokens,
+        parsed.advisor_cache_creation_tokens,
+        parsed.advisor_cache_read_tokens,
         parsed.web_search_requests,
         parsed.web_fetch_requests,
         parsed.code_execution_requests,
@@ -133,6 +192,7 @@ def create_button_view(
 
 
 __all__ = [
+    "_copy_messages_without_advisor_blocks",
     "cleanup_conversation",
     "compact_conversation",
     "create_button_view",

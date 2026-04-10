@@ -128,6 +128,7 @@ class TestChatCompletionParameters:
         assert params.paused is False
         assert params.tools == []
         assert params.mcp_preset_names == []
+        assert params.advisor_model is None
         assert params.tool_choice is None
 
     def test_tools_isolation_between_instances(self):
@@ -316,6 +317,48 @@ class TestUsageTotals:
         assert totals.web_fetch_requests == 1
         assert totals.code_execution_requests == 0
 
+    def test_accumulate_advisor_iterations(self):
+        """Advisor iterations are billed separately from executor iterations."""
+        totals = UsageTotals()
+        usage = MagicMock(
+            iterations=[
+                MagicMock(
+                    type="message",
+                    input_tokens=120,
+                    output_tokens=40,
+                    cache_creation_input_tokens=0,
+                    cache_read_input_tokens=10,
+                ),
+                MagicMock(
+                    type="advisor_message",
+                    input_tokens=300,
+                    output_tokens=700,
+                    cache_creation_input_tokens=50,
+                    cache_read_input_tokens=25,
+                ),
+                MagicMock(
+                    type="message",
+                    input_tokens=80,
+                    output_tokens=60,
+                    cache_creation_input_tokens=5,
+                    cache_read_input_tokens=0,
+                ),
+            ],
+            server_tool_use=None,
+        )
+
+        totals.accumulate(usage)
+
+        assert totals.input_tokens == 200
+        assert totals.output_tokens == 100
+        assert totals.cache_creation_tokens == 5
+        assert totals.cache_read_tokens == 10
+        assert totals.advisor_calls == 1
+        assert totals.advisor_input_tokens == 300
+        assert totals.advisor_output_tokens == 700
+        assert totals.advisor_cache_creation_tokens == 50
+        assert totals.advisor_cache_read_tokens == 25
+
     def test_apply_to_sets_all_fields(self):
         """apply_to stamps all fields onto a target object."""
         totals = UsageTotals(
@@ -334,6 +377,7 @@ class TestUsageTotals:
         assert target.output_tokens == 50
         assert target.context_compacted is True
         assert target.context_warning is False  # 100 < 200_000 * 0.85
+        assert target.advisor_calls == 0
 
     def test_apply_to_context_warning(self):
         """context_warning is True when input tokens exceed 85% of window."""
