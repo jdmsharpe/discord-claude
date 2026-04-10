@@ -226,7 +226,7 @@ class ClaudeCog(commands.Cog):
     )
     @option(
         "attachment",
-        description="Attach an image (JPEG, PNG, GIF, WEBP), a PDF, a text document, or a code file.",
+        description="Attach an image, PDF, text document, or code file. (default: not set)",
         required=False,
         type=Attachment,
     )
@@ -293,7 +293,7 @@ class ClaudeCog(commands.Cog):
     )
     @option(
         "mcp",
-        description="Optional comma-separated MCP preset names to enable for this conversation.",
+        description="Comma-separated MCP preset names to enable. (default: not set)",
         required=False,
         type=str,
     )
