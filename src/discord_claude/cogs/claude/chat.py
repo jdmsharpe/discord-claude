@@ -8,6 +8,11 @@ from discord import ApplicationContext, Attachment, Colour, Embed
 from discord_claude.config.auth import SHOW_COST_EMBEDS
 from discord_claude.config.mcp import parse_mcp_preset_names, resolve_mcp_presets
 from discord_claude.util import (
+    ADVISOR_BETA,
+    ADVISOR_MAX_USES,
+    ADVISOR_MODEL_COMPATIBILITY,
+    ADVISOR_TOOL_NAME,
+    ADVISOR_TOOL_TYPE,
     ADAPTIVE_THINKING_MODELS,
     CACHE_TTL,
     COMPACTION_MODELS,
@@ -20,6 +25,7 @@ from discord_claude.util import (
     ToolChoice,
     UsageTotals,
     format_anthropic_error,
+    get_default_advisor_model,
     truncate_text,
 )
 
@@ -76,11 +82,34 @@ def build_thinking_config(params: ChatCompletionParameters) -> dict[str, Any] | 
 def validate_request_configuration(params: ChatCompletionParameters) -> str | None:
     """Validate request options before dispatching to Anthropic."""
     tool_choice = params.tool_choice
+    has_thinking = build_thinking_config(params) is not None
+    advisor_model = params.advisor_model
+
+    if advisor_model is not None:
+        compatible_models = ADVISOR_MODEL_COMPATIBILITY.get(params.model)
+        if not compatible_models:
+            supported_models = ", ".join(sorted(ADVISOR_MODEL_COMPATIBILITY))
+            return (
+                f"Advisor is not supported for `{params.model}`. "
+                f"Supported executor models: {supported_models}."
+            )
+        if advisor_model not in compatible_models:
+            supported_advisors = ", ".join(compatible_models)
+            return (
+                f"Advisor model `{advisor_model}` is not supported for `{params.model}`. "
+                f"Supported advisor models: {supported_advisors}."
+            )
+
     if tool_choice is None:
         return None
 
     choice_type = tool_choice["type"]
-    has_thinking = build_thinking_config(params) is not None
+
+    if advisor_model is not None and choice_type == "none":
+        return (
+            "Advisor requires tool behavior `auto` or Anthropic default. "
+            "Tool behavior `none` disables advisor calls."
+        )
 
     if has_thinking and choice_type in {"any", "tool"}:
         return (
@@ -134,6 +163,15 @@ def build_api_params(
         raise ValueError(mcp_error)
 
     api_tools = get_anthropic_tools(params.tools)
+    if params.advisor_model is not None:
+        api_tools.append(
+            {
+                "type": ADVISOR_TOOL_TYPE,
+                "name": ADVISOR_TOOL_NAME,
+                "model": params.advisor_model,
+                "max_uses": ADVISOR_MAX_USES,
+            }
+        )
     if mcp_presets:
         api_params["mcp_servers"] = []
         for preset in mcp_presets:
@@ -173,6 +211,16 @@ def build_api_params(
     return api_params
 
 
+def _is_advisor_tool(tool_definition: Any) -> bool:
+    """Return True when the tool definition is the advisor beta tool."""
+    if not isinstance(tool_definition, dict):
+        return False
+    return (
+        tool_definition.get("type") == ADVISOR_TOOL_TYPE
+        and tool_definition.get("name") == ADVISOR_TOOL_NAME
+    )
+
+
 async def call_api_with_tool_loop(
     cog,
     api_params: dict[str, Any],
@@ -183,7 +231,9 @@ async def call_api_with_tool_loop(
     """Call the Anthropic API, handling tool-use loops and context management."""
     model = api_params.get("model", "")
     use_compaction = model in COMPACTION_MODELS
-    has_tools = bool(api_params.get("tools"))
+    tools = api_params.get("tools") or []
+    has_tools = bool(tools)
+    has_advisor = any(_is_advisor_tool(tool) for tool in tools)
     has_thinking = bool(api_params.get("thinking"))
     has_mcp = bool(api_params.get("mcp_servers"))
 
@@ -196,7 +246,7 @@ async def call_api_with_tool_loop(
                 "keep": {"type": "thinking_turns", "value": 2},
             }
         )
-    if has_tools:
+    if has_tools and not has_advisor:
         edits.append(
             {
                 "type": "clear_tool_uses_20250919",
@@ -206,6 +256,8 @@ async def call_api_with_tool_loop(
         )
     if edits:
         betas.append("context-management-2025-06-27")
+    if has_advisor:
+        betas.append(ADVISOR_BETA)
     if has_mcp:
         betas.append("mcp-client-2025-11-20")
     if use_compaction:
@@ -362,7 +414,12 @@ async def handle_new_message_in_conversation(cog, message, conversation: Convers
             append_context_warning_embed(embeds)
         append_citations_embed(embeds, parsed.citations)
 
-        request_cost, daily_cost = cog._track_daily_cost(message.author.id, params.model, parsed)
+        request_cost, daily_cost = cog._track_daily_cost(
+            message.author.id,
+            params.model,
+            parsed,
+            advisor_model=params.advisor_model,
+        )
         if SHOW_COST_EMBEDS:
             append_pricing_embed(embeds, parsed, request_cost, daily_cost)
 
@@ -471,6 +528,7 @@ async def run_chat_command(
     web_fetch: bool = False,
     code_execution: bool = False,
     memory: bool = False,
+    advisor: bool = False,
     mcp: str | None = None,
     tool_choice: str | None = None,
 ) -> None:
@@ -510,6 +568,20 @@ async def run_chat_command(
             enabled_tools.append("code_execution")
         if memory:
             enabled_tools.append("memory")
+        advisor_model = get_default_advisor_model(model) if advisor else None
+        if advisor and advisor_model is None:
+            supported_models = ", ".join(sorted(ADVISOR_MODEL_COMPATIBILITY))
+            await ctx.send_followup(
+                embed=Embed(
+                    title="Unsupported Tool Configuration",
+                    description=(
+                        f"Advisor is not supported for `{model}`. "
+                        f"Supported executor models: {supported_models}."
+                    ),
+                    color=Colour.red(),
+                )
+            )
+            return
         mcp_preset_names = parse_mcp_preset_names(mcp)
         _, mcp_error = resolve_mcp_presets(mcp_preset_names)
         if mcp_error:
@@ -557,6 +629,7 @@ async def run_chat_command(
             conversation_id=ctx.interaction.id,
             tools=enabled_tools,
             mcp_preset_names=mcp_preset_names,
+            advisor_model=advisor_model,
             tool_choice=resolved_tool_choice,
         )
 
@@ -599,6 +672,8 @@ async def run_chat_command(
             description += f"**Tools:** {', '.join(enabled_tools)}\n"
         if mcp_preset_names:
             description += f"**MCP Presets:** {', '.join(mcp_preset_names)}\n"
+        if advisor_model is not None:
+            description += f"**Advisor:** {advisor_model} (beta)\n"
         if resolved_tool_choice is not None:
             description += f"**Tool Choice:** {resolved_tool_choice['type']}\n"
 
@@ -629,7 +704,12 @@ async def run_chat_command(
             append_context_warning_embed(embeds)
         append_citations_embed(embeds, parsed.citations)
 
-        request_cost, daily_cost = cog._track_daily_cost(ctx.author.id, model, parsed)
+        request_cost, daily_cost = cog._track_daily_cost(
+            ctx.author.id,
+            model,
+            parsed,
+            advisor_model=advisor_model,
+        )
         if SHOW_COST_EMBEDS:
             append_pricing_embed(embeds, parsed, request_cost, daily_cost)
 

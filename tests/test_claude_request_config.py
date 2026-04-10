@@ -50,6 +50,58 @@ class TestToolChoiceSupport:
         assert "tool_choice" not in api_params
         assert "tools" not in api_params
 
+    def test_build_api_params_includes_advisor_tool(self):
+        from discord_claude.cogs.claude.cog import ClaudeCog
+        from discord_claude.util import ChatCompletionParameters
+
+        params = ChatCompletionParameters(
+            model="claude-sonnet-4-6",
+            advisor_model="claude-opus-4-6",
+        )
+
+        api_params = ClaudeCog._build_api_params(
+            params,
+            [{"role": "user", "content": "Hello"}],
+        )
+
+        assert api_params["tools"] == [
+            {
+                "type": "advisor_20260301",
+                "name": "advisor",
+                "model": "claude-opus-4-6",
+                "max_uses": 3,
+            }
+        ]
+
+    def test_validate_request_configuration_rejects_unsupported_advisor_executor(self):
+        from discord_claude.cogs.claude.cog import ClaudeCog
+        from discord_claude.util import ChatCompletionParameters
+
+        params = ChatCompletionParameters(
+            model="claude-opus-4-5",
+            advisor_model="claude-opus-4-6",
+        )
+
+        error = ClaudeCog._validate_request_configuration(params)
+
+        assert error is not None
+        assert "Advisor is not supported" in error
+
+    def test_validate_request_configuration_rejects_tool_choice_none_with_advisor(self):
+        from discord_claude.cogs.claude.cog import ClaudeCog
+        from discord_claude.util import ChatCompletionParameters
+
+        params = ChatCompletionParameters(
+            model="claude-sonnet-4-6",
+            advisor_model="claude-opus-4-6",
+            tool_choice={"type": "none"},
+        )
+
+        error = ClaudeCog._validate_request_configuration(params)
+
+        assert error is not None
+        assert "disables advisor calls" in error
+
     def test_validate_request_configuration_rejects_forced_any_with_thinking(self):
         from discord_claude.cogs.claude.cog import ClaudeCog
         from discord_claude.util import ChatCompletionParameters

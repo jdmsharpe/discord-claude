@@ -185,6 +185,10 @@ def append_pricing_embed(
     ]
     if parsed.cache_read_tokens:
         parts.append(f"{parsed.cache_read_tokens:,} cached")
+    if parsed.advisor_calls:
+        parts.append(
+            f"advisor {parsed.advisor_calls} call{'s' if parsed.advisor_calls != 1 else ''}"
+        )
     if parsed.web_search_requests:
         parts.append(
             f"{parsed.web_search_requests} search{'es' if parsed.web_search_requests != 1 else ''}"

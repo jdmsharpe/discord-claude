@@ -19,6 +19,11 @@ class ParsedResponse:
     web_search_requests: int = 0
     web_fetch_requests: int = 0
     code_execution_requests: int = 0
+    advisor_calls: int = 0
+    advisor_input_tokens: int = 0
+    advisor_output_tokens: int = 0
+    advisor_cache_creation_tokens: int = 0
+    advisor_cache_read_tokens: int = 0
     context_warning: bool = False
     context_compacted: bool = False
 
@@ -75,6 +80,8 @@ def extract_response_content(response) -> ParsedResponse:
                         )
         elif block.type == "tool_use":
             tool_use_blocks.append(block)
+        elif block.type == "advisor_tool_result":
+            continue
         elif block.type.startswith("mcp_"):
             continue
 

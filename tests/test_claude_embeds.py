@@ -218,6 +218,14 @@ class TestAppendPricingEmbed:
         append_pricing_embed(embeds, parsed, request_cost=0.01, daily_cost=0.10)
         assert "3 searches" in embeds[0].description
 
+    def test_pricing_embed_with_advisor_calls(self):
+        from discord_claude.cogs.claude.embeds import append_pricing_embed
+
+        embeds = []
+        parsed = self._make_parsed(advisor_calls=2)
+        append_pricing_embed(embeds, parsed, request_cost=0.15, daily_cost=0.35)
+        assert "advisor 2 calls" in embeds[0].description
+
     def test_pricing_embed_single_search_no_plural(self):
         from discord_claude.cogs.claude.embeds import append_pricing_embed
 

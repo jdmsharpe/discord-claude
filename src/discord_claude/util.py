@@ -10,6 +10,16 @@ CHUNK_TEXT_SIZE = 3500  # Maximum number of characters in each text chunk.
 
 CACHE_TTL = "1h"  # 1-hour TTL for prompt caching (2x base input price for writes)
 
+ADVISOR_BETA = "advisor-tool-2026-03-01"
+ADVISOR_TOOL_TYPE = "advisor_20260301"
+ADVISOR_TOOL_NAME = "advisor"
+ADVISOR_MAX_USES = 3
+ADVISOR_MODEL_COMPATIBILITY: dict[str, tuple[str, ...]] = {
+    "claude-haiku-4-5": ("claude-opus-4-6",),
+    "claude-sonnet-4-6": ("claude-opus-4-6",),
+    "claude-opus-4-6": ("claude-opus-4-6",),
+}
+
 # Models that support adaptive thinking
 ADAPTIVE_THINKING_MODELS = {"claude-opus-4-6", "claude-sonnet-4-6"}
 
@@ -87,6 +97,14 @@ def calculate_cost(
     )
 
 
+def get_default_advisor_model(executor_model: str) -> str | None:
+    """Return the default compatible advisor model for an executor model."""
+    compatible_models = ADVISOR_MODEL_COMPATIBILITY.get(executor_model)
+    if not compatible_models:
+        return None
+    return compatible_models[0]
+
+
 @dataclass
 class UsageTotals:
     """Accumulates token/tool usage across multiple API iterations."""
@@ -98,16 +116,46 @@ class UsageTotals:
     web_search_requests: int = 0
     web_fetch_requests: int = 0
     code_execution_requests: int = 0
+    advisor_calls: int = 0
+    advisor_input_tokens: int = 0
+    advisor_output_tokens: int = 0
+    advisor_cache_creation_tokens: int = 0
+    advisor_cache_read_tokens: int = 0
     context_compacted: bool = False
+
+    def _accumulate_executor_usage(self, usage: Any) -> None:
+        """Add usage billed at the executor model's rates."""
+        self.input_tokens += getattr(usage, "input_tokens", 0) or 0
+        self.output_tokens += getattr(usage, "output_tokens", 0) or 0
+        self.cache_creation_tokens += getattr(usage, "cache_creation_input_tokens", 0) or 0
+        self.cache_read_tokens += getattr(usage, "cache_read_input_tokens", 0) or 0
+
+    def _accumulate_advisor_usage(self, usage: Any) -> None:
+        """Add usage billed at the advisor model's rates."""
+        self.advisor_calls += 1
+        self.advisor_input_tokens += getattr(usage, "input_tokens", 0) or 0
+        self.advisor_output_tokens += getattr(usage, "output_tokens", 0) or 0
+        self.advisor_cache_creation_tokens += (
+            getattr(usage, "cache_creation_input_tokens", 0) or 0
+        )
+        self.advisor_cache_read_tokens += getattr(usage, "cache_read_input_tokens", 0) or 0
 
     def accumulate(self, usage: Any) -> None:
         """Add a single API response's usage to running totals."""
         if usage is None:
             return
-        self.input_tokens += getattr(usage, "input_tokens", 0)
-        self.output_tokens += getattr(usage, "output_tokens", 0)
-        self.cache_creation_tokens += getattr(usage, "cache_creation_input_tokens", 0) or 0
-        self.cache_read_tokens += getattr(usage, "cache_read_input_tokens", 0) or 0
+
+        iterations = getattr(usage, "iterations", None)
+        if isinstance(iterations, (list, tuple)):
+            for iteration in iterations:
+                iteration_type = getattr(iteration, "type", None)
+                if iteration_type == "advisor_message":
+                    self._accumulate_advisor_usage(iteration)
+                elif iteration_type == "message":
+                    self._accumulate_executor_usage(iteration)
+        else:
+            self._accumulate_executor_usage(usage)
+
         server_tool_use = getattr(usage, "server_tool_use", None)
         if server_tool_use:
             self.web_search_requests += getattr(server_tool_use, "web_search_requests", 0) or 0
@@ -125,6 +173,11 @@ class UsageTotals:
         parsed.web_search_requests = self.web_search_requests
         parsed.web_fetch_requests = self.web_fetch_requests
         parsed.code_execution_requests = self.code_execution_requests
+        parsed.advisor_calls = self.advisor_calls
+        parsed.advisor_input_tokens = self.advisor_input_tokens
+        parsed.advisor_output_tokens = self.advisor_output_tokens
+        parsed.advisor_cache_creation_tokens = self.advisor_cache_creation_tokens
+        parsed.advisor_cache_read_tokens = self.advisor_cache_read_tokens
         parsed.context_compacted = self.context_compacted
         parsed.context_warning = self.input_tokens > context_window * CONTEXT_WARNING_THRESHOLD
 
@@ -175,6 +228,7 @@ class ChatCompletionParameters:
     paused: bool | None = False
     tools: list[str] = field(default_factory=list)
     mcp_preset_names: list[str] = field(default_factory=list)
+    advisor_model: str | None = None
     tool_choice: ToolChoice | None = None
 
 

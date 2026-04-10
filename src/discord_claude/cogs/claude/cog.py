@@ -123,8 +123,9 @@ class ClaudeCog(commands.Cog):
         user_id: int,
         model: str,
         parsed: ParsedResponse,
+        advisor_model: str | None = None,
     ) -> tuple[float, float]:
-        return track_daily_cost(self, user_id, model, parsed)
+        return track_daily_cost(self, user_id, model, parsed, advisor_model=advisor_model)
 
     async def _fetch_attachment_bytes(self, attachment: Attachment) -> bytes | None:
         return await fetch_attachment_bytes(self, attachment)
@@ -292,6 +293,12 @@ class ClaudeCog(commands.Cog):
         type=bool,
     )
     @option(
+        "advisor",
+        description="Enable the Anthropic advisor beta for strategic mid-generation guidance. (default: false)",
+        required=False,
+        type=bool,
+    )
+    @option(
         "mcp",
         description="Comma-separated MCP preset names to enable. (default: not set)",
         required=False,
@@ -321,6 +328,7 @@ class ClaudeCog(commands.Cog):
         web_fetch: bool = False,
         code_execution: bool = False,
         memory: bool = False,
+        advisor: bool = False,
         mcp: str | None = None,
         tool_choice: str | None = None,
     ):
@@ -341,6 +349,7 @@ class ClaudeCog(commands.Cog):
             web_fetch=web_fetch,
             code_execution=code_execution,
             memory=memory,
+            advisor=advisor,
             mcp=mcp,
             tool_choice=tool_choice,
         )

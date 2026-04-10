@@ -237,6 +237,26 @@ class TestExtractResponseContent:
         assert parsed.text == "Here are the results."
         assert len(parsed.tool_use_blocks) == 0
 
+    def test_advisor_blocks_skipped(self):
+        from discord_claude.cogs.claude.responses import extract_response_content
+
+        response = MagicMock()
+        server_block = MagicMock()
+        server_block.type = "server_tool_use"
+        server_block.name = "advisor"
+        advisor_result = MagicMock()
+        advisor_result.type = "advisor_tool_result"
+        text_block = MagicMock()
+        text_block.type = "text"
+        text_block.text = "Final answer."
+        text_block.citations = None
+        response.content = [server_block, advisor_result, text_block]
+
+        parsed = extract_response_content(response)
+
+        assert parsed.text == "Final answer."
+        assert parsed.tool_use_blocks == []
+
     def test_mcp_blocks_skipped(self):
         from discord_claude.cogs.claude.responses import extract_response_content
 
