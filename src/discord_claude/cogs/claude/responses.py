@@ -80,9 +80,7 @@ def extract_response_content(response) -> ParsedResponse:
                         )
         elif block.type == "tool_use":
             tool_use_blocks.append(block)
-        elif block.type == "advisor_tool_result":
-            continue
-        elif block.type.startswith("mcp_"):
+        elif block.type == "advisor_tool_result" or block.type.startswith("mcp_"):
             continue
 
     response_text = "\n\n".join(text_parts) if text_parts else "No response."

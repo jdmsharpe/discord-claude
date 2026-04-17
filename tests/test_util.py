@@ -5,6 +5,7 @@ import pytest
 from discord_claude.util import (
     CHUNK_TEXT_SIZE,
     DISCORD_EMBED_TOTAL_LIMIT,
+    MODEL_CONTEXT_WINDOWS,
     ChatCompletionParameters,
     Conversation,
     UsageTotals,
@@ -204,6 +205,11 @@ class TestCalculateCost:
         cost = calculate_cost("claude-opus-4-6", 1_000_000, 1_000_000)
         assert cost == 30.0  # $5 + $25
 
+    def test_opus_4_7_pricing(self):
+        """Opus 4.7 uses $5/MTok input, $25/MTok output."""
+        cost = calculate_cost("claude-opus-4-7", 1_000_000, 1_000_000)
+        assert cost == 30.0  # $5 + $25
+
     def test_mythos_preview_pricing(self):
         """Mythos Preview uses $25/MTok input, $125/MTok output."""
         cost = calculate_cost("claude-mythos-preview", 1_000_000, 1_000_000)
@@ -248,6 +254,10 @@ class TestCalculateCost:
         """Unknown model should use default pricing."""
         cost = calculate_cost("unknown-model", 1_000_000, 0)
         assert cost == 15.0  # Default input price
+
+    def test_opus_4_7_context_window(self):
+        """Opus 4.7 uses the 1M token context window."""
+        assert MODEL_CONTEXT_WINDOWS["claude-opus-4-7"] == 1_000_000
 
 
 class TestUsageTotals:

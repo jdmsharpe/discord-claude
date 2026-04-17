@@ -45,7 +45,8 @@ def _initialize_view(view: View, *, timeout: float | None) -> None:
             loop.run_until_complete(_build_view_on_running_loop(view, timeout=timeout))
         finally:
             loop.close()
-        view._stopped = ConcurrentFuture()
+        stopped_future: ConcurrentFuture[bool] = ConcurrentFuture()
+        view._stopped = cast(Any, stopped_future)
     else:
         View.__init__(view, timeout=timeout)
 

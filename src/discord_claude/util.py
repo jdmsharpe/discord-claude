@@ -21,15 +21,22 @@ ADVISOR_MODEL_COMPATIBILITY: dict[str, tuple[str, ...]] = {
 }
 
 # Models that support adaptive thinking
-ADAPTIVE_THINKING_MODELS = {"claude-opus-4-6", "claude-sonnet-4-6"}
+ADAPTIVE_THINKING_MODELS = {"claude-opus-4-7", "claude-opus-4-6", "claude-sonnet-4-6"}
+
+# Models that reject explicit sampling parameter overrides.
+SAMPLING_LOCKED_MODELS = {"claude-opus-4-7"}
+
+# Models that only support adaptive thinking (no budget_tokens mode).
+ADAPTIVE_ONLY_THINKING_MODELS = {"claude-opus-4-7"}
 
 # Models that support server-side compaction (beta)
-COMPACTION_MODELS = {"claude-opus-4-6", "claude-sonnet-4-6"}
+COMPACTION_MODELS = {"claude-opus-4-7", "claude-opus-4-6", "claude-sonnet-4-6"}
 
 # Context window sizes per model (input tokens)
 MODEL_CONTEXT_WINDOWS: dict[str, int] = {
-    "claude-opus-4-6": 200_000,
-    "claude-sonnet-4-6": 200_000,
+    "claude-opus-4-7": 1_000_000,
+    "claude-opus-4-6": 1_000_000,
+    "claude-sonnet-4-6": 1_000_000,
     "claude-opus-4-5": 200_000,
     "claude-sonnet-4-5": 200_000,
     "claude-opus-4-1": 200_000,
@@ -52,6 +59,7 @@ EXTENDED_THINKING_MODELS = {
 # Per-million-token pricing: (input_cost, output_cost)
 MODEL_PRICING: dict[str, tuple[float, float]] = {
     "claude-mythos-preview": (25.0, 125.0),
+    "claude-opus-4-7": (5.0, 25.0),
     "claude-opus-4-6": (5.0, 25.0),
     "claude-opus-4-5": (5.0, 25.0),
     "claude-opus-4-1": (15.0, 75.0),
@@ -135,9 +143,7 @@ class UsageTotals:
         self.advisor_calls += 1
         self.advisor_input_tokens += getattr(usage, "input_tokens", 0) or 0
         self.advisor_output_tokens += getattr(usage, "output_tokens", 0) or 0
-        self.advisor_cache_creation_tokens += (
-            getattr(usage, "cache_creation_input_tokens", 0) or 0
-        )
+        self.advisor_cache_creation_tokens += getattr(usage, "cache_creation_input_tokens", 0) or 0
         self.advisor_cache_read_tokens += getattr(usage, "cache_read_input_tokens", 0) or 0
 
     def accumulate(self, usage: Any) -> None:
