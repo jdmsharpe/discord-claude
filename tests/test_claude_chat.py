@@ -748,7 +748,7 @@ class TestRunChatCommand:
         text_block.citations = None
         mock_response.content = [text_block]
         mock_response.stop_reason = "end_turn"
-        mock_response.usage = _make_usage(input_tokens=180_000, output_tokens=500)
+        mock_response.usage = _make_usage(input_tokens=900_000, output_tokens=500)
         cog.client.beta.messages.create = AsyncMock(return_value=mock_response)
 
         messages = [{"role": "user", "content": "Hi"}]

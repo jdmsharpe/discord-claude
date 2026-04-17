@@ -133,6 +133,34 @@ class TestToolChoiceSupport:
         assert error is not None
         assert "Thinking mode only supports tool behavior `auto` or `none`" in error
 
+    def test_validate_request_configuration_rejects_thinking_budget_for_opus_4_7(self):
+        from discord_claude.cogs.claude.cog import ClaudeCog
+        from discord_claude.util import ChatCompletionParameters
+
+        params = ChatCompletionParameters(
+            model="claude-opus-4-7",
+            thinking_budget=5000,
+        )
+
+        error = ClaudeCog._validate_request_configuration(params)
+
+        assert error is not None
+        assert "only supports adaptive thinking" in error
+
+    def test_validate_request_configuration_rejects_sampling_overrides_for_opus_4_7(self):
+        from discord_claude.cogs.claude.cog import ClaudeCog
+        from discord_claude.util import ChatCompletionParameters
+
+        params = ChatCompletionParameters(
+            model="claude-opus-4-7",
+            temperature=0.7,
+        )
+
+        error = ClaudeCog._validate_request_configuration(params)
+
+        assert error is not None
+        assert "does not support custom sampling parameters" in error
+
     def test_build_api_params_includes_mcp_servers(self, monkeypatch):
         from discord_claude.cogs.claude.cog import ClaudeCog
         from discord_claude.config.mcp import AnthropicMcpPreset

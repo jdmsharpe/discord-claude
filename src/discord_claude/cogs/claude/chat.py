@@ -8,17 +8,19 @@ from discord import ApplicationContext, Attachment, Colour, Embed
 from discord_claude.config.auth import SHOW_COST_EMBEDS
 from discord_claude.config.mcp import parse_mcp_preset_names, resolve_mcp_presets
 from discord_claude.util import (
+    ADAPTIVE_ONLY_THINKING_MODELS,
+    ADAPTIVE_THINKING_MODELS,
     ADVISOR_BETA,
     ADVISOR_MAX_USES,
     ADVISOR_MODEL_COMPATIBILITY,
     ADVISOR_TOOL_NAME,
     ADVISOR_TOOL_TYPE,
-    ADAPTIVE_THINKING_MODELS,
     CACHE_TTL,
     COMPACTION_MODELS,
     CONTEXT_COMPACTION_THRESHOLD,
     EXTENDED_THINKING_MODELS,
     MODEL_CONTEXT_WINDOWS,
+    SAMPLING_LOCKED_MODELS,
     ChatCompletionParameters,
     Conversation,
     ConversationKey,
@@ -84,6 +86,28 @@ def validate_request_configuration(params: ChatCompletionParameters) -> str | No
     tool_choice = params.tool_choice
     has_thinking = build_thinking_config(params) is not None
     advisor_model = params.advisor_model
+    sampling_parameters = {
+        "temperature": params.temperature,
+        "top_p": params.top_p,
+        "top_k": params.top_k,
+    }
+
+    if params.model in ADAPTIVE_ONLY_THINKING_MODELS and params.thinking_budget is not None:
+        return (
+            f"`{params.model}` only supports adaptive thinking. "
+            "Leave `thinking_budget` unset for this model."
+        )
+
+    if params.model in SAMPLING_LOCKED_MODELS:
+        overridden_parameters = [
+            name for name, value in sampling_parameters.items() if value is not None
+        ]
+        if overridden_parameters:
+            formatted_parameters = ", ".join(f"`{name}`" for name in overridden_parameters)
+            return (
+                f"`{params.model}` does not support custom sampling parameters. "
+                f"Leave {formatted_parameters} unset for this model."
+            )
 
     if advisor_model is not None:
         compatible_models = ADVISOR_MODEL_COMPATIBILITY.get(params.model)
@@ -515,7 +539,7 @@ async def run_chat_command(
     ctx: ApplicationContext,
     *,
     prompt: str,
-    model: str = "claude-opus-4-6",
+    model: str = "claude-opus-4-7",
     system: str | None = None,
     attachment: Attachment | None = None,
     max_tokens: int = 16384,

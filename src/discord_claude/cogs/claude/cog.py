@@ -220,7 +220,7 @@ class ClaudeCog(commands.Cog):
     )
     @option(
         "model",
-        description="Choose from the following Claude models. (default: Claude Opus 4.6. warning: Opus is expensive!)",
+        description="Choose from the following Claude models. (default: Claude Opus 4.7. warning: Opus is expensive!)",
         required=False,
         choices=CHAT_MODEL_CHOICES,
         type=str,
@@ -264,7 +264,7 @@ class ClaudeCog(commands.Cog):
     )
     @option(
         "thinking_budget",
-        description="Token budget for extended thinking on non-4.6 models. (default: not set)",
+        description="Token budget for legacy extended thinking models. (default: not set)",
         required=False,
         type=int,
     )
@@ -315,7 +315,7 @@ class ClaudeCog(commands.Cog):
         self,
         ctx: ApplicationContext,
         prompt: str,
-        model: str = "claude-opus-4-6",
+        model: str = "claude-opus-4-7",
         system: str | None = None,
         attachment: Attachment | None = None,
         max_tokens: int = 16384,

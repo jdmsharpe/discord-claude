@@ -199,6 +199,7 @@ class TestClaudeCog:
 
 
 def test_critical_choice_values_present():
+    assert any(choice.value == "claude-opus-4-7" for choice in CHAT_MODEL_CHOICES)
     assert any(choice.value == "claude-opus-4-6" for choice in CHAT_MODEL_CHOICES)
     assert any(choice.value == "claude-mythos-preview" for choice in CHAT_MODEL_CHOICES)
 
