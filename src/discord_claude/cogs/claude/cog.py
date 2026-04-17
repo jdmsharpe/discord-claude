@@ -4,13 +4,15 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from datetime import datetime
 from typing import Any
 
 from discord import ApplicationContext, Attachment
 from discord.commands import SlashCommandGroup, option
-from discord.ext import commands
+from discord.ext import commands, tasks
 
 from discord_claude.config.auth import GUILD_IDS, SHOW_COST_EMBEDS, validate_required_config
+from discord_claude.logging_setup import bind_request_id
 from discord_claude.util import ChatCompletionParameters, Conversation, ConversationKey, ToolChoice
 
 from .attachments import (
@@ -54,7 +56,13 @@ from .embeds import (
 )
 from .models import ParsedResponse, ToolHandler, UsageTotals
 from .responses import extract_response_content
-from .state import cleanup_conversation, stop_conversation, strip_previous_view, track_daily_cost
+from .state import (
+    cleanup_conversation,
+    prune_runtime_state,
+    stop_conversation,
+    strip_previous_view,
+    track_daily_cost,
+)
 from .tool_handlers import MemoryToolHandler, default_tool_handlers
 
 __all__ = [
@@ -94,7 +102,7 @@ class ClaudeCog(commands.Cog):
         self.conversations: dict[ConversationKey, Conversation] = {}
         self.views = {}
         self.last_view_messages = {}
-        self.daily_costs: dict[tuple[int, str], float] = {}
+        self.daily_costs: dict[tuple[int, str], tuple[float, datetime]] = {}
         self._http_session = None
         self._session_lock = asyncio.Lock()
         self._tool_handlers: dict[str, ToolHandler] = default_tool_handlers()
@@ -130,7 +138,24 @@ class ClaudeCog(commands.Cog):
     async def _fetch_attachment_bytes(self, attachment: Attachment) -> bytes | None:
         return await fetch_attachment_bytes(self, attachment)
 
+    async def _prune_runtime_state(self) -> None:
+        await prune_runtime_state(self)
+
+    @tasks.loop(minutes=15)
+    async def _runtime_cleanup_task(self) -> None:
+        await self._prune_runtime_state()
+
+    @_runtime_cleanup_task.before_loop
+    async def _before_runtime_cleanup_task(self) -> None:
+        await self.bot.wait_until_ready()
+
+    async def cog_before_invoke(self, ctx: ApplicationContext) -> None:
+        """Bind a fresh request id on every slash-command entry into this cog."""
+        bind_request_id()
+
     def cog_unload(self):
+        if self._runtime_cleanup_task.is_running():
+            self._runtime_cleanup_task.cancel()
         close_http_session(self)
 
     async def _call_api_with_tool_loop(
@@ -186,14 +211,16 @@ class ClaudeCog(commands.Cog):
     async def on_ready(self):
         self.logger.info("Logged in as %s (ID: %s)", self.bot.user, self.bot.owner_id)
         self.logger.info("Attempting to sync commands for guilds: %s", GUILD_IDS)
+        if not self._runtime_cleanup_task.is_running():
+            self._runtime_cleanup_task.start()
         try:
             await self.bot.sync_commands()
             self.logger.info("Commands synchronized successfully.")
         except Exception as error:
             self.logger.error("Error during command synchronization: %s", error, exc_info=True)
 
-    @commands.Cog.listener()
     async def on_message(self, message):
+        bind_request_id()
         await handle_on_message(self, message)
 
     @commands.Cog.listener()

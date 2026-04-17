@@ -103,6 +103,8 @@ python -m pip install -e ".[dev]"
 | `MEMORIES_DIR` | No | Directory for per-user memory files (Default: `./memories`) |
 | `ANTHROPIC_MCP_PRESETS_JSON` | No | Inline JSON object of named MCP presets |
 | `ANTHROPIC_MCP_PRESETS_PATH` | No | Path to a JSON file of named MCP presets |
+| `CLAUDE_PRICING_PATH` | No | Path to a pricing YAML that overrides the bundled `src/discord_claude/config/pricing.yaml` |
+| `LOG_FORMAT` | No | `text` (default) for human-readable logs, or `json` for structured JSON-lines output with per-request IDs |
 
 #### MCP Setup
 

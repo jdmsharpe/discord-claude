@@ -1,4 +1,5 @@
-from datetime import date
+import contextlib
+from datetime import date, datetime, timedelta, timezone
 from typing import Any
 
 from discord import Member, User
@@ -12,6 +13,18 @@ from discord_claude.util import (
 
 from .responses import ParsedResponse
 from .views import ButtonView
+
+MAX_ACTIVE_CONVERSATIONS = 100
+CONVERSATION_TTL = timedelta(hours=12)
+DAILY_COST_RETENTION_DAYS = 30
+
+
+def _now_utc() -> datetime:
+    return datetime.now(timezone.utc)
+
+
+def _extract_daily_total(value: float | tuple[float, datetime]) -> float:
+    return value[0] if isinstance(value, tuple) else value
 
 
 def _copy_messages_without_advisor_blocks(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -109,6 +122,46 @@ async def stop_conversation(cog, conversation_key: ConversationKey, user: Member
     """Stop a conversation and clean up resources."""
     cog.conversations.pop(conversation_key, None)
     await cleanup_conversation(cog, user)
+    await prune_runtime_state(cog)
+
+
+async def prune_runtime_state(cog) -> None:
+    """Evict stale conversations, cascade-clean views, and prune old daily costs."""
+    now = _now_utc()
+
+    stale_keys = [
+        key
+        for key, conversation in cog.conversations.items()
+        if now - conversation.updated_at > CONVERSATION_TTL
+    ]
+
+    active = [
+        (key, conversation)
+        for key, conversation in cog.conversations.items()
+        if key not in stale_keys
+    ]
+    overflow = len(active) - MAX_ACTIVE_CONVERSATIONS
+    if overflow > 0:
+        active.sort(key=lambda item: item[1].updated_at)
+        stale_keys.extend(key for key, _ in active[:overflow])
+
+    for key in dict.fromkeys(stale_keys):
+        conversation = cog.conversations.pop(key, None)
+        if conversation is None:
+            continue
+        starter = conversation.params.conversation_starter
+        if starter is not None:
+            with contextlib.suppress(Exception):
+                await cleanup_conversation(cog, starter)
+
+    prune_daily_costs(cog)
+
+
+def prune_daily_costs(cog) -> None:
+    cutoff = date.today() - timedelta(days=DAILY_COST_RETENTION_DAYS)
+    expired_keys = [key for key in cog.daily_costs if date.fromisoformat(key[1]) < cutoff]
+    for key in expired_keys:
+        cog.daily_costs.pop(key, None)
 
 
 def track_daily_cost(
@@ -135,8 +188,11 @@ def track_daily_cost(
             parsed.advisor_cache_creation_tokens,
             parsed.advisor_cache_read_tokens,
         )
+    prune_daily_costs(cog)
     key = (user_id, date.today().isoformat())
-    cog.daily_costs[key] = cog.daily_costs.get(key, 0.0) + cost
+    current_total = _extract_daily_total(cog.daily_costs.get(key, 0.0))
+    new_total = current_total + cost
+    cog.daily_costs[key] = (new_total, _now_utc())
 
     cog.logger.info(
         "COST | command=chat | user=%s | model=%s"
@@ -163,10 +219,10 @@ def track_daily_cost(
         parsed.web_fetch_requests,
         parsed.code_execution_requests,
         cost,
-        cog.daily_costs[key],
+        new_total,
     )
 
-    return cost, cog.daily_costs[key]
+    return cost, new_total
 
 
 def create_button_view(
@@ -192,10 +248,15 @@ def create_button_view(
 
 
 __all__ = [
+    "CONVERSATION_TTL",
+    "DAILY_COST_RETENTION_DAYS",
+    "MAX_ACTIVE_CONVERSATIONS",
     "_copy_messages_without_advisor_blocks",
     "cleanup_conversation",
     "compact_conversation",
     "create_button_view",
+    "prune_daily_costs",
+    "prune_runtime_state",
     "stop_conversation",
     "strip_previous_view",
     "track_daily_cost",

@@ -6,6 +6,13 @@ from typing import Any, Literal, Protocol, TypedDict
 
 from discord import Embed, Member, User
 
+from discord_claude.config.pricing import (  # noqa: F401 — re-exported for callers
+    MODEL_CONTEXT_WINDOWS,
+    MODEL_PRICING,
+    UNKNOWN_MODEL_PRICING,
+    WEB_SEARCH_COST_PER_REQUEST,
+)
+
 CHUNK_TEXT_SIZE = 3500  # Maximum number of characters in each text chunk.
 
 CACHE_TTL = "1h"  # 1-hour TTL for prompt caching (2x base input price for writes)
@@ -32,17 +39,6 @@ ADAPTIVE_ONLY_THINKING_MODELS = {"claude-opus-4-7"}
 # Models that support server-side compaction (beta)
 COMPACTION_MODELS = {"claude-opus-4-7", "claude-opus-4-6", "claude-sonnet-4-6"}
 
-# Context window sizes per model (input tokens)
-MODEL_CONTEXT_WINDOWS: dict[str, int] = {
-    "claude-opus-4-7": 1_000_000,
-    "claude-opus-4-6": 1_000_000,
-    "claude-sonnet-4-6": 1_000_000,
-    "claude-opus-4-5": 200_000,
-    "claude-sonnet-4-5": 200_000,
-    "claude-opus-4-1": 200_000,
-    "claude-haiku-4-5": 200_000,
-}
-
 # Context management thresholds
 CONTEXT_WARNING_THRESHOLD = 0.85  # Show warning embed at 85% of context window
 CONTEXT_COMPACTION_THRESHOLD = 0.75  # Trigger manual compaction at 75% (non-compaction models)
@@ -55,21 +51,6 @@ EXTENDED_THINKING_MODELS = {
     "claude-opus-4-1",
     "claude-haiku-4-5",
 }
-
-# Per-million-token pricing: (input_cost, output_cost)
-MODEL_PRICING: dict[str, tuple[float, float]] = {
-    "claude-mythos-preview": (25.0, 125.0),
-    "claude-opus-4-7": (5.0, 25.0),
-    "claude-opus-4-6": (5.0, 25.0),
-    "claude-opus-4-5": (5.0, 25.0),
-    "claude-opus-4-1": (15.0, 75.0),
-    "claude-sonnet-4-6": (3.0, 15.0),
-    "claude-sonnet-4-5": (3.0, 15.0),
-    "claude-haiku-4-5": (1.0, 5.0),
-}
-
-# Server tool pricing
-WEB_SEARCH_COST_PER_REQUEST = 0.01  # $10 per 1,000 searches
 
 # Discord embed limits
 DISCORD_EMBED_TOTAL_LIMIT = 6000  # Max chars across all embeds in a single message
@@ -95,7 +76,7 @@ def calculate_cost(
     Cache write tokens cost 2x base input price (1h TTL); cache read tokens cost 0.1x.
     Web search requests cost $0.01 each ($10 per 1,000 searches).
     """
-    input_price, output_price = MODEL_PRICING.get(model, (15.0, 75.0))
+    input_price, output_price = MODEL_PRICING.get(model, UNKNOWN_MODEL_PRICING)
     return (
         (input_tokens / 1_000_000) * input_price
         + (output_tokens / 1_000_000) * output_price
@@ -249,6 +230,10 @@ class Conversation:
     params: ChatCompletionParameters
     messages: list[dict[str, Any]]
     created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+
+    def touch(self) -> None:
+        self.updated_at = datetime.now(timezone.utc)
 
 
 class ToolHandler(Protocol):
