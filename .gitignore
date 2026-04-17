@@ -22,3 +22,6 @@ Thumbs.db
 *.egg-info/
 .serena/
 .codex/
+
+# Local release notes (do not publish)
+/CHANGELOG.md
