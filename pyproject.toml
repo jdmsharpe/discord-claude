@@ -17,6 +17,7 @@ dependencies = [
   "anthropic~=0.96",
   "py-cord~=2.7",
   "python-dotenv~=1.2",
+  "PyYAML~=6.0",
 ]
 
 [project.optional-dependencies]
@@ -63,3 +64,6 @@ venv = ".venv"
 [tool.setuptools.packages.find]
 where = ["src"]
 include = ["discord_claude*"]
+
+[tool.setuptools.package-data]
+"discord_claude.config" = ["*.yaml"]

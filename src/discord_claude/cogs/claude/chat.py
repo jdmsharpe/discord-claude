@@ -423,6 +423,7 @@ async def handle_new_message_in_conversation(cog, message, conversation: Convers
             messages=messages,
             user_id=message.author.id,
         )
+        conversation.touch()
         response_text = parsed.text
 
         if typing_task:

@@ -5,10 +5,21 @@ from anthropic import APIConnectionError, APIError, AsyncAnthropic
 
 from discord_claude.config.auth import ANTHROPIC_API_KEY
 
+MAX_API_ATTEMPTS = 5
+API_TIMEOUT_SECONDS = 300.0
+
 
 def build_claude_client(api_key: str | None = None) -> AsyncAnthropic:
-    """Construct the Anthropic SDK client for the configured API key."""
-    return AsyncAnthropic(api_key=api_key or ANTHROPIC_API_KEY)
+    """Construct the Anthropic SDK client for the configured API key.
+
+    The SDK's built-in retry policy is raised from its default (2 attempts) to
+    MAX_API_ATTEMPTS so transient 429/5xx/connection errors recover transparently.
+    """
+    return AsyncAnthropic(
+        api_key=api_key or ANTHROPIC_API_KEY,
+        max_retries=MAX_API_ATTEMPTS - 1,
+        timeout=API_TIMEOUT_SECONDS,
+    )
 
 
 async def get_http_session(cog) -> aiohttp.ClientSession:

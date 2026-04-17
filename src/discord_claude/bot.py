@@ -9,10 +9,12 @@ from discord import Bot, Intents
 
 from discord_claude.cogs.claude.cog import ClaudeCog
 from discord_claude.config.auth import BOT_TOKEN, validate_required_config
+from discord_claude.logging_setup import configure_logging
 
 
 def main() -> None:
     validate_required_config()
+    configure_logging()
 
     intents = Intents.default()
     intents.presences = False

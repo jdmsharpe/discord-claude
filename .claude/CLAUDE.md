@@ -20,6 +20,8 @@ python src/bot.py      # or: docker-compose up --build
 | `MEMORIES_DIR` | No | Per-user memory directory (default: `./memories`) |
 | `ANTHROPIC_MCP_PRESETS_JSON` | No | Inline JSON of named MCP presets |
 | `ANTHROPIC_MCP_PRESETS_PATH` | No | Path to JSON file of named MCP presets |
+| `CLAUDE_PRICING_PATH` | No | Override the bundled `src/discord_claude/config/pricing.yaml` |
+| `LOG_FORMAT` | No | `text` (default) or `json` for structured JSON-lines output |
 
 ## Supported Entry Points
 
@@ -43,12 +45,15 @@ src/
 └── discord_claude/
     ├── __init__.py
     ├── bot.py
+    ├── logging_setup.py             # Structured logging + request-id ContextVar
     ├── memory.py
     ├── util.py
     ├── config/
     │   ├── __init__.py
     │   ├── auth.py
-    │   └── mcp.py
+    │   ├── mcp.py
+    │   ├── pricing.py                # YAML loader exposing MODEL_PRICING, MODEL_CONTEXT_WINDOWS, etc.
+    │   └── pricing.yaml              # Canonical pricing data (override via CLAUDE_PRICING_PATH)
     └── cogs/
         ├── __init__.py
         └── claude/
@@ -96,7 +101,7 @@ pyright src/
 pytest -q
 ```
 
-- The repo pre-commit hook prefers a repo-local `.venv` Ruff binary when available and falls back to `PATH`.
+- The repo pre-commit hook (`.githooks/pre-commit`) runs `ruff format` (auto-applied + re-staged), then `ruff check` (blocking), then `pyright` and `pytest --collect-only` as warning-only smoke tests. Resolves tools from `.venv/bin` or `.venv/Scripts` first, then `PATH`.
 
 ## Provider Notes
 
@@ -109,3 +114,10 @@ pytest -q
 - MCP state persists independently from built-in tool names via `mcp_preset_names` on `ChatCompletionParameters`.
 - Anthropic MCP traffic is passed through with `mcp_servers` and `mcp_toolset`, and `call_api_with_tool_loop` adds the `mcp-client-2025-11-20` beta when MCP is active.
 - MCP content blocks are ignored by the local tool loop; only built-in Anthropic tool calls are executed client-side.
+
+## Runtime Conventions (Cross-Project)
+
+- **Pricing** is loaded from `src/discord_claude/config/pricing.yaml` by `config/pricing.py` at import time. Override via `CLAUDE_PRICING_PATH` to push a vendor price change without a code release. Cross-referenced against [genai-prices/anthropic.yml](https://github.com/pydantic/genai-prices/blob/main/prices/providers/anthropic.yml).
+- **Retry**: the `AsyncAnthropic` client is built with `max_retries=4, timeout=300` (total 5 attempts) in `client.py`; transient 429/5xx/connection errors recover transparently via the Anthropic SDK's built-in exponential backoff.
+- **Conversation TTL**: `prune_runtime_state` in `cogs/claude/state.py` evicts conversations older than `CONVERSATION_TTL` (12h) every 15 minutes via `@tasks.loop`. Caps at `MAX_ACTIVE_CONVERSATIONS`. Daily costs retained for `DAILY_COST_RETENTION_DAYS` (30).
+- **Request IDs**: `cog_before_invoke` (and `on_message`) bind a fresh 8-char hex id via `discord_claude.logging_setup.bind_request_id`. All downstream `logger.info`/`warning`/`error` calls automatically include the id. Set `LOG_FORMAT=json` for JSON-lines output.
