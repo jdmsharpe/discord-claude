@@ -2,7 +2,7 @@ import re
 
 from discord import Colour, Embed
 
-from discord_claude.util import CITATION_EMBED_RESERVE, available_embed_space, chunk_text
+from discord_claude.util import chunk_text
 
 from .responses import ParsedResponse
 
@@ -26,15 +26,6 @@ def append_thinking_embeds(embeds: list[Embed], thinking_text: str) -> None:
 
 def append_response_embeds(embeds: list[Embed], response_text: str) -> None:
     """Append response text as Discord embeds, handling chunking for long responses."""
-    available = available_embed_space(embeds, reserve=CITATION_EMBED_RESERVE)
-    if available < 50:
-        return
-
-    if len(response_text) > available:
-        response_text = (
-            response_text[: available - 40] + "\n\n... [Response truncated due to length]"
-        )
-
     response_text = re.sub(r"\n{3,}", "\n\n", response_text)
 
     for index, chunk in enumerate(chunk_text(response_text, 3500), start=1):
@@ -85,11 +76,7 @@ def append_citations_embed(embeds: list[Embed], citations: list[dict[str, str]])
         return
 
     description = "\n\n".join(parts)
-    remaining_chars = available_embed_space(embeds, reserve=len("Sources"))
-    if remaining_chars < 50:
-        return
-
-    max_description_length = min(4000, remaining_chars)
+    max_description_length = 4000
     if len(description) > max_description_length:
         description = description[: max_description_length - 3] + "..."
 

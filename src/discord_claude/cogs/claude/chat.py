@@ -32,6 +32,7 @@ from discord_claude.util import (
 )
 
 from .attachments import build_attachment_content_block, fetch_attachment_bytes
+from .embed_delivery import send_embed_batches
 from .embeds import (
     append_citations_embed,
     append_compaction_embed,
@@ -389,12 +390,14 @@ async def handle_new_message_in_conversation(cog, message, conversation: Convers
 
         validation_error = validate_request_configuration(params)
         if validation_error:
-            await message.reply(
+            await send_embed_batches(
+                message.reply,
                 embed=Embed(
                     title="Unsupported Tool Configuration",
                     description=validation_error,
                     color=Colour.red(),
-                )
+                ),
+                logger=cog.logger,
             )
             return
 
@@ -456,17 +459,13 @@ async def handle_new_message_in_conversation(cog, message, conversation: Convers
         view = cog.views.get(message.author)
 
         if embeds:
-            try:
-                reply_message = await message.reply(embeds=embeds, view=view)
-                cog.last_view_messages[message.author] = reply_message
-            except Exception as embed_error:
-                cog.logger.warning("Embed failed, sending as text: %s", embed_error)
-                safe_response_text = response_text or "No response text available"
-                reply_message = await message.reply(
-                    content=f"**Response:**\n{safe_response_text[:1900]}{'...' if len(safe_response_text) > 1900 else ''}",
-                    view=view,
-                )
-                cog.last_view_messages[message.author] = reply_message
+            reply_message = await send_embed_batches(
+                message.reply,
+                embeds=embeds,
+                view=view,
+                logger=cog.logger,
+            )
+            cog.last_view_messages[message.author] = reply_message
         else:
             reply_message = await message.reply(
                 content="An error occurred: No content to send.",
@@ -485,8 +484,10 @@ async def handle_new_message_in_conversation(cog, message, conversation: Convers
             if len(description) > 4000:
                 description = description[:4000] + "\n\n... (error message truncated)"
             await cog._cleanup_conversation(message.author)
-            await message.reply(
-                embed=Embed(title="Error", description=description, color=Colour.red())
+            await send_embed_batches(
+                message.reply,
+                embed=Embed(title="Error", description=description, color=Colour.red()),
+                logger=cog.logger,
             )
             conv_key = (message.author.id, message.channel.id)
             cog.conversations.pop(conv_key, None)
@@ -502,12 +503,14 @@ async def handle_new_message_in_conversation(cog, message, conversation: Convers
         conv_key = (message.author.id, message.channel.id)
         cog.conversations.pop(conv_key, None)
         with contextlib.suppress(Exception):
-            await message.reply(
+            await send_embed_batches(
+                message.reply,
                 embed=Embed(
                     title="Error",
                     description=f"An unexpected error occurred: {type(error).__name__}",
                     color=Colour.red(),
-                )
+                ),
+                logger=cog.logger,
             )
     finally:
         if typing_task:
@@ -562,22 +565,26 @@ async def run_chat_command(
     typing_task = None
 
     if ctx.channel is None:
-        await ctx.send_followup(
+        await send_embed_batches(
+            ctx.send_followup,
             embed=Embed(
                 title="Error",
                 description="Cannot start conversation: channel context is unavailable.",
                 color=Colour.red(),
-            )
+            ),
+            logger=cog.logger,
         )
         return
 
     if (ctx.author.id, ctx.channel.id) in cog.conversations:
-        await ctx.send_followup(
+        await send_embed_batches(
+            ctx.send_followup,
             embed=Embed(
                 title="Error",
                 description="You already have an active conversation in this channel. Please finish it before starting a new one.",
                 color=Colour.red(),
-            )
+            ),
+            logger=cog.logger,
         )
         return
 
@@ -596,7 +603,8 @@ async def run_chat_command(
         advisor_model = get_default_advisor_model(model) if advisor else None
         if advisor and advisor_model is None:
             supported_models = ", ".join(sorted(ADVISOR_MODEL_COMPATIBILITY))
-            await ctx.send_followup(
+            await send_embed_batches(
+                ctx.send_followup,
                 embed=Embed(
                     title="Unsupported Tool Configuration",
                     description=(
@@ -604,18 +612,21 @@ async def run_chat_command(
                         f"Supported executor models: {supported_models}."
                     ),
                     color=Colour.red(),
-                )
+                ),
+                logger=cog.logger,
             )
             return
         mcp_preset_names = parse_mcp_preset_names(mcp)
         _, mcp_error = resolve_mcp_presets(mcp_preset_names)
         if mcp_error:
-            await ctx.send_followup(
+            await send_embed_batches(
+                ctx.send_followup,
                 embed=Embed(
                     title="Error",
                     description=mcp_error,
                     color=Colour.red(),
-                )
+                ),
+                logger=cog.logger,
             )
             return
 
@@ -660,12 +671,14 @@ async def run_chat_command(
 
         validation_error = validate_request_configuration(params)
         if validation_error:
-            await ctx.send_followup(
+            await send_embed_batches(
+                ctx.send_followup,
                 embed=Embed(
                     title="Unsupported Tool Configuration",
                     description=validation_error,
                     color=Colour.red(),
-                )
+                ),
+                logger=cog.logger,
             )
             return
 
@@ -753,7 +766,12 @@ async def run_chat_command(
             initial_tool_choice=resolved_tool_choice,
         )
 
-        message = await ctx.send_followup(embeds=embeds, view=view)
+        message = await send_embed_batches(
+            ctx.send_followup,
+            embeds=embeds,
+            view=view,
+            logger=cog.logger,
+        )
         cog.last_view_messages[ctx.author] = message
 
         conversation = Conversation(params=params, messages=conversation_messages)
@@ -764,14 +782,16 @@ async def run_chat_command(
         cog.logger.error("Unexpected error in chat: %s", error, exc_info=True)
         await cog._cleanup_conversation(ctx.author)
         with contextlib.suppress(Exception):
-            await ctx.send_followup(
+            await send_embed_batches(
+                ctx.send_followup,
                 embed=Embed(
                     title="Error",
                     description=description
                     if description
                     else f"An unexpected error occurred: {type(error).__name__}",
                     color=Colour.red(),
-                )
+                ),
+                logger=cog.logger,
             )
     finally:
         if typing_task:
