@@ -696,6 +696,8 @@ class TestRunChatCommand:
 
     async def test_manual_compaction_triggers_at_75_percent(self, cog):
         """Non-compaction models trigger manual compaction when tokens exceed 75%."""
+        from discord_claude.cogs.claude.state import ConversationSummary
+
         pause_response = MagicMock()
         pause_text = MagicMock()
         pause_text.type = "text"
@@ -714,15 +716,16 @@ class TestRunChatCommand:
         final_response.stop_reason = "end_turn"
         final_response.usage = _make_usage(input_tokens=2_000, output_tokens=100)
 
-        summary_response = MagicMock()
-        summary_text = MagicMock()
-        summary_text.type = "text"
-        summary_text.text = "<summary>Conversation summary here.</summary>"
-        summary_response.content = [summary_text]
-
-        cog.client.messages.create = AsyncMock(
-            side_effect=[pause_response, summary_response, final_response]
+        parse_response = MagicMock()
+        parse_response.parsed_output = ConversationSummary(
+            task="continue chat",
+            key_context="user greeted, assistant replied",
+            current_state="awaiting follow-up",
+            next_steps="respond to next user question",
         )
+
+        cog.client.messages.create = AsyncMock(side_effect=[pause_response, final_response])
+        cog.client.messages.parse = AsyncMock(return_value=parse_response)
 
         messages = [
             {"role": "user", "content": "Hi"},
@@ -737,7 +740,8 @@ class TestRunChatCommand:
 
         assert parsed.context_compacted is True
         assert parsed.text == "Done!"
-        assert cog.client.messages.create.call_count == 3
+        assert cog.client.messages.create.call_count == 2
+        cog.client.messages.parse.assert_called_once()
 
     async def test_compaction_model_skips_manual_compaction(self, cog):
         """Compaction models (server-side) never trigger manual compaction."""
