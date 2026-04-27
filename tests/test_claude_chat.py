@@ -348,6 +348,33 @@ class TestRunChatCommand:
         call_kwargs = mock_discord_context.send_followup.call_args[1]
         assert "Advisor is not supported" in call_kwargs["embed"].description
 
+    async def test_chat_long_response_with_sidecars_uses_embed_batches(
+        self, cog, mock_discord_context
+    ):
+        mock_discord_context.send_followup = AsyncMock(return_value=MagicMock(id=123))
+        mock_response = MagicMock()
+        text_block = MagicMock()
+        text_block.type = "text"
+        text_block.text = "R" * 8000
+        text_block.citations = None
+        mock_response.content = [text_block]
+        mock_response.stop_reason = "end_turn"
+        mock_response.usage = None
+        cog.client.messages.create = AsyncMock(return_value=mock_response)
+
+        with patch("discord_claude.cogs.claude.chat.keep_typing", AsyncMock()):
+            await cog.chat.callback(
+                cog,
+                ctx=mock_discord_context,
+                prompt="Hello",
+                model="claude-haiku-4-5",
+            )
+
+        assert mock_discord_context.send_followup.await_count > 1
+        for call in mock_discord_context.send_followup.await_args_list:
+            assert "embeds" in call.kwargs
+            assert not str(call.kwargs.get("content", "")).startswith("**Response:**")
+
     async def test_context_editing_with_tools(self, cog):
         """Models with tools get context editing via beta API."""
         mock_response = MagicMock()

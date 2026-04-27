@@ -1,6 +1,19 @@
 from discord_claude.cogs.claude.responses import ParsedResponse
 
 
+class TestAppendResponseEmbeds:
+    """Tests for the append_response_embeds helper."""
+
+    def test_long_response_is_preserved_for_delivery_batching(self):
+        from discord_claude.cogs.claude.embeds import append_response_embeds
+
+        embeds = []
+        long_text = "A" * 25000
+        append_response_embeds(embeds, long_text)
+
+        assert "".join(embed.description for embed in embeds) == long_text
+
+
 class TestAppendThinkingEmbeds:
     """Tests for the append_thinking_embeds helper."""
 
