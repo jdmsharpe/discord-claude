@@ -6,6 +6,27 @@ import pytest
 from discord_claude.cogs.claude.state import _copy_messages_without_advisor_blocks
 
 
+class TestCompactConversation:
+    async def test_uses_text_fallback_when_structured_summary_missing(self):
+        from discord_claude.cogs.claude.state import compact_conversation
+
+        response = MagicMock()
+        response.parsed_output = None
+        response.content = [MagicMock(text="Fallback continuation summary.")]
+
+        cog = MagicMock()
+        cog.client.messages.parse = AsyncMock(return_value=response)
+        cog.logger = MagicMock()
+
+        messages = [{"role": "user", "content": "Earlier request"}]
+
+        summary = await compact_conversation(cog, messages)
+
+        assert summary == "<summary>\nFallback continuation summary.\n</summary>"
+        assert messages == [{"role": "user", "content": summary}]
+        cog.logger.warning.assert_called_once()
+
+
 class TestAdvisorHistorySanitization:
     """Tests for stripping advisor-only blocks before manual compaction."""
 

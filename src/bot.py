@@ -1,12 +1,4 @@
-import logging
-
 from discord_claude.bot import main
 
 if __name__ == "__main__":
-    # Optional standalone default logging for local execution.
-    # Embedding applications should configure logging centrally instead.
-    logging.basicConfig(
-        level=logging.DEBUG,
-        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-    )
     main()

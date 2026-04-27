@@ -41,6 +41,36 @@ class ConversationSummary(BaseModel):
         )
 
 
+def _extract_text_blocks(response: Any) -> str:
+    content = getattr(response, "content", None) or []
+    parts: list[str] = []
+    for block in content:
+        text = block.get("text") if isinstance(block, dict) else getattr(block, "text", None)
+        if isinstance(text, str) and text.strip():
+            parts.append(text.strip())
+    return "\n\n".join(parts)
+
+
+def _render_compaction_summary(response: Any) -> str:
+    parsed_output = getattr(response, "parsed_output", None)
+    if isinstance(parsed_output, ConversationSummary):
+        return parsed_output.to_message_text()
+
+    if parsed_output is not None:
+        with contextlib.suppress(Exception):
+            return ConversationSummary.model_validate(parsed_output).to_message_text()
+
+    fallback_text = _extract_text_blocks(response).strip()
+    if not fallback_text:
+        fallback_text = (
+            "The prior conversation was compacted, but the structured summary could not "
+            "be parsed. Continue from the available context as best as possible."
+        )
+    if fallback_text.startswith("<summary"):
+        return fallback_text
+    return f"<summary>\n{fallback_text}\n</summary>"
+
+
 MAX_ACTIVE_CONVERSATIONS = 100
 CONVERSATION_TTL = timedelta(hours=12)
 DAILY_COST_RETENTION_DAYS = 30
@@ -114,7 +144,9 @@ async def compact_conversation(
         parse_kwargs["system"] = system
 
     summary_response = await cog.client.messages.parse(**parse_kwargs)
-    summary_text = summary_response.parsed_output.to_message_text()
+    summary_text = _render_compaction_summary(summary_response)
+    if not isinstance(getattr(summary_response, "parsed_output", None), ConversationSummary):
+        cog.logger.warning("Compaction summary structured output was unavailable; used text fallback")
 
     messages.clear()
     messages.append({"role": "user", "content": summary_text})
@@ -277,6 +309,7 @@ __all__ = [
     "MAX_ACTIVE_CONVERSATIONS",
     "ConversationSummary",
     "_copy_messages_without_advisor_blocks",
+    "_render_compaction_summary",
     "cleanup_conversation",
     "compact_conversation",
     "create_button_view",
