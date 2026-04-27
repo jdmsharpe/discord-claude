@@ -219,6 +219,7 @@ class ClaudeCog(commands.Cog):
         except Exception as error:
             self.logger.error("Error during command synchronization: %s", error, exc_info=True)
 
+    @commands.Cog.listener()
     async def on_message(self, message):
         bind_request_id()
         await handle_on_message(self, message)
