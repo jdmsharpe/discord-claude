@@ -3,6 +3,7 @@ from datetime import date, datetime, timedelta, timezone
 from typing import Any
 
 from discord import Member, User
+from pydantic import BaseModel, Field
 
 from discord_claude.util import (
     ADVISOR_TOOL_NAME,
@@ -13,6 +14,32 @@ from discord_claude.util import (
 
 from .responses import ParsedResponse
 from .views import ButtonView
+
+
+class ConversationSummary(BaseModel):
+    """Structured continuation summary for a fresh context window.
+
+    Each field is required, so the compaction call cannot drop a section.
+    """
+
+    task: str = Field(description="The user's core request or discussion topic.")
+    key_context: str = Field(
+        description="Important facts, decisions, and constraints established so far."
+    )
+    current_state: str = Field(description="What has been discussed or completed so far.")
+    next_steps: str = Field(description="What the user is likely to ask about next.")
+
+    def to_message_text(self) -> str:
+        """Render the summary as a single user-message body."""
+        return (
+            "<summary>\n"
+            f"**Task/Topic**: {self.task}\n\n"
+            f"**Key Context**: {self.key_context}\n\n"
+            f"**Current State**: {self.current_state}\n\n"
+            f"**Next Steps**: {self.next_steps}\n"
+            "</summary>"
+        )
+
 
 MAX_ACTIVE_CONVERSATIONS = 100
 CONVERSATION_TTL = timedelta(hours=12)
@@ -66,31 +93,28 @@ async def compact_conversation(
     messages: list[dict[str, Any]],
     system: str | None = None,
 ) -> str:
-    """Compact conversation history into a summary for non-compaction models."""
+    """Compact conversation history into a structured summary for non-compaction models."""
     summary_prompt = (
-        "You are summarizing a conversation to allow it to continue in a fresh context window. "
-        "Write a concise continuation summary that preserves:\n\n"
-        "1. **Task/Topic**: The user's core request or discussion topic\n"
-        "2. **Key Context**: Important facts, decisions, and constraints established\n"
-        "3. **Current State**: What has been discussed/completed so far\n"
-        "4. **Next Steps**: What the user is likely to ask about next\n\n"
-        "Be concise but complete — preserve information that prevents repeated work. "
-        "Wrap your summary in <summary></summary> tags."
+        "Summarize this conversation so it can continue in a fresh context window. "
+        "Populate every section: capture the task, the established context and decisions, "
+        "what has been completed so far, and the likely next user question. "
+        "Be concise but complete — preserve information that prevents repeated work."
     )
 
     summary_messages = _copy_messages_without_advisor_blocks(messages) + [
         {"role": "user", "content": summary_prompt}
     ]
-    create_kwargs: dict[str, Any] = {
+    parse_kwargs: dict[str, Any] = {
         "model": COMPACTION_SUMMARY_MODEL,
         "max_tokens": 4096,
         "messages": summary_messages,
+        "output_format": ConversationSummary,
     }
     if system:
-        create_kwargs["system"] = system
+        parse_kwargs["system"] = system
 
-    summary_response = await cog.client.messages.create(**create_kwargs)
-    summary_text = "".join(block.text for block in summary_response.content if block.type == "text")
+    summary_response = await cog.client.messages.parse(**parse_kwargs)
+    summary_text = summary_response.parsed_output.to_message_text()
 
     messages.clear()
     messages.append({"role": "user", "content": summary_text})
@@ -251,6 +275,7 @@ __all__ = [
     "CONVERSATION_TTL",
     "DAILY_COST_RETENTION_DAYS",
     "MAX_ACTIVE_CONVERSATIONS",
+    "ConversationSummary",
     "_copy_messages_without_advisor_blocks",
     "cleanup_conversation",
     "compact_conversation",
