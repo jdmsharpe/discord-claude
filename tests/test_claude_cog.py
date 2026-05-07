@@ -1,4 +1,5 @@
 import asyncio
+import json
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -8,6 +9,28 @@ from discord_claude.cogs.claude.command_options import (
     RESPONSE_EFFORT_CHOICES,
     TOOL_CHOICE_CHOICES,
 )
+
+
+def _serialize_command_group_payload(group):
+    return {
+        "name": group.name,
+        "description": group.description,
+        "options": [
+            {
+                "name": command.name,
+                "description": command.description,
+                "options": [
+                    option.to_dict()
+                    for option in command.options
+                    if option.input_type is not None
+                ],
+                "type": 1,
+                "nsfw": False,
+            }
+            for command in group.subcommands
+        ],
+        "nsfw": False,
+    }
 
 
 def _make_usage(**kwargs):
@@ -55,6 +78,26 @@ class TestClaudeCog:
         assert cog.conversations == {}
         assert cog.views == {}
         assert cog.last_view_messages == {}
+
+    def test_registered_command_groups_fit_discord_size_limit(self, cog):
+        """Discord rejects any single top-level command payload over 8000 bytes."""
+
+        commands_by_name = {command.name: command for command in cog.get_commands()}
+
+        assert set(commands_by_name) == {"claude"}
+        assert [command.name for command in commands_by_name["claude"].subcommands] == [
+            "check_permissions",
+            "chat",
+        ]
+
+        payload_size = len(
+            json.dumps(
+                _serialize_command_group_payload(commands_by_name["claude"]),
+                separators=(",", ":"),
+            ).encode("utf-8")
+        )
+
+        assert payload_size < 8000
 
     async def test_strip_previous_view_removes_buttons(self, cog):
         """_strip_previous_view edits the old message to remove its view."""
