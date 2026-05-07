@@ -233,9 +233,7 @@ def _handle_str_replace(user_id: int, tool_input: dict[str, Any]) -> str:
 
     start = max(0, replace_line - 2)
     end = min(len(lines), replace_line + 3)
-    snippet_lines = []
-    for i in range(start, end):
-        snippet_lines.append(f"{i + 1:>6}\t{lines[i]}")
+    snippet_lines = [f"{i + 1:>6}\t{lines[i]}" for i in range(start, end)]
 
     return "The memory file has been edited.\n" + "\n".join(snippet_lines)
 

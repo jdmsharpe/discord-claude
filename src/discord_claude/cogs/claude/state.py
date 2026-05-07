@@ -131,8 +131,9 @@ async def compact_conversation(
         "Be concise but complete — preserve information that prevents repeated work."
     )
 
-    summary_messages = _copy_messages_without_advisor_blocks(messages) + [
-        {"role": "user", "content": summary_prompt}
+    summary_messages = [
+        *_copy_messages_without_advisor_blocks(messages),
+        {"role": "user", "content": summary_prompt},
     ]
     parse_kwargs: dict[str, Any] = {
         "model": COMPACTION_SUMMARY_MODEL,
