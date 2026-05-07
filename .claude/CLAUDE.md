@@ -4,9 +4,9 @@
 
 ```bash
 python -m venv .venv && source .venv/bin/activate  # Windows: .venv\Scripts\activate
-pip install -r requirements.txt
+pip install -e ".[dev]"
 cp .env.example .env   # then fill in required values
-python src/bot.py      # or: docker-compose up --build
+python src/bot.py      # or: docker compose up --build
 ```
 
 ## Environment Variables
@@ -114,6 +114,7 @@ pytest -q
 - MCP state persists independently from built-in tool names via `mcp_preset_names` on `ChatCompletionParameters`.
 - Anthropic MCP traffic is passed through with `mcp_servers` and `mcp_toolset`, and `call_api_with_tool_loop` adds the `mcp-client-2025-11-20` beta when MCP is active.
 - MCP content blocks are ignored by the local tool loop; only built-in Anthropic tool calls are executed client-side.
+- **Future migration target:** the SDK now ships `client.beta.messages.tool_runner` with `anthropic.lib.tools.mcp.async_mcp_tool` for first-class MCP integration. Once that surface is GA-promoted out of `beta`, retire the manual `mcp-client-2025-11-20` beta-header path in `call_api_with_tool_loop`. (Last checked 2026-05-06; recheck on next anthropic SDK minor bump.)
 
 ## Runtime Conventions (Cross-Project)
 
@@ -121,3 +122,4 @@ pytest -q
 - **Retry**: the `AsyncAnthropic` client is built with `max_retries=4, timeout=300` (total 5 attempts) in `client.py`; transient 429/5xx/connection errors recover transparently via the Anthropic SDK's built-in exponential backoff.
 - **Conversation TTL**: `prune_runtime_state` in `cogs/claude/state.py` evicts conversations older than `CONVERSATION_TTL` (12h) every 15 minutes via `@tasks.loop`. Caps at `MAX_ACTIVE_CONVERSATIONS`. Daily costs retained for `DAILY_COST_RETENTION_DAYS` (30).
 - **Request IDs**: `cog_before_invoke` (and `on_message`) bind a fresh 8-char hex id via `discord_claude.logging_setup.bind_request_id`. All downstream `logger.info`/`warning`/`error` calls automatically include the id. Set `LOG_FORMAT=json` for JSON-lines output.
+- **Async file I/O**: blocking `open()` and `pathlib` methods (`read_bytes`, `write_bytes`, `unlink`, etc.) inside `async def` freeze the Discord event loop and stall every concurrent slash command. Wrap them with `asyncio.to_thread(...)` so the I/O runs on a worker thread. Enforced by `ruff` (`ASYNC230`/`ASYNC240`).

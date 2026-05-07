@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any, Literal, Protocol, TypedDict
 
 from discord import Embed, Member, User
@@ -229,11 +229,11 @@ class Conversation:
 
     params: ChatCompletionParameters
     messages: list[dict[str, Any]]
-    created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
-    updated_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    created_at: datetime = field(default_factory=lambda: datetime.now(UTC))
+    updated_at: datetime = field(default_factory=lambda: datetime.now(UTC))
 
     def touch(self) -> None:
-        self.updated_at = datetime.now(timezone.utc)
+        self.updated_at = datetime.now(UTC)
 
 
 class ToolHandler(Protocol):

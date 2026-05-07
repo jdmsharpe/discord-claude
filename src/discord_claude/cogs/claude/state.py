@@ -1,5 +1,5 @@
 import contextlib
-from datetime import date, datetime, timedelta, timezone
+from datetime import UTC, date, datetime, timedelta
 from typing import Any
 
 from discord import Member, User
@@ -77,7 +77,7 @@ DAILY_COST_RETENTION_DAYS = 30
 
 
 def _now_utc() -> datetime:
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
 def _extract_daily_total(value: float | tuple[float, datetime]) -> float:
@@ -146,7 +146,9 @@ async def compact_conversation(
     summary_response = await cog.client.messages.parse(**parse_kwargs)
     summary_text = _render_compaction_summary(summary_response)
     if not isinstance(getattr(summary_response, "parsed_output", None), ConversationSummary):
-        cog.logger.warning("Compaction summary structured output was unavailable; used text fallback")
+        cog.logger.warning(
+            "Compaction summary structured output was unavailable; used text fallback"
+        )
 
     messages.clear()
     messages.append({"role": "user", "content": summary_text})
