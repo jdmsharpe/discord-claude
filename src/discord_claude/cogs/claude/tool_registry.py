@@ -89,9 +89,9 @@ def get_tool_select_options(selected_tools: set[str]) -> list[dict[str, Any]]:
 
 
 __all__ = [
+    "TOOL_REGISTRY",
     "ExecutionMode",
     "ToolRegistryEntry",
-    "TOOL_REGISTRY",
     "get_anthropic_tools",
     "get_tool_select_options",
 ]

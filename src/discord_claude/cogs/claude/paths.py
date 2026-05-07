@@ -21,4 +21,4 @@ def get_memories_base_dir() -> Path:
 
 MEMORIES_BASE_DIR = get_memories_base_dir()
 
-__all__ = ["ROOT_DIR", "DEFAULT_MEMORIES_BASE_DIR", "MEMORIES_BASE_DIR", "get_memories_base_dir"]
+__all__ = ["DEFAULT_MEMORIES_BASE_DIR", "MEMORIES_BASE_DIR", "ROOT_DIR", "get_memories_base_dir"]

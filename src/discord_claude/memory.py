@@ -69,18 +69,17 @@ def execute_memory_operation(user_id: int, tool_input: dict[str, Any]) -> str:
     try:
         if command == "view":
             return _handle_view(user_id, tool_input)
-        elif command == "create":
+        if command == "create":
             return _handle_create(user_id, tool_input)
-        elif command == "str_replace":
+        if command == "str_replace":
             return _handle_str_replace(user_id, tool_input)
-        elif command == "insert":
+        if command == "insert":
             return _handle_insert(user_id, tool_input)
-        elif command == "delete":
+        if command == "delete":
             return _handle_delete(user_id, tool_input)
-        elif command == "rename":
+        if command == "rename":
             return _handle_rename(user_id, tool_input)
-        else:
-            raise AssertionError(f"Unhandled command: {command}")
+        raise AssertionError(f"Unhandled command: {command}")
     except ValueError as e:
         return f"Error: {e}"
     except Exception as e:
@@ -318,9 +317,8 @@ def _human_readable_size(size_bytes: int) -> str:
     """Convert bytes to human-readable size string."""
     if size_bytes < 1024:
         return f"{size_bytes}"
-    elif size_bytes < 1024 * 1024:
+    if size_bytes < 1024 * 1024:
         return f"{size_bytes / 1024:.1f}K"
-    elif size_bytes < 1024 * 1024 * 1024:
+    if size_bytes < 1024 * 1024 * 1024:
         return f"{size_bytes / (1024 * 1024):.1f}M"
-    else:
-        return f"{size_bytes / (1024 * 1024 * 1024):.1f}G"
+    return f"{size_bytes / (1024 * 1024 * 1024):.1f}G"

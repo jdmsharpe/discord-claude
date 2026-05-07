@@ -4,7 +4,7 @@
 [![Version](https://img.shields.io/github/v/tag/jdmsharpe/discord-claude?sort=semver&label=version)](https://github.com/jdmsharpe/discord-claude/tags)
 [![License](https://img.shields.io/github/license/jdmsharpe/discord-claude?label=license)](./LICENSE)
 [![CI](https://github.com/jdmsharpe/discord-claude/actions/workflows/main.yml/badge.svg)](https://github.com/jdmsharpe/discord-claude/actions/workflows/main.yml)
-[![Python](https://img.shields.io/badge/python-3.10%20%7C%203.11%20%7C%203.12%20%7C%203.13-3776AB?logo=python&logoColor=white)](https://www.python.org/downloads/)
+[![Python](https://img.shields.io/badge/python-3.11%20%7C%203.12%20%7C%203.13-3776AB?logo=python&logoColor=white)](https://www.python.org/downloads/)
 
 ## Overview
 
@@ -52,7 +52,7 @@ Check if the bot has the necessary permissions in the current channel.
 
 ### Prerequisites
 
-- Python 3.10+
+- Python 3.11+
 - Discord Bot Token
 - Anthropic API Key
 
@@ -185,11 +185,11 @@ python -m pip install -e ".[dev]"
 python -m pytest -q
 
 # Run tests in Docker
-docker build --build-arg PYTHON_VERSION=3.10 -f Dockerfile.test -t discord-claude-test:3.10 .
-docker run --rm discord-claude-test:3.10 python -m pytest -q
+docker build --build-arg PYTHON_VERSION=3.11 -f Dockerfile.test -t discord-claude-test:3.11 .
+docker run --rm discord-claude-test:3.11 python -m pytest -q
 
 # Run linting and type checks in Docker
-docker run --rm discord-claude-test:3.10 sh -lc 'ruff check src tests && ruff format --check src tests && pyright'
+docker run --rm discord-claude-test:3.11 sh -lc 'ruff check src tests && ruff format --check src tests && pyright'
 ```
 
 ### Linting & Type Checking
