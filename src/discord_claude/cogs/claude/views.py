@@ -122,7 +122,9 @@ class ButtonView(View):
                 )
                 return
 
-            selected_values = [value for value in tool_select.values if value in TOOL_REGISTRY]
+            selected_values = [
+                value for value in (tool_select.values or []) if value in TOOL_REGISTRY
+            ]
             if selected_values:
                 conversation.params.tools = selected_values
                 conversation.params.tool_choice = {"type": "auto"}
