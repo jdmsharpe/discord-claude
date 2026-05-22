@@ -127,6 +127,35 @@ class TestButtonView:
         call_args = interaction.response.send_message.call_args
         assert "Tool behavior: none" in call_args.args[0]
 
+    async def test_tool_select_none_values_treated_as_empty(self):
+        # py-cord 2.8 types Select.values as Optional; the callback guards with
+        # `tool_select.values or []`, so a None payload must behave like empty.
+        starter = MagicMock()
+        conversation = MagicMock()
+        conversation.params = MagicMock()
+        conversation.params.tools = ["web_search", "memory"]
+        conversation.params.mcp_preset_names = []
+        conversation.params.tool_choice = {"type": "auto"}
+        view = _make_view(
+            conversation_starter=starter,
+            initial_tools=["web_search", "memory"],
+            get_conversation=MagicMock(return_value=conversation),
+        )
+        mock_select = MagicMock()
+        mock_select.values = None
+
+        interaction = MagicMock()
+        interaction.user = starter
+        interaction.response = MagicMock()
+        interaction.response.send_message = AsyncMock()
+        interaction.response.is_done = MagicMock(return_value=False)
+
+        await view.tool_select_callback(interaction, mock_select)
+
+        assert conversation.params.tools == []
+        assert conversation.params.tool_choice == {"type": "none"}
+        assert "Tool behavior: none" in interaction.response.send_message.call_args.args[0]
+
     async def test_tool_select_empty_keeps_auto_when_mcp_active(self):
         starter = MagicMock()
         conversation = MagicMock()
