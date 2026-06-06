@@ -28,16 +28,26 @@ ADVISOR_MODEL_COMPATIBILITY: dict[str, tuple[str, ...]] = {
 }
 
 # Models that support adaptive thinking
-ADAPTIVE_THINKING_MODELS = {"claude-opus-4-7", "claude-opus-4-6", "claude-sonnet-4-6"}
+ADAPTIVE_THINKING_MODELS = {
+    "claude-opus-4-8",
+    "claude-opus-4-7",
+    "claude-opus-4-6",
+    "claude-sonnet-4-6",
+}
 
 # Models that reject explicit sampling parameter overrides.
-SAMPLING_LOCKED_MODELS = {"claude-opus-4-7"}
+SAMPLING_LOCKED_MODELS = {"claude-opus-4-8", "claude-opus-4-7"}
 
 # Models that only support adaptive thinking (no budget_tokens mode).
-ADAPTIVE_ONLY_THINKING_MODELS = {"claude-opus-4-7"}
+ADAPTIVE_ONLY_THINKING_MODELS = {"claude-opus-4-8", "claude-opus-4-7"}
 
 # Models that support server-side compaction (beta)
-COMPACTION_MODELS = {"claude-opus-4-7", "claude-opus-4-6", "claude-sonnet-4-6"}
+COMPACTION_MODELS = {
+    "claude-opus-4-8",
+    "claude-opus-4-7",
+    "claude-opus-4-6",
+    "claude-sonnet-4-6",
+}
 
 # Context management thresholds
 CONTEXT_WARNING_THRESHOLD = 0.85  # Show warning embed at 85% of context window
@@ -100,6 +110,9 @@ class UsageTotals:
 
     input_tokens: int = 0
     output_tokens: int = 0
+    # Subset of output_tokens spent on extended/adaptive thinking (billed at the
+    # output rate). Anthropic 0.105+ reports this via usage.output_tokens_details.
+    thinking_tokens: int = 0
     cache_creation_tokens: int = 0
     cache_read_tokens: int = 0
     web_search_requests: int = 0
@@ -118,6 +131,11 @@ class UsageTotals:
         self.output_tokens += getattr(usage, "output_tokens", 0) or 0
         self.cache_creation_tokens += getattr(usage, "cache_creation_input_tokens", 0) or 0
         self.cache_read_tokens += getattr(usage, "cache_read_input_tokens", 0) or 0
+        details = getattr(usage, "output_tokens_details", None)
+        if details is not None:
+            thinking = getattr(details, "thinking_tokens", 0) or 0
+            if isinstance(thinking, int):
+                self.thinking_tokens += thinking
 
     def _accumulate_advisor_usage(self, usage: Any) -> None:
         """Add usage billed at the advisor model's rates."""
@@ -155,6 +173,7 @@ class UsageTotals:
         """Stamp all accumulated totals onto a ParsedResponse."""
         parsed.input_tokens = self.input_tokens
         parsed.output_tokens = self.output_tokens
+        parsed.thinking_tokens = self.thinking_tokens
         parsed.cache_creation_tokens = self.cache_creation_tokens
         parsed.cache_read_tokens = self.cache_read_tokens
         parsed.web_search_requests = self.web_search_requests

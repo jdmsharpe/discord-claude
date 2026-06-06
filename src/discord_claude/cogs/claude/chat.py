@@ -543,7 +543,7 @@ async def run_chat_command(
     ctx: ApplicationContext,
     *,
     prompt: str,
-    model: str = "claude-opus-4-7",
+    model: str = "claude-opus-4-8",
     system: str | None = None,
     attachment: Attachment | None = None,
     max_tokens: int = 16384,

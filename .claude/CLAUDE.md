@@ -122,7 +122,7 @@ pytest -q
 - MCP state persists independently from built-in tool names via `mcp_preset_names` on `ChatCompletionParameters`.
 - Anthropic MCP traffic is passed through with `mcp_servers` and `mcp_toolset`, and `call_api_with_tool_loop` adds the `mcp-client-2025-11-20` beta when MCP is active.
 - MCP content blocks are ignored by the local tool loop; only built-in Anthropic tool calls are executed client-side.
-- **Future migration target:** the SDK now ships `client.beta.messages.tool_runner` with `anthropic.lib.tools.mcp.async_mcp_tool` for first-class MCP integration. Once that surface is GA-promoted out of `beta`, retire the manual `mcp-client-2025-11-20` beta-header path in `call_api_with_tool_loop`. (Last checked 2026-05-06; recheck on next anthropic SDK minor bump.)
+- **Future migration target:** the SDK now ships `client.beta.messages.tool_runner` with `anthropic.lib.tools.mcp.async_mcp_tool` for first-class MCP integration. Once that surface is GA-promoted out of `beta`, retire the manual `mcp-client-2025-11-20` beta-header path in `call_api_with_tool_loop`. (Last checked anthropic 0.106.0 on 2026-06-05 — still beta-only: `client.messages.tool_runner` does not exist, only `client.beta.messages.tool_runner`, and `anthropic.lib.tools` exposes only `Beta*` runners. Recheck on next anthropic SDK minor bump.)
 
 ## Runtime Conventions (Cross-Project)
 

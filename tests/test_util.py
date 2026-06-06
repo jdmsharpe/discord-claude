@@ -301,6 +301,35 @@ class TestUsageTotals:
         assert totals.input_tokens == 300
         assert totals.output_tokens == 150
 
+    def test_accumulate_thinking_tokens(self):
+        """thinking_tokens from usage.output_tokens_details are tracked (anthropic 0.105+)."""
+        totals = UsageTotals()
+        usage = MagicMock(
+            input_tokens=100,
+            output_tokens=80,
+            cache_creation_input_tokens=0,
+            cache_read_input_tokens=0,
+            server_tool_use=None,
+            output_tokens_details=MagicMock(thinking_tokens=60),
+        )
+        totals.accumulate(usage)
+        assert totals.output_tokens == 80
+        assert totals.thinking_tokens == 60
+
+    def test_accumulate_thinking_tokens_absent(self):
+        """A None output_tokens_details leaves thinking_tokens at zero."""
+        totals = UsageTotals()
+        usage = MagicMock(
+            input_tokens=100,
+            output_tokens=80,
+            cache_creation_input_tokens=0,
+            cache_read_input_tokens=0,
+            server_tool_use=None,
+            output_tokens_details=None,
+        )
+        totals.accumulate(usage)
+        assert totals.thinking_tokens == 0
+
     def test_accumulate_none_is_noop(self):
         """Accumulating None usage should not change totals."""
         totals = UsageTotals()

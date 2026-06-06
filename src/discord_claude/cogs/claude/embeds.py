@@ -170,6 +170,8 @@ def append_pricing_embed(
     parts = [
         f"${request_cost:.4f} · {parsed.input_tokens:,} tokens in / {parsed.output_tokens:,} tokens out"
     ]
+    if parsed.thinking_tokens:
+        parts.append(f"{parsed.thinking_tokens:,} thinking")
     if parsed.cache_read_tokens:
         parts.append(f"{parsed.cache_read_tokens:,} cached")
     if parsed.advisor_calls:
