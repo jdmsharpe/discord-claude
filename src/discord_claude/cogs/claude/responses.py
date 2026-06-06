@@ -14,6 +14,7 @@ class ParsedResponse:
     stop_details: dict[str, str | None] | None = None
     input_tokens: int = 0
     output_tokens: int = 0
+    thinking_tokens: int = 0
     cache_creation_tokens: int = 0
     cache_read_tokens: int = 0
     web_search_requests: int = 0
