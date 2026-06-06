@@ -20,8 +20,8 @@ A Discord bot built on Pycord 2.0 that wraps Anthropic's Claude API, providing a
 - **Remote MCP Support:** Enable trusted remote MCP servers per conversation through named presets, featuring optional authorization, allow-lists, and deferred tool loading.
 - **Citations:** Web search and document citations are displayed as a separate Sources embed.
 - **Prompt Caching:** Automatic prompt caching reduces costs (cache reads at 10% of input price) and latency on multi-turn conversations.
-- **Context Management:** Automatic compaction for non-compaction models at 75% context usage, server-side compaction for Opus 4.7/4.6 and Sonnet 4.6, and an 85% context warning embed. Clears old tool results/thinking blocks to manage context growth when compatible.
-- **Pricing Display:** Per-request cost, token counts, advisor-call counts, cache hits, and daily spend shown as a separate embed after each response (configurable).
+- **Context Management:** Automatic compaction for non-compaction models at 75% context usage, server-side compaction for Opus 4.8/4.7/4.6 and Sonnet 4.6, and an 85% context warning embed. Clears old tool results/thinking blocks to manage context growth when compatible.
+- **Pricing Display:** Per-request cost, token counts (including thinking tokens), advisor-call counts, cache hits, and daily spend shown as a separate embed after each response (configurable).
 - **Conversation Controls:** Pause, resume, regenerate responses, and end conversations with interactive buttons.
 - **Customization:** Fine-tune responses with system prompts, temperature, top_p, top_k, effort, thinking budget, and max_tokens.
 
@@ -32,7 +32,7 @@ A Discord bot built on Pycord 2.0 that wraps Anthropic's Claude API, providing a
 Start a conversation with Claude.
 
 - **`prompt`** *(required)*: Your initial message to Claude.
-- **`model`**: Choose the Claude model (default: Claude Opus 4.7).
+- **`model`**: Choose the Claude model (default: Claude Opus 4.8).
 - **`system`**: System prompt to set Claude's behavior.
 - **`attachment`**: Attach an image, PDF, or text file.
 - **`max_tokens`**: Maximum tokens in the response (default: 16384).
