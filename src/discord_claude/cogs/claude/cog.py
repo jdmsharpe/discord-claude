@@ -248,7 +248,7 @@ class ClaudeCog(commands.Cog):
     )
     @option(
         "model",
-        description="Choose from the following Claude models. (default: Claude Opus 4.7. warning: Opus is expensive!)",
+        description="Choose from the following Claude models. (default: Claude Opus 4.8. warning: Opus is expensive!)",
         required=False,
         choices=CHAT_MODEL_CHOICES,
         type=str,
