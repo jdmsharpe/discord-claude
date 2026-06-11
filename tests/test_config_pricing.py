@@ -17,11 +17,13 @@ class TestPricingLoader:
     def test_bundled_yaml_populates_model_pricing(self):
         pricing = _reload_pricing()
         assert ("claude-opus-4-7") in pricing.MODEL_PRICING
+        assert pricing.MODEL_PRICING["claude-fable-5"] == (10.0, 50.0)
         assert pricing.MODEL_PRICING["claude-opus-4-7"] == (5.0, 25.0)
         assert pricing.MODEL_PRICING["claude-haiku-4-5"] == (1.0, 5.0)
 
     def test_bundled_yaml_populates_context_windows(self):
         pricing = _reload_pricing()
+        assert pricing.MODEL_CONTEXT_WINDOWS["claude-fable-5"] == 1_000_000
         assert pricing.MODEL_CONTEXT_WINDOWS["claude-opus-4-7"] == 1_000_000
         assert pricing.MODEL_CONTEXT_WINDOWS["claude-haiku-4-5"] == 200_000
 
