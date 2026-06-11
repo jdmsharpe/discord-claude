@@ -231,8 +231,11 @@ def track_daily_cost(
     advisor_model: str | None = None,
 ) -> tuple[float, float]:
     """Add this request's cost to the user's daily total and return request and daily totals."""
+    # If the refusal fallback served this turn, bill at the served model's
+    # rates — its tokens were generated (and are billed) by that model.
+    billed_model = parsed.served_model or model
     cost = calculate_cost(
-        model,
+        billed_model,
         parsed.input_tokens,
         parsed.output_tokens,
         parsed.cache_creation_tokens,

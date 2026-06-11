@@ -54,6 +54,14 @@ COMPACTION_MODELS = {
     "claude-sonnet-4-6",
 }
 
+# Server-side refusal fallback (beta). These models' safety classifiers can
+# decline a request (HTTP 200 with stop_reason "refusal"); with the beta
+# active the API retries the same request on REFUSAL_FALLBACK_MODEL in one
+# round trip. claude-opus-4-8 is the only supported fallback target at launch.
+REFUSAL_FALLBACK_BETA = "server-side-fallback-2026-06-01"
+REFUSAL_FALLBACK_MODELS = {"claude-fable-5"}
+REFUSAL_FALLBACK_MODEL = "claude-opus-4-8"
+
 # Context management thresholds
 CONTEXT_WARNING_THRESHOLD = 0.85  # Show warning embed at 85% of context window
 CONTEXT_COMPACTION_THRESHOLD = 0.75  # Trigger manual compaction at 75% (non-compaction models)
@@ -161,7 +169,9 @@ class UsageTotals:
                 iteration_type = getattr(iteration, "type", None)
                 if iteration_type == "advisor_message":
                     self._accumulate_advisor_usage(iteration)
-                elif iteration_type == "message":
+                elif iteration_type in ("message", "fallback_message"):
+                    # "fallback_message" = the attempt served by the refusal
+                    # fallback model; billed at that model's rates.
                     self._accumulate_executor_usage(iteration)
         else:
             self._accumulate_executor_usage(usage)

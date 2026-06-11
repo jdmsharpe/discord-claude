@@ -398,6 +398,39 @@ class TestUsageTotals:
         assert totals.advisor_cache_creation_tokens == 50
         assert totals.advisor_cache_read_tokens == 25
 
+    def test_accumulate_fallback_message_iterations(self):
+        """fallback_message iterations (refusal fallback) count as executor usage."""
+        totals = UsageTotals()
+        usage = MagicMock(
+            iterations=[
+                # Declined-before-output attempt: reported but unbilled (zeros).
+                MagicMock(
+                    type="message",
+                    input_tokens=0,
+                    output_tokens=0,
+                    cache_creation_input_tokens=0,
+                    cache_read_input_tokens=0,
+                ),
+                # The attempt served by the fallback model.
+                MagicMock(
+                    type="fallback_message",
+                    input_tokens=150,
+                    output_tokens=90,
+                    cache_creation_input_tokens=20,
+                    cache_read_input_tokens=30,
+                ),
+            ],
+            server_tool_use=None,
+        )
+
+        totals.accumulate(usage)
+
+        assert totals.input_tokens == 150
+        assert totals.output_tokens == 90
+        assert totals.cache_creation_tokens == 20
+        assert totals.cache_read_tokens == 30
+        assert totals.advisor_calls == 0
+
     def test_apply_to_sets_all_fields(self):
         """apply_to stamps all fields onto a target object."""
         totals = UsageTotals(

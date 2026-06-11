@@ -297,3 +297,31 @@ class TestContextEmbeds:
         assert len(embeds) == 1
         assert embeds[0].title == "Context Compacted"
         assert "summarized" in embeds[0].description
+
+
+class TestFallbackEmbed:
+    """Tests for the append_fallback_embed helper."""
+
+    def test_no_embed_when_no_fallback(self):
+        from discord_claude.cogs.claude.embeds import append_fallback_embed
+
+        embeds = []
+        append_fallback_embed(embeds, "claude-fable-5", None)
+        assert embeds == []
+
+    def test_no_embed_when_served_by_requested_model(self):
+        from discord_claude.cogs.claude.embeds import append_fallback_embed
+
+        embeds = []
+        append_fallback_embed(embeds, "claude-fable-5", "claude-fable-5")
+        assert embeds == []
+
+    def test_embed_when_fallback_served(self):
+        from discord_claude.cogs.claude.embeds import append_fallback_embed
+
+        embeds = []
+        append_fallback_embed(embeds, "claude-fable-5", "claude-opus-4-8")
+        assert len(embeds) == 1
+        assert embeds[0].title == "Model Fallback"
+        assert "claude-fable-5" in embeds[0].description
+        assert "claude-opus-4-8" in embeds[0].description
