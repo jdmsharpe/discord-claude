@@ -27,6 +27,10 @@ class ParsedResponse:
     advisor_cache_read_tokens: int = 0
     context_warning: bool = False
     context_compacted: bool = False
+    # Set when the server-side refusal fallback served this response with a
+    # different model than the one requested (e.g. claude-fable-5 declined
+    # and claude-opus-4-8 answered).
+    served_model: str | None = None
 
 
 def extract_response_content(response) -> ParsedResponse:
@@ -81,6 +85,9 @@ def extract_response_content(response) -> ParsedResponse:
                         )
         elif block.type == "tool_use":
             tool_use_blocks.append(block)
+        elif block.type == "fallback":
+            # Refusal-fallback switch marker — audit only, nothing to render.
+            continue
         elif block.type == "advisor_tool_result" or block.type.startswith("mcp_"):
             continue
 

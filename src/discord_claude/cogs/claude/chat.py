@@ -20,6 +20,9 @@ from discord_claude.util import (
     CONTEXT_COMPACTION_THRESHOLD,
     EXTENDED_THINKING_MODELS,
     MODEL_CONTEXT_WINDOWS,
+    REFUSAL_FALLBACK_BETA,
+    REFUSAL_FALLBACK_MODEL,
+    REFUSAL_FALLBACK_MODELS,
     SAMPLING_LOCKED_MODELS,
     ChatCompletionParameters,
     Conversation,
@@ -37,6 +40,7 @@ from .embeds import (
     append_citations_embed,
     append_compaction_embed,
     append_context_warning_embed,
+    append_fallback_embed,
     append_pricing_embed,
     append_response_embeds,
     append_stop_reason_embed,
@@ -288,6 +292,9 @@ async def call_api_with_tool_loop(
     if use_compaction:
         betas.append("compact-2026-01-12")
         edits.append({"type": "compact_20260112"})
+    if model in REFUSAL_FALLBACK_MODELS:
+        betas.append(REFUSAL_FALLBACK_BETA)
+        api_params["fallbacks"] = [{"model": REFUSAL_FALLBACK_MODEL}]
 
     totals = UsageTotals()
     context_window = MODEL_CONTEXT_WINDOWS.get(model, 200_000)
@@ -324,6 +331,17 @@ async def call_api_with_tool_loop(
 
         parsed = extract_response_content(response)
         parsed.stop_reason = response.stop_reason
+        # Served-by signal for refusal fallbacks: a "fallback_message" entry in
+        # usage.iterations covers every fallback-served turn, including sticky
+        # turns that carry no "fallback" content block.
+        usage_iterations = getattr(getattr(response, "usage", None), "iterations", None) or []
+        if any(getattr(entry, "type", None) == "fallback_message" for entry in usage_iterations):
+            parsed.served_model = getattr(response, "model", None)
+            cog.logger.info(
+                "Refusal fallback served this response: requested=%s served=%s",
+                model,
+                parsed.served_model,
+            )
         stop_details = getattr(response, "stop_details", None)
         if stop_details is not None:
             parsed.stop_details = {
@@ -436,6 +454,7 @@ async def handle_new_message_in_conversation(cog, message, conversation: Convers
         append_thinking_embeds(embeds, parsed.thinking)
         append_response_embeds(embeds, response_text)
         append_stop_reason_embed(embeds, parsed.stop_reason, parsed.stop_details)
+        append_fallback_embed(embeds, params.model, parsed.served_model)
         if parsed.context_compacted:
             append_compaction_embed(embeds)
         if parsed.context_warning:
@@ -736,6 +755,7 @@ async def run_chat_command(
         append_thinking_embeds(embeds, parsed.thinking)
         append_response_embeds(embeds, response_text)
         append_stop_reason_embed(embeds, parsed.stop_reason, parsed.stop_details)
+        append_fallback_embed(embeds, model, parsed.served_model)
         if parsed.context_compacted:
             append_compaction_embed(embeds)
         if parsed.context_warning:

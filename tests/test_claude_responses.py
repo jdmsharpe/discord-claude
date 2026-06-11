@@ -274,3 +274,23 @@ class TestExtractResponseContent:
         parsed = extract_response_content(response)
         assert parsed.text == "MCP response complete."
         assert parsed.tool_use_blocks == []
+
+
+class TestFallbackBlock:
+    """The refusal-fallback switch marker block is skipped during extraction."""
+
+    def test_fallback_block_skipped(self):
+        from discord_claude.cogs.claude.responses import extract_response_content
+
+        response = MagicMock()
+        fallback_block = MagicMock()
+        fallback_block.type = "fallback"
+        text_block = MagicMock()
+        text_block.type = "text"
+        text_block.text = "Answered by the fallback model."
+        text_block.citations = None
+        response.content = [fallback_block, text_block]
+
+        parsed = extract_response_content(response)
+        assert parsed.text == "Answered by the fallback model."
+        assert parsed.served_model is None  # stamped by the chat loop, not here

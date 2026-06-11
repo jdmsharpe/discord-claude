@@ -132,6 +132,26 @@ def append_stop_reason_embed(
         )
 
 
+def append_fallback_embed(
+    embeds: list[Embed],
+    requested_model: str,
+    served_model: str | None,
+) -> None:
+    """Append a notice when the refusal fallback served with a different model."""
+    if not served_model or served_model == requested_model:
+        return
+    embeds.append(
+        Embed(
+            title="Model Fallback",
+            description=(
+                f"`{requested_model}` declined this request; "
+                f"the response was served by `{served_model}` instead."
+            ),
+            color=Colour.yellow(),
+        )
+    )
+
+
 def append_context_warning_embed(embeds: list[Embed]) -> None:
     """Append a warning embed when context usage exceeds 85% of the window."""
     embeds.append(
@@ -198,6 +218,7 @@ __all__ = [
     "append_citations_embed",
     "append_compaction_embed",
     "append_context_warning_embed",
+    "append_fallback_embed",
     "append_pricing_embed",
     "append_response_embeds",
     "append_stop_reason_embed",
