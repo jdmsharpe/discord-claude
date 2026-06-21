@@ -243,12 +243,11 @@ def test_critical_choice_values_present():
     assert any(choice.value == "claude-fable-5" for choice in CHAT_MODEL_CHOICES)
     assert any(choice.value == "claude-opus-4-7" for choice in CHAT_MODEL_CHOICES)
     assert any(choice.value == "claude-opus-4-6" for choice in CHAT_MODEL_CHOICES)
-    assert any(choice.value == "claude-mythos-preview" for choice in CHAT_MODEL_CHOICES)
 
 
 def test_effort_choice_set():
     values = {choice.value for choice in RESPONSE_EFFORT_CHOICES}
-    assert values == {"low", "medium", "high"}
+    assert values == {"low", "medium", "high", "xhigh", "max"}
 
 
 def test_tool_choice_set():

@@ -206,6 +206,20 @@ class TestToolChoiceSupport:
         assert api_params["tools"][1]["configs"] == {"search_issues": {"enabled": True}}
         assert api_params["tool_choice"] == {"type": "auto"}
 
+    def test_build_api_params_nests_effort_under_output_config(self):
+        from discord_claude.cogs.claude.cog import ClaudeCog
+        from discord_claude.util import ChatCompletionParameters
+
+        params = ChatCompletionParameters(model="claude-opus-4-8", effort="high")
+
+        api_params = ClaudeCog._build_api_params(
+            params,
+            [{"role": "user", "content": "Hello"}],
+        )
+
+        assert "effort" not in api_params
+        assert api_params["output_config"] == {"effort": "high"}
+
     def test_build_api_params_without_mcp_is_unchanged(self, monkeypatch):
         from discord_claude.cogs.claude.cog import ClaudeCog
         from discord_claude.util import ChatCompletionParameters

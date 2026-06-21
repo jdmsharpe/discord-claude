@@ -210,11 +210,6 @@ class TestCalculateCost:
         cost = calculate_cost("claude-opus-4-7", 1_000_000, 1_000_000)
         assert cost == 30.0  # $5 + $25
 
-    def test_mythos_preview_pricing(self):
-        """Mythos Preview uses $25/MTok input, $125/MTok output."""
-        cost = calculate_cost("claude-mythos-preview", 1_000_000, 1_000_000)
-        assert cost == 150.0  # $25 + $125
-
     def test_opus_4_5_pricing(self):
         """Opus 4.5 uses $5/MTok input, $25/MTok output."""
         cost = calculate_cost("claude-opus-4-5", 1_000_000, 1_000_000)
