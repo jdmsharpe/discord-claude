@@ -178,7 +178,8 @@ def build_api_params(
     if thinking_config is not None:
         api_params["thinking"] = thinking_config
     if params.effort is not None:
-        api_params["effort"] = params.effort
+        output_config = api_params.setdefault("output_config", {})
+        output_config["effort"] = params.effort
     if params.system:
         api_params["system"] = params.system
     if params.temperature is not None:

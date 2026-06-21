@@ -13,7 +13,7 @@ A Discord bot built on Pycord 2.0 that wraps Anthropic's Claude API, providing a
 ## Features
 
 - **Multi-turn Conversations:** Start conversations with Claude that maintain context across multiple messages.
-- **Multiple Claude Models:** Choose from Claude Fable 5, Opus (4.8, 4.7, 4.6, 4.5, 4.1), Sonnet (4.6, 4.5), Haiku (4.5), and Claude Mythos Preview.
+- **Multiple Claude Models:** Choose from Claude Fable 5, Opus (4.8, 4.7, 4.6, 4.5, 4.1), Sonnet (4.6, 4.5), and Haiku (4.5).
 - **Refusal Fallback (Beta):** If Claude Fable 5's safety classifiers decline a request, the API retries it on Claude Opus 4.8 in the same round trip. The response notes the fallback, and cost tracking bills at the serving model's rates.
 - **Multimodal Input:** Attach images (JPEG, PNG, GIF, WEBP), PDFs, or text files (TXT, MD, CSV).
 - **Built-In Tools:** Enable web search, web fetch, code execution, and memory with `tool_choice` control (`auto` / `none`) and mid-conversation toggles.
@@ -170,7 +170,6 @@ bot.add_cog(ClaudeCog(bot=bot))
    - 🔧 Toggle built-in tools mid-conversation via the select menu.
 4. **Note on MCP:** If MCP presets are enabled, the bot adds an explicit MCP safety note to the opening embeds and keeps those presets active until the conversation ends.
 5. **Note on Advisor:** Advisor guidance is billed separately at the advisor model's rates, so request cost can rise even when the executor model stays the same.
-6. **Note on Mythos Preview:** Anthropic currently treats `claude-mythos-preview` as a restricted preview model, so access may depend on your Anthropic account or program enrollment.
 
 ## Development
 
