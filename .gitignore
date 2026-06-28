@@ -18,10 +18,9 @@ __pycache__/
 # Ignore system files
 .DS_Store
 Thumbs.db
+
 # Tool/editor artifacts
 *.egg-info/
-.serena/
 .codex/
-
-# Local release notes (do not publish)
-/CHANGELOG.md
+.agents/
+.serena/
