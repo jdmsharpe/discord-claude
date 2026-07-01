@@ -30,6 +30,7 @@ ADVISOR_MODEL_COMPATIBILITY: dict[str, tuple[str, ...]] = {
 # Models that support adaptive thinking
 ADAPTIVE_THINKING_MODELS = {
     "claude-fable-5",
+    "claude-sonnet-5",
     "claude-opus-4-8",
     "claude-opus-4-7",
     "claude-opus-4-6",
@@ -37,17 +38,31 @@ ADAPTIVE_THINKING_MODELS = {
 }
 
 # Models that reject explicit sampling parameter overrides.
-SAMPLING_LOCKED_MODELS = {"claude-fable-5", "claude-opus-4-8", "claude-opus-4-7"}
+# claude-sonnet-5 joins the effort-parameter generation (Fable 5, Opus 4.8/4.7):
+# non-default temperature/top_p/top_k return a 400.
+SAMPLING_LOCKED_MODELS = {
+    "claude-fable-5",
+    "claude-sonnet-5",
+    "claude-opus-4-8",
+    "claude-opus-4-7",
+}
 
 # Models that only support adaptive thinking (no budget_tokens mode).
 # claude-fable-5 additionally rejects an explicit {"type": "disabled"} config;
 # build_thinking_config never emits one (it omits the param instead), so the
-# existing adaptive path is safe for it.
-ADAPTIVE_ONLY_THINKING_MODELS = {"claude-fable-5", "claude-opus-4-8", "claude-opus-4-7"}
+# existing adaptive path is safe for it. claude-sonnet-5 is adaptive-only too
+# (manual extended thinking returns a 400) but does accept {"type": "disabled"}.
+ADAPTIVE_ONLY_THINKING_MODELS = {
+    "claude-fable-5",
+    "claude-sonnet-5",
+    "claude-opus-4-8",
+    "claude-opus-4-7",
+}
 
 # Models that support server-side compaction (beta)
 COMPACTION_MODELS = {
     "claude-fable-5",
+    "claude-sonnet-5",
     "claude-opus-4-8",
     "claude-opus-4-7",
     "claude-opus-4-6",

@@ -343,7 +343,7 @@ class ClaudeCog(commands.Cog):
         self,
         ctx: ApplicationContext,
         prompt: str,
-        model: str = "claude-opus-4-8",
+        model: str = "claude-sonnet-5",
         system: str | None = None,
         attachment: Attachment | None = None,
         max_tokens: int = 16384,
