@@ -172,6 +172,11 @@ class TestCalculateCost:
         cost = calculate_cost("claude-sonnet-4-6", 1_000_000, 1_000_000)
         assert cost == 18.0  # $3 + $15
 
+    def test_sonnet_5_intro_pricing(self):
+        """Sonnet 5 introductory pricing: $2/MTok input, $10/MTok output (through 2026-08-31)."""
+        cost = calculate_cost("claude-sonnet-5", 1_000_000, 1_000_000)
+        assert cost == pytest.approx(12.0)  # $2 + $10
+
     def test_zero_tokens(self):
         """Zero tokens should return zero cost."""
         cost = calculate_cost("claude-sonnet-4-6", 0, 0)

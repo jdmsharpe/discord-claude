@@ -13,7 +13,7 @@ A Discord bot built on Pycord 2.0 that wraps Anthropic's Claude API, providing a
 ## Features
 
 - **Multi-turn Conversations:** Start conversations with Claude that maintain context across multiple messages.
-- **Multiple Claude Models:** Choose from Claude Fable 5, Opus (4.8, 4.7, 4.6, 4.5, 4.1), Sonnet (4.6, 4.5), and Haiku (4.5).
+- **Multiple Claude Models:** Choose from Claude Fable 5, Opus (4.8, 4.7, 4.6, 4.5, 4.1), Sonnet (5, 4.6, 4.5), and Haiku (4.5).
 - **Refusal Fallback (Beta):** If Claude Fable 5's safety classifiers decline a request, the API retries it on Claude Opus 4.8 in the same round trip. The response notes the fallback, and cost tracking bills at the serving model's rates.
 - **Multimodal Input:** Attach images (JPEG, PNG, GIF, WEBP), PDFs, or text files (TXT, MD, CSV).
 - **Built-In Tools:** Enable web search, web fetch, code execution, and memory with `tool_choice` control (`auto` / `none`) and mid-conversation toggles.
@@ -21,7 +21,7 @@ A Discord bot built on Pycord 2.0 that wraps Anthropic's Claude API, providing a
 - **Remote MCP Support:** Enable trusted remote MCP servers per conversation through named presets, featuring optional authorization, allow-lists, and deferred tool loading.
 - **Citations:** Web search and document citations are displayed as a separate Sources embed.
 - **Prompt Caching:** Automatic prompt caching reduces costs (cache reads at 10% of input price) and latency on multi-turn conversations.
-- **Context Management:** Automatic compaction for non-compaction models at 75% context usage, server-side compaction for Opus 4.8/4.7/4.6 and Sonnet 4.6, and an 85% context warning embed. Clears old tool results/thinking blocks to manage context growth when compatible.
+- **Context Management:** Automatic compaction for non-compaction models at 75% context usage, server-side compaction for Opus 4.8/4.7/4.6 and Sonnet 5/4.6, and an 85% context warning embed. Clears old tool results/thinking blocks to manage context growth when compatible.
 - **Pricing Display:** Per-request cost, token counts (including thinking tokens), advisor-call counts, cache hits, and daily spend shown as a separate embed after each response (configurable).
 - **Conversation Controls:** Pause, resume, regenerate responses, and end conversations with interactive buttons.
 - **Customization:** Fine-tune responses with system prompts, temperature, top_p, top_k, effort, thinking budget, and max_tokens.
@@ -33,7 +33,7 @@ A Discord bot built on Pycord 2.0 that wraps Anthropic's Claude API, providing a
 Start a conversation with Claude.
 
 - **`prompt`** *(required)*: Your initial message to Claude.
-- **`model`**: Choose the Claude model (default: Claude Opus 4.8).
+- **`model`**: Choose the Claude model (default: Claude Sonnet 5).
 - **`system`**: System prompt to set Claude's behavior.
 - **`attachment`**: Attach an image, PDF, or text file.
 - **`max_tokens`**: Maximum tokens in the response (default: 16384).
