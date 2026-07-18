@@ -4,6 +4,7 @@
 [![Version](https://img.shields.io/github/v/tag/jdmsharpe/discord-claude?sort=semver&label=version)](https://github.com/jdmsharpe/discord-claude/tags)
 [![License](https://img.shields.io/github/license/jdmsharpe/discord-claude?label=license)](./LICENSE)
 [![CI](https://github.com/jdmsharpe/discord-claude/actions/workflows/main.yml/badge.svg)](https://github.com/jdmsharpe/discord-claude/actions/workflows/main.yml)
+[![Docker Pulls](https://img.shields.io/docker/pulls/jsgreen152/discord-claude?logo=docker&logoColor=white)](https://hub.docker.com/r/jsgreen152/discord-claude)
 [![Python](https://img.shields.io/badge/python-3.11%20%7C%203.12%20%7C%203.13%20%7C%203.14-3776AB?logo=python&logoColor=white)](https://www.python.org/downloads/)
 
 ## Overview
