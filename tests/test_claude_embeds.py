@@ -81,6 +81,24 @@ class TestAppendCitationsEmbed:
         assert "Source 19" in embeds[0].description
         assert "Source 20" not in embeds[0].description
 
+    def test_long_web_links_are_kept_complete_or_omitted(self):
+        from discord_claude.cogs.claude.embeds import append_citations_embed
+
+        first_url = "https://example.com/" + "a" * 3500
+        second_url = "https://example.org/" + "b" * 1000
+        embeds = []
+        append_citations_embed(
+            embeds,
+            [
+                {"kind": "web", "url": first_url, "title": "First"},
+                {"kind": "web", "url": second_url, "title": "Second"},
+            ],
+        )
+
+        assert f"[First]({first_url})" in embeds[0].description
+        assert second_url not in embeds[0].description
+        assert len(embeds[0].description) <= 4000
+
     def test_with_document_citations(self):
         from discord_claude.cogs.claude.embeds import append_citations_embed
 

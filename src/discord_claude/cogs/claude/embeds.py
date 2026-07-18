@@ -7,6 +7,28 @@ from discord_claude.util import chunk_text
 from .responses import ParsedResponse
 
 
+def _fit_markdown_sections(
+    sections: list[tuple[str | None, list[str]]],
+    max_length: int = 4000,
+) -> str:
+    """Fit complete Markdown entries without slicing through links."""
+
+    rendered_sections: list[str] = []
+    for heading, entries in sections:
+        accepted: list[str] = []
+        for entry in entries:
+            body = "\n".join([*accepted, entry])
+            rendered = f"{heading}\n{body}" if heading else body
+            candidate = "\n\n".join([*rendered_sections, rendered])
+            if len(candidate) > max_length:
+                break
+            accepted.append(entry)
+        if accepted:
+            body = "\n".join(accepted)
+            rendered_sections.append(f"{heading}\n{body}" if heading else body)
+    return "\n\n".join(rendered_sections)
+
+
 def append_thinking_embeds(embeds: list[Embed], thinking_text: str) -> None:
     """Append thinking text as a spoilered Discord embed."""
     if not thinking_text:
@@ -65,20 +87,19 @@ def append_citations_embed(embeds: list[Embed], citations: list[dict[str, str]])
                     source += f", {location}"
                 doc_lines.append(f"> {cited_text}\n> — *{source}*")
 
-    parts = []
+    sections: list[tuple[str | None, list[str]]] = []
     if web_lines:
         numbered = [f"{index}. {line}" for index, line in enumerate(web_lines[:20], 1)]
-        parts.append("\n".join(numbered))
+        sections.append((None, numbered))
     if doc_lines:
-        parts.append("\n\n".join(doc_lines[:10]))
+        sections.append((None, doc_lines[:10]))
 
-    if not parts:
+    if not sections:
         return
 
-    description = "\n\n".join(parts)
-    max_description_length = 4000
-    if len(description) > max_description_length:
-        description = description[: max_description_length - 3] + "..."
+    description = _fit_markdown_sections(sections)
+    if not description:
+        return
 
     embeds.append(
         Embed(
