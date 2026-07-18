@@ -122,6 +122,7 @@ class TestAppendCitationsEmbed:
         assert "The grass is green." in embeds[0].description
         assert "Nature Doc" in embeds[0].description
         assert "Science PDF, p. 5" in embeds[0].description
+        assert "> — *Nature Doc*\n\n> Water is essential." in embeds[0].description
 
     def test_mixed_web_and_document_citations(self):
         from discord_claude.cogs.claude.embeds import append_citations_embed

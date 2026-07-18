@@ -92,7 +92,7 @@ def append_citations_embed(embeds: list[Embed], citations: list[dict[str, str]])
         numbered = [f"{index}. {line}" for index, line in enumerate(web_lines[:20], 1)]
         sections.append((None, numbered))
     if doc_lines:
-        sections.append((None, doc_lines[:10]))
+        sections.extend((None, [line]) for line in doc_lines[:10])
 
     if not sections:
         return
