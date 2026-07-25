@@ -17,7 +17,6 @@ from discord_claude.util import (
     ADVISOR_TOOL_TYPE,
     CACHE_TTL,
     COMPACTION_MODELS,
-    CONTEXT_COMPACTION_THRESHOLD,
     EXTENDED_THINKING_MODELS,
     MODEL_CONTEXT_WINDOWS,
     REFUSAL_FALLBACK_BETA,
@@ -31,6 +30,7 @@ from discord_claude.util import (
     UsageTotals,
     format_anthropic_error,
     get_default_advisor_model,
+    manual_compaction_trigger,
     truncate_text,
 )
 
@@ -299,19 +299,15 @@ async def call_api_with_tool_loop(
 
     totals = UsageTotals()
     context_window = MODEL_CONTEXT_WINDOWS.get(model, 200_000)
+    compaction_trigger = manual_compaction_trigger(context_window)
     parsed: ParsedResponse | None = None
 
     for iteration in range(max_iterations):
-        if (
-            not use_compaction
-            and totals.input_tokens > context_window * CONTEXT_COMPACTION_THRESHOLD
-            and len(messages) > 1
-        ):
+        if not use_compaction and totals.input_tokens > compaction_trigger and len(messages) > 1:
             cog.logger.info(
-                "Input tokens (%d) exceeded %.0f%% of context window (%d), compacting...",
+                "Input tokens (%d) exceeded compaction trigger (%.0f), compacting...",
                 totals.input_tokens,
-                CONTEXT_COMPACTION_THRESHOLD * 100,
-                context_window,
+                compaction_trigger,
             )
             await compact_conversation(cog, messages, system=api_params.get("system"))
             totals.context_compacted = True
@@ -563,7 +559,7 @@ async def run_chat_command(
     ctx: ApplicationContext,
     *,
     prompt: str,
-    model: str = "claude-sonnet-5",
+    model: str = "claude-opus-5",
     system: str | None = None,
     attachment: Attachment | None = None,
     max_tokens: int = 16384,

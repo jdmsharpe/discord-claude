@@ -1,4 +1,5 @@
 import asyncio
+import inspect
 import json
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -240,10 +241,32 @@ class TestClaudeCog:
 
 
 def test_critical_choice_values_present():
+    assert any(choice.value == "claude-opus-5" for choice in CHAT_MODEL_CHOICES)
     assert any(choice.value == "claude-sonnet-5" for choice in CHAT_MODEL_CHOICES)
     assert any(choice.value == "claude-fable-5" for choice in CHAT_MODEL_CHOICES)
     assert any(choice.value == "claude-opus-4-7" for choice in CHAT_MODEL_CHOICES)
     assert any(choice.value == "claude-opus-4-6" for choice in CHAT_MODEL_CHOICES)
+
+
+def test_retired_models_absent_from_choices():
+    """claude-opus-4-1 retires 2026-08-05 and must not remain selectable."""
+    assert all(choice.value != "claude-opus-4-1" for choice in CHAT_MODEL_CHOICES)
+
+
+def test_chat_command_default_model():
+    """The /claude chat default model is an explicit owner decision — guard it.
+
+    ``run_chat_command`` mirrors the same default, so both must move together.
+    """
+    from discord_claude.cogs.claude.chat import run_chat_command
+    from discord_claude.cogs.claude.cog import ClaudeCog
+
+    cog_default = inspect.signature(ClaudeCog.chat.callback).parameters["model"].default
+    command_default = inspect.signature(run_chat_command).parameters["model"].default
+
+    assert cog_default == "claude-opus-5"
+    assert command_default == cog_default
+    assert any(choice.value == cog_default for choice in CHAT_MODEL_CHOICES)
 
 
 def test_effort_choice_set():

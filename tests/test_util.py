@@ -3,9 +3,13 @@ from unittest.mock import MagicMock
 import pytest
 
 from discord_claude.util import (
+    ADAPTIVE_ONLY_THINKING_MODELS,
+    ADAPTIVE_THINKING_MODELS,
     CHUNK_TEXT_SIZE,
     DISCORD_EMBED_TOTAL_LIMIT,
+    EXTENDED_THINKING_MODELS,
     MODEL_CONTEXT_WINDOWS,
+    SAMPLING_LOCKED_MODELS,
     ChatCompletionParameters,
     Conversation,
     UsageTotals,
@@ -205,6 +209,11 @@ class TestCalculateCost:
         )
         assert cost == pytest.approx(4.50)
 
+    def test_opus_5_pricing(self):
+        """Opus 5 uses $5/MTok input, $25/MTok output."""
+        cost = calculate_cost("claude-opus-5", 1_000_000, 1_000_000)
+        assert cost == 30.0  # $5 + $25
+
     def test_opus_4_6_pricing(self):
         """Opus 4.6 uses $5/MTok input, $25/MTok output."""
         cost = calculate_cost("claude-opus-4-6", 1_000_000, 1_000_000)
@@ -258,6 +267,79 @@ class TestCalculateCost:
     def test_opus_4_7_context_window(self):
         """Opus 4.7 uses the 1M token context window."""
         assert MODEL_CONTEXT_WINDOWS["claude-opus-4-7"] == 1_000_000
+
+    def test_opus_5_context_window(self):
+        """Opus 5 ships the 1M token context window with no beta header."""
+        assert MODEL_CONTEXT_WINDOWS["claude-opus-5"] == 1_000_000
+
+
+class TestModelCapabilitySets:
+    """Guards for the per-model capability sets consumed by build_api_params."""
+
+    def test_manual_compaction_trigger_bounded_by_summarizer(self):
+        """A 1M-window model on the manual path must not out-scale the summarizer.
+
+        compact_conversation hands the whole message list to
+        COMPACTION_SUMMARY_MODEL, so an unbounded 75% trigger on a 1M-window
+        model would send it ~750k tokens and 400. claude-opus-5 is the first
+        manual-path model where the two windows differ.
+
+        Resolved with .get() and the same 200_000 default the production code
+        uses: the pricing-override tests replace MODEL_CONTEXT_WINDOWS globally,
+        so indexing it directly makes this test order-dependent.
+        """
+        from discord_claude.util import (
+            COMPACTION_SUMMARY_MODEL,
+            MODEL_CONTEXT_WINDOWS,
+            manual_compaction_trigger,
+        )
+
+        summary_window = MODEL_CONTEXT_WINDOWS.get(COMPACTION_SUMMARY_MODEL, 200_000)
+
+        # The 1M case is the regression: bounded by the summarizer, not the model.
+        assert manual_compaction_trigger(1_000_000) == summary_window * 0.75
+        assert manual_compaction_trigger(1_000_000) < summary_window
+
+        # A window at or below the summarizer's is unaffected.
+        assert manual_compaction_trigger(200_000) == 200_000 * 0.75
+        assert manual_compaction_trigger(100_000) == 100_000 * 0.75
+
+    def test_opus_5_takes_the_manual_compaction_path(self):
+        """Pins the premise of the bound above: Opus 5 is manual-path and 1M-window.
+
+        If Opus 5 ever joins COMPACTION_MODELS this test should be revisited
+        along with the bound, rather than both silently drifting.
+        """
+        from pathlib import Path
+
+        import yaml
+
+        from discord_claude.util import COMPACTION_MODELS
+
+        # Read the bundled YAML directly: the module-level dicts can be replaced
+        # by the CLAUDE_PRICING_PATH override tests.
+        bundled = yaml.safe_load(
+            (
+                Path(__file__).parent.parent / "src" / "discord_claude" / "config" / "pricing.yaml"
+            ).read_text()
+        )
+        assert bundled["models"]["claude-opus-5"]["context_window"] == 1_000_000
+        assert "claude-opus-5" not in COMPACTION_MODELS
+
+    def test_opus_5_capability_membership(self):
+        """Opus 5 is adaptive-thinking-only and sampling-locked.
+
+        Manual thinking with budget_tokens returns a 400, so it must stay out of
+        EXTENDED_THINKING_MODELS.
+        """
+        assert "claude-opus-5" in ADAPTIVE_THINKING_MODELS
+        assert "claude-opus-5" in ADAPTIVE_ONLY_THINKING_MODELS
+        assert "claude-opus-5" in SAMPLING_LOCKED_MODELS
+        assert "claude-opus-5" not in EXTENDED_THINKING_MODELS
+
+    def test_retired_opus_4_1_absent_from_capability_sets(self):
+        """Opus 4.1 retires 2026-08-05; its thinking config is dead once unselectable."""
+        assert "claude-opus-4-1" not in EXTENDED_THINKING_MODELS
 
 
 class TestUsageTotals:

@@ -248,7 +248,7 @@ class ClaudeCog(commands.Cog):
     )
     @option(
         "model",
-        description="Choose from the following Claude models. (default: Claude Opus 4.8. warning: Opus is expensive!)",
+        description="Choose from the following Claude models. (default: Claude Opus 5. warning: Opus is expensive!)",
         required=False,
         choices=CHAT_MODEL_CHOICES,
         type=str,
@@ -285,7 +285,7 @@ class ClaudeCog(commands.Cog):
     )
     @option(
         "effort",
-        description="Control response effort: low (fast, concise), medium (balanced), high (thorough). (default: not set)",
+        description="Control response effort: low, medium, high, xhigh, max (higher = more thorough). (default: not set)",
         required=False,
         choices=RESPONSE_EFFORT_CHOICES,
         type=str,
@@ -343,7 +343,7 @@ class ClaudeCog(commands.Cog):
         self,
         ctx: ApplicationContext,
         prompt: str,
-        model: str = "claude-sonnet-5",
+        model: str = "claude-opus-5",
         system: str | None = None,
         attachment: Attachment | None = None,
         max_tokens: int = 16384,

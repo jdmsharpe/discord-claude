@@ -6,7 +6,7 @@ from typing import Any, Literal, Protocol, TypedDict
 
 from discord import Embed, Member, User
 
-from discord_claude.config.pricing import (  # noqa: F401 — re-exported for callers
+from discord_claude.config.pricing import (
     MODEL_CONTEXT_WINDOWS,
     MODEL_PRICING,
     UNKNOWN_MODEL_PRICING,
@@ -30,6 +30,7 @@ ADVISOR_MODEL_COMPATIBILITY: dict[str, tuple[str, ...]] = {
 # Models that support adaptive thinking
 ADAPTIVE_THINKING_MODELS = {
     "claude-fable-5",
+    "claude-opus-5",
     "claude-sonnet-5",
     "claude-opus-4-8",
     "claude-opus-4-7",
@@ -38,10 +39,11 @@ ADAPTIVE_THINKING_MODELS = {
 }
 
 # Models that reject explicit sampling parameter overrides.
-# claude-sonnet-5 joins the effort-parameter generation (Fable 5, Opus 4.8/4.7):
-# non-default temperature/top_p/top_k return a 400.
+# claude-opus-5 and claude-sonnet-5 join the effort-parameter generation
+# (Fable 5, Opus 4.8/4.7): non-default temperature/top_p/top_k return a 400.
 SAMPLING_LOCKED_MODELS = {
     "claude-fable-5",
+    "claude-opus-5",
     "claude-sonnet-5",
     "claude-opus-4-8",
     "claude-opus-4-7",
@@ -50,10 +52,12 @@ SAMPLING_LOCKED_MODELS = {
 # Models that only support adaptive thinking (no budget_tokens mode).
 # claude-fable-5 additionally rejects an explicit {"type": "disabled"} config;
 # build_thinking_config never emits one (it omits the param instead), so the
-# existing adaptive path is safe for it. claude-sonnet-5 is adaptive-only too
-# (manual extended thinking returns a 400) but does accept {"type": "disabled"}.
+# existing adaptive path is safe for it. claude-opus-5 and claude-sonnet-5 are
+# adaptive-only too (manual extended thinking with budget_tokens returns a 400)
+# but do accept {"type": "disabled"}.
 ADAPTIVE_ONLY_THINKING_MODELS = {
     "claude-fable-5",
+    "claude-opus-5",
     "claude-sonnet-5",
     "claude-opus-4-8",
     "claude-opus-4-7",
@@ -82,11 +86,25 @@ CONTEXT_WARNING_THRESHOLD = 0.85  # Show warning embed at 85% of context window
 CONTEXT_COMPACTION_THRESHOLD = 0.75  # Trigger manual compaction at 75% (non-compaction models)
 COMPACTION_SUMMARY_MODEL = "claude-haiku-4-5"  # Cheap model for generating summaries
 
+
+def manual_compaction_trigger(context_window: int) -> float:
+    """Token count at which manual compaction must fire for a given chat model.
+
+    Manual compaction hands the *entire* message list to
+    COMPACTION_SUMMARY_MODEL, so the trigger has to stay inside that
+    summarizer's window rather than the chat model's. Every manual-path model
+    used to have a 200k window, making the two identical; claude-opus-5 is the
+    first with a 1M window, and an unbounded 75% trigger (750k) would hand a
+    750k-token payload to a 200k-token summarizer and 400.
+    """
+    summary_window = MODEL_CONTEXT_WINDOWS.get(COMPACTION_SUMMARY_MODEL, 200_000)
+    return min(context_window, summary_window) * CONTEXT_COMPACTION_THRESHOLD
+
+
 # Models that support manual extended thinking (type: "enabled" with budget_tokens)
 EXTENDED_THINKING_MODELS = {
     "claude-opus-4-5",
     "claude-sonnet-4-5",
-    "claude-opus-4-1",
     "claude-haiku-4-5",
 }
 

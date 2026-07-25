@@ -2,6 +2,7 @@ from discord.commands import OptionChoice
 
 CHAT_MODEL_CHOICES = [
     OptionChoice(name="Claude Fable 5", value="claude-fable-5"),
+    OptionChoice(name="Claude Opus 5", value="claude-opus-5"),
     OptionChoice(name="Claude Opus 4.8", value="claude-opus-4-8"),
     OptionChoice(name="Claude Sonnet 5", value="claude-sonnet-5"),
     OptionChoice(name="Claude Opus 4.7", value="claude-opus-4-7"),
@@ -9,7 +10,6 @@ CHAT_MODEL_CHOICES = [
     OptionChoice(name="Claude Sonnet 4.6", value="claude-sonnet-4-6"),
     OptionChoice(name="Claude Opus 4.5", value="claude-opus-4-5"),
     OptionChoice(name="Claude Sonnet 4.5", value="claude-sonnet-4-5"),
-    OptionChoice(name="Claude Opus 4.1", value="claude-opus-4-1"),
     OptionChoice(name="Claude Haiku 4.5", value="claude-haiku-4-5"),
 ]
 
