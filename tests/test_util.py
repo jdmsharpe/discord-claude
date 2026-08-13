@@ -176,8 +176,12 @@ class TestCalculateCost:
         cost = calculate_cost("claude-sonnet-4-6", 1_000_000, 1_000_000)
         assert cost == 18.0  # $3 + $15
 
-    def test_sonnet_5_intro_pricing(self):
-        """Sonnet 5 introductory pricing: $2/MTok input, $10/MTok output (through 2026-08-31)."""
+    def test_sonnet_5_pricing(self):
+        """Sonnet 5 standard pricing: $2/MTok input, $10/MTok output.
+
+        Launched as introductory pricing through 2026-08-31; Anthropic cancelled
+        the scheduled 2026-09-01 increase to $3/$15 and made $2/$10 standard.
+        """
         cost = calculate_cost("claude-sonnet-5", 1_000_000, 1_000_000)
         assert cost == pytest.approx(12.0)  # $2 + $10
 

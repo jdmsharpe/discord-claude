@@ -49,8 +49,9 @@ models:
     input_per_million: 15.0
     output_per_million: 75.0
 
-  # Sonnet 5 introductory pricing ($2/$10) applies through 2026-08-31;
-  # reverts to standard $3/$15 on 2026-09-01 (update this entry then).
+  # Sonnet 5's launch "introductory" $2/$10 is now the STANDARD price — Anthropic
+  # cancelled the increase to $3/$15 that was scheduled for 2026-09-01
+  # (confirmed on the pricing page 2026-08-12). No dated action pending.
   claude-sonnet-5:
     context_window: 1_000_000
     input_per_million: 2.0
