@@ -344,14 +344,14 @@ class TestInvalidCommand:
 class TestConfiguredMemoryPath:
     """Tests for MEMORIES_DIR configuration behavior."""
 
-    def test_default_base_dir_uses_repo_memories_when_env_unset(self, monkeypatch):
-        """Default memory base path resolves to <repo_root>/memories."""
+    def test_default_base_dir_uses_cwd_memories_when_env_unset(self, monkeypatch):
+        """Default memory base path resolves to <cwd>/memories."""
         monkeypatch.delenv("MEMORIES_DIR", raising=False)
 
         from discord_claude.cogs.claude import paths as paths_module
 
         reloaded = importlib.reload(paths_module)
-        expected = Path(__file__).resolve().parents[1] / "memories"
+        expected = Path.cwd() / "memories"
         assert reloaded.get_memories_base_dir() == expected
 
     def test_memories_dir_env_overrides_default(self, monkeypatch, tmp_path):
