@@ -22,10 +22,10 @@ A Discord bot built on Pycord 2.0 that wraps Anthropic's Claude API, providing a
 - **Remote MCP Support:** Enable trusted remote MCP servers per conversation through named presets, featuring optional authorization, allow-lists, and deferred tool loading.
 - **Citations:** Web search and document citations are displayed as a separate Sources embed.
 - **Prompt Caching:** Automatic prompt caching reduces costs (cache reads at 10% of input price) and latency on multi-turn conversations.
-- **Context Management:** Automatic compaction at 75% context usage for models without server-side support (Opus 5, Opus 4.5, Sonnet 4.5, Haiku 4.5), server-side compaction for Fable 5, Opus 4.8/4.7/4.6 and Sonnet 5/4.6, and an 85% context warning embed. Clears old tool results/thinking blocks to manage context growth when compatible.
+- **Context Management:** Automatic compaction at 75% of the smaller of the model's context window and the 200K summarizer window for models without server-side support (Opus 5, Opus 4.5, Sonnet 4.5, Haiku 4.5), server-side compaction for Fable 5, Opus 4.8/4.7/4.6 and Sonnet 5/4.6, and an 85% context warning embed. Clears old tool results/thinking blocks to manage context growth when compatible.
 - **Pricing Display:** Per-request cost, token counts (including thinking tokens), advisor-call counts, cache hits, and daily spend shown as a separate embed after each response (configurable).
 - **Conversation Controls:** Pause, resume, regenerate responses, and end conversations with interactive buttons.
-- **Customization:** Fine-tune responses with system prompts, temperature, top_p, top_k, effort, thinking budget, and max_tokens.
+- **Customization:** Fine-tune responses with system prompts, temperature, top_p, top_k, effort, thinking budget, and max_tokens; sampling parameters and thinking budgets apply only to the legacy models that still accept them.
 
 ## Commands
 
@@ -43,7 +43,7 @@ Start a conversation with Claude.
 - **`effort`**: Control response effort — low (fast), medium (balanced), high (thorough), xhigh, or max.
 - **`thinking_budget`**: Token budget for legacy models that still support extended thinking budgets.
 - **`tool_choice`**: Tool behavior for enabled tools (`auto` or `none`).
-- **Advanced Tuning**: `temperature`, `top_p`, `top_k`.
+- **Advanced Tuning**: `temperature`, `top_p`, `top_k` for legacy models that still support custom sampling parameters.
 - **`mcp`**: Optional comma-separated MCP preset names (persists for the life of the conversation).
 
 ### `/claude check_permissions`
@@ -99,7 +99,7 @@ python -m pip install -e ".[dev]"
 | Variable | Required | Description |
 | --- | --- | --- |
 | `BOT_TOKEN` | **Yes** | Your Discord bot token |
-| `GUILD_IDS` | **Yes** | Comma-separated Discord server IDs |
+| `GUILD_IDS` | **Yes** | Comma-separated Discord server IDs; at least one is required — leaving it empty or unset registers no commands at all |
 | `ANTHROPIC_API_KEY` | **Yes** | Your Anthropic API key |
 | `SHOW_COST_EMBEDS` | No | Show cost/spend embeds (`true`, `1`, or `yes` to enable) (Default: `true`) |
 | `MEMORIES_DIR` | No | Directory for per-user memory files (Default: `./memories`) |

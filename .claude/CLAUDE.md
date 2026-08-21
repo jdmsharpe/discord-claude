@@ -12,14 +12,14 @@ uv run python src/bot.py   # or: docker compose up --build
 ## Gotchas
 
 - Uses **`py-cord`** (not `discord.py`). The slash-command API differs; don't mix docs between the two.
-- `GUILD_IDS` empty → commands register globally (up to 1-hour propagation delay). Set it to a test guild ID during development for instant updates.
+- `GUILD_IDS` must list at least one guild ID. Empty or unset parses to `[]`, and py-cord only registers a command globally when its `guild_ids is None`, so an empty list registers the commands **nowhere** — not globally, not per-guild. `validate_required_config()` does not check it, so the bot starts clean with no commands.
 
 ## Environment Variables
 
 | Variable | Required | Description |
 | --- | --- | --- |
 | `BOT_TOKEN` | Yes | Discord bot token |
-| `GUILD_IDS` | Yes | Comma-separated Discord server IDs |
+| `GUILD_IDS` | Yes | Comma-separated Discord server IDs; at least one is required — empty or unset registers no commands at all (not enforced at startup) |
 | `ANTHROPIC_API_KEY` | Yes | Anthropic API key |
 | `SHOW_COST_EMBEDS` | No | Show cost embeds (`true`/`1`/`yes`, default: `true`) |
 | `MEMORIES_DIR` | No | Per-user memory directory (default: `./memories`) |

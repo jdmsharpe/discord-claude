@@ -12,7 +12,7 @@ API_TIMEOUT_SECONDS = 300.0
 def build_claude_client(api_key: str | None = None) -> AsyncAnthropic:
     """Construct the Anthropic SDK client for the configured API key.
 
-    The SDK's built-in retry policy is raised from its default (2 attempts) to
+    The SDK's built-in retry policy is raised from its default (2 retries, 3 attempts) to
     MAX_API_ATTEMPTS so transient 429/5xx/connection errors recover transparently.
     """
     return AsyncAnthropic(
