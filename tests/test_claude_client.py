@@ -26,16 +26,22 @@ class TestClaudeCogIntegration:
         assert call_kwargs["system"] == "You are a helpful assistant."
 
     async def test_messages_create_with_temperature(self, mock_anthropic_client):
-        """Test message creation with temperature parameter."""
-        await mock_anthropic_client.messages.create(
-            model="claude-sonnet-4",
+        """Sampling parameters should reach the SDK through extra_body."""
+        from discord_claude.cogs.claude.chat import build_api_params
+        from discord_claude.util import ChatCompletionParameters
+
+        params = ChatCompletionParameters(
+            model="claude-opus-4-6",
             max_tokens=1024,
             temperature=0.7,
-            messages=[{"role": "user", "content": "Be creative!"}],
         )
+        api_params = build_api_params(params, [{"role": "user", "content": "Be creative!"}])
+
+        await mock_anthropic_client.messages.create(**api_params)
 
         call_kwargs = mock_anthropic_client.messages.create.call_args[1]
-        assert call_kwargs["temperature"] == 0.7
+        assert "temperature" not in call_kwargs
+        assert call_kwargs["extra_body"] == {"temperature": 0.7}
 
     async def test_messages_create_multi_turn(self, mock_anthropic_client):
         """Test multi-turn conversation."""

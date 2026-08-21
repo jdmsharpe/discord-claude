@@ -182,12 +182,19 @@ def build_api_params(
         output_config["effort"] = params.effort
     if params.system:
         api_params["system"] = params.system
-    if params.temperature is not None:
-        api_params["temperature"] = params.temperature
-    if params.top_p is not None:
-        api_params["top_p"] = params.top_p
-    if params.top_k is not None:
-        api_params["top_k"] = params.top_k
+    # anthropic 1.x dropped temperature/top_p/top_k from the typed request
+    # signature; extra_body merges them flat into the JSON request body.
+    sampling_parameters = {
+        name: value
+        for name, value in (
+            ("temperature", params.temperature),
+            ("top_p", params.top_p),
+            ("top_k", params.top_k),
+        )
+        if value is not None
+    }
+    if sampling_parameters:
+        api_params["extra_body"] = sampling_parameters
     mcp_presets, mcp_error = resolve_mcp_presets(params.mcp_preset_names)
     if mcp_error:
         raise ValueError(mcp_error)

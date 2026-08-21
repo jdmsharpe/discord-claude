@@ -40,7 +40,10 @@ ADAPTIVE_THINKING_MODELS = {
 
 # Models that reject explicit sampling parameter overrides.
 # claude-opus-5 and claude-sonnet-5 join the effort-parameter generation
-# (Fable 5, Opus 4.8/4.7): non-default temperature/top_p/top_k return a 400.
+# (Fable 5, Opus 4.8/4.7). The anthropic 1.x SDK no longer exposes
+# temperature/top_p/top_k as typed request parameters, so build_api_params
+# sends them through extra_body; this set gates that path so these models
+# never receive the values and return a 400 from the API.
 SAMPLING_LOCKED_MODELS = {
     "claude-fable-5",
     "claude-opus-5",
