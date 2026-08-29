@@ -161,6 +161,68 @@ class TestToolChoiceSupport:
         assert error is not None
         assert "does not support custom sampling parameters" in error
 
+    def test_validate_request_configuration_rejects_effort_for_haiku_4_5(self):
+        from discord_claude.cogs.claude.cog import ClaudeCog
+        from discord_claude.util import ChatCompletionParameters
+
+        params = ChatCompletionParameters(model="claude-haiku-4-5", effort="low")
+
+        error = ClaudeCog._validate_request_configuration(params)
+
+        assert error is not None
+        assert "does not support the `effort` parameter" in error
+
+    def test_validate_request_configuration_rejects_max_effort_for_opus_4_5(self):
+        from discord_claude.cogs.claude.cog import ClaudeCog
+        from discord_claude.util import ChatCompletionParameters
+
+        params = ChatCompletionParameters(model="claude-opus-4-5", effort="max")
+
+        error = ClaudeCog._validate_request_configuration(params)
+
+        assert error is not None
+        assert "does not support effort `max`" in error
+        assert "`low`, `medium`, `high`." in error
+        assert "xhigh" not in error
+
+    def test_validate_request_configuration_rejects_xhigh_effort_for_opus_4_6(self):
+        from discord_claude.cogs.claude.cog import ClaudeCog
+        from discord_claude.util import ChatCompletionParameters
+
+        params = ChatCompletionParameters(model="claude-opus-4-6", effort="xhigh")
+
+        error = ClaudeCog._validate_request_configuration(params)
+
+        assert error is not None
+        assert "does not support effort `xhigh`" in error
+        assert "`low`, `medium`, `high`, `max`." in error
+
+    def test_validate_request_configuration_accepts_max_effort_for_sonnet_4_6(self):
+        from discord_claude.cogs.claude.cog import ClaudeCog
+        from discord_claude.util import ChatCompletionParameters
+
+        params = ChatCompletionParameters(model="claude-sonnet-4-6", effort="max")
+
+        assert ClaudeCog._validate_request_configuration(params) is None
+
+    def test_validate_request_configuration_accepts_xhigh_effort_for_opus_5(self):
+        from discord_claude.cogs.claude.cog import ClaudeCog
+        from discord_claude.util import ChatCompletionParameters
+
+        params = ChatCompletionParameters(model="claude-opus-5", effort="xhigh")
+
+        assert ClaudeCog._validate_request_configuration(params) is None
+
+    def test_validate_request_configuration_accepts_unset_effort_for_every_model(self):
+        from discord_claude.cogs.claude.cog import ClaudeCog
+        from discord_claude.cogs.claude.command_options import CHAT_MODEL_CHOICES
+        from discord_claude.util import ChatCompletionParameters
+
+        for choice in CHAT_MODEL_CHOICES:
+            params = ChatCompletionParameters(model=choice.value)
+
+            assert ClaudeCog._validate_request_configuration(params) is None, choice.value
+
     def test_build_api_params_includes_mcp_servers(self, monkeypatch):
         from discord_claude.cogs.claude.cog import ClaudeCog
         from discord_claude.config.mcp import AnthropicMcpPreset

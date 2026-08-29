@@ -2,7 +2,7 @@
 #
 # Canonical source: https://docs.claude.com/en/docs/about-claude/pricing
 # Cross-referenced against: https://github.com/pydantic/genai-prices/blob/main/prices/providers/anthropic.yml
-# Last-verified: 2026-06-10
+# Last-verified: 2026-08-28
 #
 # Prices are USD per million tokens. The calculator derives cache-write cost
 # as 2.0x the input price (1h TTL), and cache-read cost as 0.1x the input price.
@@ -42,7 +42,7 @@ models:
     input_per_million: 5.0
     output_per_million: 25.0
 
-  # Opus 4.1 retires 2026-08-05 and is no longer selectable; this row is
+  # Opus 4.1 shut down 2026-08-05 and is no longer selectable; this row is
   # retained so historical conversations still cost correctly.
   claude-opus-4-1:
     context_window: 200_000

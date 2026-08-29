@@ -52,6 +52,59 @@ SAMPLING_LOCKED_MODELS = {
     "claude-opus-4-7",
 }
 
+# output_config.effort ladder in ascending order. Each model accepts only a
+# prefix of it (plus/minus "xhigh"), gated by supported_effort_levels below;
+# sending anything else returns a 400 (live-probed 2026-08-28).
+EFFORT_LEVELS: tuple[str, ...] = ("low", "medium", "high", "xhigh", "max")
+
+# Models that accept the effort parameter at all. claude-sonnet-4-5 and
+# claude-haiku-4-5 reject it outright ("This model does not support the
+# effort parameter"), so they stay out of this set.
+EFFORT_MODELS = frozenset(
+    {
+        "claude-fable-5",
+        "claude-opus-5",
+        "claude-sonnet-5",
+        "claude-opus-4-8",
+        "claude-opus-4-7",
+        "claude-opus-4-6",
+        "claude-sonnet-4-6",
+        "claude-opus-4-5",
+    }
+)
+
+# Models that accept effort "xhigh" (introduced with Opus 4.7). Every one of
+# these takes the full low..max ladder.
+XHIGH_EFFORT_MODELS = frozenset(
+    {
+        "claude-fable-5",
+        "claude-opus-5",
+        "claude-sonnet-5",
+        "claude-opus-4-8",
+        "claude-opus-4-7",
+    }
+)
+
+# Models that accept effort "max". Opus 4.6 / Sonnet 4.6 predate "xhigh" but do
+# take "max"; claude-opus-4-5 is capped at "high".
+MAX_EFFORT_MODELS = XHIGH_EFFORT_MODELS | {"claude-opus-4-6", "claude-sonnet-4-6"}
+
+
+def supported_effort_levels(model: str) -> frozenset[str]:
+    """Return the output_config.effort values the API accepts for a model.
+
+    Empty for models that reject the parameter entirely.
+    """
+    if model not in EFFORT_MODELS:
+        return frozenset()
+    levels = {"low", "medium", "high"}
+    if model in XHIGH_EFFORT_MODELS:
+        levels.add("xhigh")
+    if model in MAX_EFFORT_MODELS:
+        levels.add("max")
+    return frozenset(levels)
+
+
 # Models that only support adaptive thinking (no budget_tokens mode).
 # claude-fable-5 additionally rejects an explicit {"type": "disabled"} config;
 # build_thinking_config never emits one (it omits the param instead), so the
@@ -79,7 +132,9 @@ COMPACTION_MODELS = {
 # Server-side refusal fallback (beta). These models' safety classifiers can
 # decline a request (HTTP 200 with stop_reason "refusal"); with the beta
 # active the API retries the same request on REFUSAL_FALLBACK_MODEL in one
-# round trip. claude-opus-4-8 is the only supported fallback target at launch.
+# round trip. The explicit-list form used here accepts up to three named
+# fallback models; a fallbacks="default" routing mode also exists under the
+# server-side-fallback-2026-07-01 header but has not been adopted.
 REFUSAL_FALLBACK_BETA = "server-side-fallback-2026-06-01"
 REFUSAL_FALLBACK_MODELS = {"claude-fable-5"}
 REFUSAL_FALLBACK_MODEL = "claude-opus-4-8"

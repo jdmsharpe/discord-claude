@@ -45,7 +45,7 @@ Start a conversation with Claude.
 - **`max_tokens`**: Maximum tokens in the response (default: 16384).
 - **`web_search` / `web_fetch` / `code_execution` / `memory`**: Toggle individual tools (default: false).
 - **`advisor`**: Enable Anthropic's advisor beta on supported executor models. Currently uses Claude Opus 4.6 as the advisor model.
-- **`effort`**: Control response effort — low (fast), medium (balanced), high (thorough), xhigh, or max.
+- **`effort`**: Control response effort — low (fast), medium (balanced), high (thorough), xhigh, or max. Per-model limits are enforced before the request is sent: Fable 5, Opus 5, Opus 4.8, Opus 4.7, and Sonnet 5 accept all five; Opus 4.6 and Sonnet 4.6 accept everything except `xhigh`; Opus 4.5 stops at `high`; Sonnet 4.5 and Haiku 4.5 do not accept `effort` at all.
 - **`thinking_budget`**: Token budget for legacy models that still support extended thinking budgets.
 - **`tool_choice`**: Tool behavior for enabled tools (`auto` or `none`).
 - **Advanced Tuning**: `temperature`, `top_p`, `top_k` (supported models only).

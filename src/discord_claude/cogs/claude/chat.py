@@ -17,6 +17,7 @@ from discord_claude.util import (
     ADVISOR_TOOL_TYPE,
     CACHE_TTL,
     COMPACTION_MODELS,
+    EFFORT_LEVELS,
     EXTENDED_THINKING_MODELS,
     MODEL_CONTEXT_WINDOWS,
     REFUSAL_FALLBACK_BETA,
@@ -31,6 +32,7 @@ from discord_claude.util import (
     format_anthropic_error,
     get_default_advisor_model,
     manual_compaction_trigger,
+    supported_effort_levels,
     truncate_text,
 )
 
@@ -112,6 +114,22 @@ def validate_request_configuration(params: ChatCompletionParameters) -> str | No
             return (
                 f"`{params.model}` does not support custom sampling parameters. "
                 f"Leave {formatted_parameters} unset for this model."
+            )
+
+    if params.effort is not None:
+        supported_levels = supported_effort_levels(params.model)
+        if not supported_levels:
+            return (
+                f"`{params.model}` does not support the `effort` parameter. "
+                "Leave `effort` unset for this model."
+            )
+        if params.effort not in supported_levels:
+            formatted_levels = ", ".join(
+                f"`{level}`" for level in EFFORT_LEVELS if level in supported_levels
+            )
+            return (
+                f"`{params.model}` does not support effort `{params.effort}`. "
+                f"Supported effort levels: {formatted_levels}."
             )
 
     if advisor_model is not None:

@@ -7,9 +7,12 @@ from discord_claude.util import (
     ADAPTIVE_THINKING_MODELS,
     CHUNK_TEXT_SIZE,
     DISCORD_EMBED_TOTAL_LIMIT,
+    EFFORT_MODELS,
     EXTENDED_THINKING_MODELS,
+    MAX_EFFORT_MODELS,
     MODEL_CONTEXT_WINDOWS,
     SAMPLING_LOCKED_MODELS,
+    XHIGH_EFFORT_MODELS,
     ChatCompletionParameters,
     Conversation,
     UsageTotals,
@@ -17,6 +20,7 @@ from discord_claude.util import (
     calculate_cost,
     chunk_text,
     format_anthropic_error,
+    supported_effort_levels,
     truncate_text,
 )
 
@@ -342,8 +346,61 @@ class TestModelCapabilitySets:
         assert "claude-opus-5" not in EXTENDED_THINKING_MODELS
 
     def test_retired_opus_4_1_absent_from_capability_sets(self):
-        """Opus 4.1 retires 2026-08-05; its thinking config is dead once unselectable."""
+        """Opus 4.1 shut down 2026-08-05; its thinking config is dead once unselectable."""
         assert "claude-opus-4-1" not in EXTENDED_THINKING_MODELS
+
+    def test_effort_model_sets_membership(self):
+        """Pins the per-model effort gate (live-probed 2026-08-28).
+
+        Sonnet 4.5 / Haiku 4.5 reject the parameter, Opus 4.5 stops at high,
+        the 4.6 pair adds max but not xhigh, everything newer takes all five.
+        """
+        assert {
+            "claude-fable-5",
+            "claude-opus-5",
+            "claude-sonnet-5",
+            "claude-opus-4-8",
+            "claude-opus-4-7",
+            "claude-opus-4-6",
+            "claude-sonnet-4-6",
+            "claude-opus-4-5",
+        } == EFFORT_MODELS
+        assert {
+            "claude-fable-5",
+            "claude-opus-5",
+            "claude-sonnet-5",
+            "claude-opus-4-8",
+            "claude-opus-4-7",
+        } == XHIGH_EFFORT_MODELS
+        assert XHIGH_EFFORT_MODELS | {"claude-opus-4-6", "claude-sonnet-4-6"} == MAX_EFFORT_MODELS
+        assert XHIGH_EFFORT_MODELS <= MAX_EFFORT_MODELS <= EFFORT_MODELS
+        assert "claude-sonnet-4-5" not in EFFORT_MODELS
+        assert "claude-haiku-4-5" not in EFFORT_MODELS
+
+    def test_every_chat_model_choice_has_an_effort_classification(self):
+        """Every selectable model resolves to a known effort ladder.
+
+        A new CHAT_MODEL_CHOICES id must be added to this table so its gate is
+        a deliberate decision rather than a silent empty set.
+        """
+        from discord_claude.cogs.claude.command_options import CHAT_MODEL_CHOICES
+
+        expected = {
+            "claude-fable-5": {"low", "medium", "high", "xhigh", "max"},
+            "claude-opus-5": {"low", "medium", "high", "xhigh", "max"},
+            "claude-opus-4-8": {"low", "medium", "high", "xhigh", "max"},
+            "claude-sonnet-5": {"low", "medium", "high", "xhigh", "max"},
+            "claude-opus-4-7": {"low", "medium", "high", "xhigh", "max"},
+            "claude-opus-4-6": {"low", "medium", "high", "max"},
+            "claude-sonnet-4-6": {"low", "medium", "high", "max"},
+            "claude-opus-4-5": {"low", "medium", "high"},
+            "claude-sonnet-4-5": set(),
+            "claude-haiku-4-5": set(),
+        }
+        choice_ids = {choice.value for choice in CHAT_MODEL_CHOICES}
+        assert choice_ids == set(expected)
+        for model_id, levels in expected.items():
+            assert supported_effort_levels(model_id) == levels, model_id
 
 
 class TestUsageTotals:
