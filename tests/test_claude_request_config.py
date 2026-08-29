@@ -73,6 +73,29 @@ class TestToolChoiceSupport:
             }
         ]
 
+    def test_build_api_params_includes_advisor_tool_for_opus_5_executor(self):
+        from discord_claude.cogs.claude.cog import ClaudeCog
+        from discord_claude.util import ChatCompletionParameters, get_default_advisor_model
+
+        params = ChatCompletionParameters(
+            model="claude-opus-5",
+            advisor_model=get_default_advisor_model("claude-opus-5"),
+        )
+
+        api_params = ClaudeCog._build_api_params(
+            params,
+            [{"role": "user", "content": "Hello"}],
+        )
+
+        assert api_params["tools"] == [
+            {
+                "type": "advisor_20260301",
+                "name": "advisor",
+                "model": "claude-opus-5",
+                "max_uses": 3,
+            }
+        ]
+
     def test_validate_request_configuration_rejects_unsupported_advisor_executor(self):
         from discord_claude.cogs.claude.cog import ClaudeCog
         from discord_claude.util import ChatCompletionParameters
@@ -86,6 +109,61 @@ class TestToolChoiceSupport:
 
         assert error is not None
         assert "Advisor is not supported" in error
+
+    def test_validate_request_configuration_rejects_sonnet_4_5_advisor_executor(self):
+        from discord_claude.cogs.claude.cog import ClaudeCog
+        from discord_claude.util import ChatCompletionParameters
+
+        params = ChatCompletionParameters(
+            model="claude-sonnet-4-5",
+            advisor_model="claude-opus-4-8",
+        )
+
+        error = ClaudeCog._validate_request_configuration(params)
+
+        assert error is not None
+        assert "Advisor is not supported for `claude-sonnet-4-5`" in error
+
+    def test_validate_request_configuration_accepts_every_documented_advisor_pair(self):
+        from discord_claude.cogs.claude.cog import ClaudeCog
+        from discord_claude.util import ADVISOR_MODEL_COMPATIBILITY, ChatCompletionParameters
+
+        for executor, advisors in ADVISOR_MODEL_COMPATIBILITY.items():
+            for advisor in advisors:
+                params = ChatCompletionParameters(model=executor, advisor_model=advisor)
+
+                assert ClaudeCog._validate_request_configuration(params) is None, (
+                    executor,
+                    advisor,
+                )
+
+    def test_validate_request_configuration_rejects_advisor_outside_executor_pairs(self):
+        """Each executor rejects an advisor the docs table does not list for it.
+
+        Opus 5 / Fable 5 only take Opus 5 / Fable 5 advisors, so the otherwise
+        default claude-opus-4-8 must be refused there; the mid-tier executors
+        drop the weaker 4.6-generation advisors; and nothing accepts Haiku.
+        """
+        from discord_claude.cogs.claude.cog import ClaudeCog
+        from discord_claude.util import ChatCompletionParameters
+
+        cases = [
+            ("claude-opus-5", "claude-opus-4-8"),
+            ("claude-fable-5", "claude-opus-4-8"),
+            ("claude-opus-4-8", "claude-opus-4-6"),
+            ("claude-opus-4-7", "claude-sonnet-4-6"),
+            ("claude-opus-4-6", "claude-sonnet-4-6"),
+            ("claude-sonnet-5", "claude-opus-4-6"),
+            ("claude-sonnet-4-6", "claude-haiku-4-5"),
+            ("claude-haiku-4-5", "claude-haiku-4-5"),
+        ]
+        for executor, advisor in cases:
+            params = ChatCompletionParameters(model=executor, advisor_model=advisor)
+
+            error = ClaudeCog._validate_request_configuration(params)
+
+            assert error is not None, (executor, advisor)
+            assert f"Advisor model `{advisor}` is not supported for `{executor}`" in error
 
     def test_validate_request_configuration_rejects_tool_choice_none_with_advisor(self):
         from discord_claude.cogs.claude.cog import ClaudeCog

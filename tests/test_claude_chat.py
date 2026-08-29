@@ -255,6 +255,51 @@ class TestCallApiWithToolLoop:
         assert {"type": "compact_20260112"} in call_kwargs["context_management"]["edits"]
         assert call_kwargs["cache_control"] == {"type": "ephemeral", "ttl": "1h"}
 
+    @pytest.mark.parametrize("model", ["claude-fable-5", "claude-opus-5"])
+    async def test_refusal_fallback_models_send_the_opus_4_8_fallback(self, cog, model):
+        """Both classifier models carry the refusal-fallback beta and the explicit Opus 4.8 target."""
+        mock_response = MagicMock()
+        text_block = MagicMock()
+        text_block.type = "text"
+        text_block.text = "Hello!"
+        text_block.citations = None
+        mock_response.content = [text_block]
+        mock_response.stop_reason = "end_turn"
+        mock_response.usage = None
+        cog.client.beta.messages.create = AsyncMock(return_value=mock_response)
+
+        await cog._call_api_with_tool_loop(
+            api_params={"model": model, "max_tokens": 1024},
+            messages=[{"role": "user", "content": "Hi"}],
+            user_id=123,
+        )
+
+        call_kwargs = cog.client.beta.messages.create.call_args[1]
+        assert "server-side-fallback-2026-06-01" in call_kwargs["betas"]
+        assert call_kwargs["fallbacks"] == [{"model": "claude-opus-4-8"}]
+
+    async def test_model_without_classifier_sends_no_fallback(self, cog):
+        """Sonnet 5 has no safety classifier, so no fallback beta or target is attached."""
+        mock_response = MagicMock()
+        text_block = MagicMock()
+        text_block.type = "text"
+        text_block.text = "Hello!"
+        text_block.citations = None
+        mock_response.content = [text_block]
+        mock_response.stop_reason = "end_turn"
+        mock_response.usage = None
+        cog.client.beta.messages.create = AsyncMock(return_value=mock_response)
+
+        await cog._call_api_with_tool_loop(
+            api_params={"model": "claude-sonnet-5", "max_tokens": 1024},
+            messages=[{"role": "user", "content": "Hi"}],
+            user_id=123,
+        )
+
+        call_kwargs = cog.client.beta.messages.create.call_args[1]
+        assert "server-side-fallback-2026-06-01" not in call_kwargs["betas"]
+        assert "fallbacks" not in call_kwargs
+
     async def test_non_compaction_model_uses_regular_api(self, cog):
         """Non-compaction models without tools/thinking use client.messages.create."""
         mock_response = MagicMock()
@@ -792,3 +837,49 @@ class TestRunChatCommand:
         assert parsed.context_compacted is False
         assert parsed.context_warning is True
         cog.client.beta.messages.create.assert_called_once()
+
+    async def test_opus_5_uses_server_side_compaction(self, cog):
+        """Opus 5 (1M window) takes the compact beta, never the Haiku-bounded manual path.
+
+        The first turn reports 155k input tokens, past the 150k manual trigger
+        that would fire for a non-compaction model; the second call must still
+        go out with the compaction edit and without a summarizer pass.
+        """
+        pause_response = MagicMock()
+        pause_text = MagicMock()
+        pause_text.type = "text"
+        pause_text.text = "Working..."
+        pause_text.citations = None
+        pause_response.content = [pause_text]
+        pause_response.stop_reason = "pause_turn"
+        pause_response.usage = _make_usage(input_tokens=155_000, output_tokens=200)
+
+        final_response = MagicMock()
+        final_text = MagicMock()
+        final_text.type = "text"
+        final_text.text = "Done!"
+        final_text.citations = None
+        final_response.content = [final_text]
+        final_response.stop_reason = "end_turn"
+        final_response.usage = _make_usage(input_tokens=156_000, output_tokens=100)
+
+        cog.client.beta.messages.create = AsyncMock(side_effect=[pause_response, final_response])
+
+        messages = [
+            {"role": "user", "content": "Hi"},
+            {"role": "assistant", "content": "Hello!"},
+            {"role": "user", "content": "Continue"},
+        ]
+        api_params = {"model": "claude-opus-5", "max_tokens": 1024}
+
+        parsed = await cog._call_api_with_tool_loop(
+            api_params=api_params, messages=messages, user_id=123
+        )
+
+        assert parsed.text == "Done!"
+        assert parsed.context_compacted is False
+        assert cog.client.beta.messages.create.call_count == 2
+        cog.client.messages.parse.assert_not_called()
+        for call in cog.client.beta.messages.create.call_args_list:
+            assert "compact-2026-01-12" in call.kwargs["betas"]
+            assert {"type": "compact_20260112"} in call.kwargs["context_management"]["edits"]

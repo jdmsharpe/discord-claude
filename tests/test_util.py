@@ -5,12 +5,16 @@ import pytest
 from discord_claude.util import (
     ADAPTIVE_ONLY_THINKING_MODELS,
     ADAPTIVE_THINKING_MODELS,
+    ADVISOR_MODEL_COMPATIBILITY,
     CHUNK_TEXT_SIZE,
     DISCORD_EMBED_TOTAL_LIMIT,
     EFFORT_MODELS,
     EXTENDED_THINKING_MODELS,
     MAX_EFFORT_MODELS,
     MODEL_CONTEXT_WINDOWS,
+    REFUSAL_FALLBACK_BETA,
+    REFUSAL_FALLBACK_MODEL,
+    REFUSAL_FALLBACK_MODELS,
     SAMPLING_LOCKED_MODELS,
     XHIGH_EFFORT_MODELS,
     ChatCompletionParameters,
@@ -20,6 +24,7 @@ from discord_claude.util import (
     calculate_cost,
     chunk_text,
     format_anthropic_error,
+    get_default_advisor_model,
     supported_effort_levels,
     truncate_text,
 )
@@ -289,8 +294,9 @@ class TestModelCapabilitySets:
 
         compact_conversation hands the whole message list to
         COMPACTION_SUMMARY_MODEL, so an unbounded 75% trigger on a 1M-window
-        model would send it ~750k tokens and 400. claude-opus-5 is the first
-        manual-path model where the two windows differ.
+        model would send it ~750k tokens and 400. No selectable manual-path
+        model has a 1M window today (claude-opus-5 moved to COMPACTION_MODELS),
+        so this pins the guard rather than a live bound.
 
         Resolved with .get() and the same 200_000 default the production code
         uses: the pricing-override tests replace MODEL_CONTEXT_WINDOWS globally,
@@ -312,17 +318,20 @@ class TestModelCapabilitySets:
         assert manual_compaction_trigger(200_000) == 200_000 * 0.75
         assert manual_compaction_trigger(100_000) == 100_000 * 0.75
 
-    def test_opus_5_takes_the_manual_compaction_path(self):
-        """Pins the premise of the bound above: Opus 5 is manual-path and 1M-window.
+    def test_opus_5_takes_the_server_side_compaction_path(self):
+        """Opus 5 is 1M-window and server-side compacted, so the bound above never applies to it.
 
-        If Opus 5 ever joins COMPACTION_MODELS this test should be revisited
-        along with the bound, rather than both silently drifting.
+        The remaining manual-path choices are all 200k-window models, so the
+        summarizer bound in manual_compaction_trigger is currently a guard rather
+        than a live limit; both halves are pinned here so they cannot drift apart
+        silently (compaction docs verified 2026-08-28).
         """
         from pathlib import Path
 
         import yaml
 
-        from discord_claude.util import COMPACTION_MODELS
+        from discord_claude.cogs.claude.command_options import CHAT_MODEL_CHOICES
+        from discord_claude.util import COMPACTION_MODELS, COMPACTION_SUMMARY_MODEL
 
         # Read the bundled YAML directly: the module-level dicts can be replaced
         # by the CLAUDE_PRICING_PATH override tests.
@@ -332,7 +341,96 @@ class TestModelCapabilitySets:
             ).read_text()
         )
         assert bundled["models"]["claude-opus-5"]["context_window"] == 1_000_000
-        assert "claude-opus-5" not in COMPACTION_MODELS
+        assert "claude-opus-5" in COMPACTION_MODELS
+
+        manual_path = {choice.value for choice in CHAT_MODEL_CHOICES} - COMPACTION_MODELS
+        assert manual_path == {"claude-opus-4-5", "claude-sonnet-4-5", "claude-haiku-4-5"}
+        summary_window = bundled["models"][COMPACTION_SUMMARY_MODEL]["context_window"]
+        for model_id in manual_path:
+            assert bundled["models"][model_id]["context_window"] <= summary_window, model_id
+
+    def test_advisor_model_compatibility_matches_docs_table(self):
+        """Pins the executor -> advisor table from the advisor-tool docs (verified 2026-08-28).
+
+        Tuple order matters: get_default_advisor_model takes the first entry, so
+        claude-opus-4-8 leads wherever it is allowed (plaintext advice) and the
+        Opus 5 / Fable 5 executors, which only accept Opus 5 / Fable 5 advisors,
+        default to claude-opus-5 (encrypted advisor_redacted_result).
+        claude-mythos-5 is in the docs table but not publicly callable;
+        claude-sonnet-4-5 and claude-opus-4-5 are not executors.
+        """
+        assert ADVISOR_MODEL_COMPATIBILITY == {
+            "claude-haiku-4-5": (
+                "claude-opus-4-8",
+                "claude-opus-4-7",
+                "claude-opus-4-6",
+                "claude-opus-5",
+                "claude-fable-5",
+                "claude-sonnet-5",
+                "claude-sonnet-4-6",
+            ),
+            "claude-sonnet-4-6": (
+                "claude-opus-4-8",
+                "claude-opus-4-7",
+                "claude-opus-4-6",
+                "claude-opus-5",
+                "claude-fable-5",
+                "claude-sonnet-5",
+                "claude-sonnet-4-6",
+            ),
+            "claude-sonnet-5": (
+                "claude-opus-4-8",
+                "claude-opus-4-7",
+                "claude-opus-5",
+                "claude-fable-5",
+                "claude-sonnet-5",
+            ),
+            "claude-opus-4-6": (
+                "claude-opus-4-8",
+                "claude-opus-4-7",
+                "claude-opus-4-6",
+                "claude-opus-5",
+                "claude-fable-5",
+                "claude-sonnet-5",
+            ),
+            "claude-opus-4-7": (
+                "claude-opus-4-8",
+                "claude-opus-4-7",
+                "claude-opus-5",
+                "claude-fable-5",
+            ),
+            "claude-opus-4-8": (
+                "claude-opus-4-8",
+                "claude-opus-4-7",
+                "claude-opus-5",
+                "claude-fable-5",
+            ),
+            "claude-opus-5": ("claude-opus-5", "claude-fable-5"),
+            "claude-fable-5": ("claude-opus-5", "claude-fable-5"),
+        }
+        assert "claude-mythos-5" not in ADVISOR_MODEL_COMPATIBILITY
+        for advisors in ADVISOR_MODEL_COMPATIBILITY.values():
+            assert "claude-mythos-5" not in advisors
+
+    def test_default_advisor_model_prefers_plaintext_opus_4_8(self):
+        """The auto-picked advisor is Opus 4.8 wherever the API allows it.
+
+        Only Opus 5 / Fable 5 executors fall through to claude-opus-5; models
+        outside the table (Sonnet 4.5, Opus 4.5) get no advisor at all.
+        """
+        for executor in (
+            "claude-haiku-4-5",
+            "claude-sonnet-4-6",
+            "claude-sonnet-5",
+            "claude-opus-4-6",
+            "claude-opus-4-7",
+            "claude-opus-4-8",
+        ):
+            assert get_default_advisor_model(executor) == "claude-opus-4-8", executor
+        for executor in ("claude-opus-5", "claude-fable-5"):
+            assert get_default_advisor_model(executor) == "claude-opus-5", executor
+        for executor in ("claude-sonnet-4-5", "claude-opus-4-5"):
+            assert get_default_advisor_model(executor) is None, executor
 
     def test_opus_5_capability_membership(self):
         """Opus 5 is adaptive-thinking-only and sampling-locked.
@@ -348,6 +446,15 @@ class TestModelCapabilitySets:
     def test_retired_opus_4_1_absent_from_capability_sets(self):
         """Opus 4.1 shut down 2026-08-05; its thinking config is dead once unselectable."""
         assert "claude-opus-4-1" not in EXTENDED_THINKING_MODELS
+
+    def test_refusal_fallback_models_are_the_classifier_models(self):
+        """Anthropic's refusals page names Fable 5 and Opus 5 as the models with safety
+        classifiers (verified 2026-08-28); the Opus 4.8 target carries none, which is what
+        makes it a fallback rather than another refusal."""
+        assert {"claude-fable-5", "claude-opus-5"} == REFUSAL_FALLBACK_MODELS
+        assert REFUSAL_FALLBACK_MODEL == "claude-opus-4-8"
+        assert REFUSAL_FALLBACK_MODEL not in REFUSAL_FALLBACK_MODELS
+        assert REFUSAL_FALLBACK_BETA == "server-side-fallback-2026-06-01"
 
     def test_effort_model_sets_membership(self):
         """Pins the per-model effort gate (live-probed 2026-08-28).

@@ -21,10 +21,63 @@ ADVISOR_BETA = "advisor-tool-2026-03-01"
 ADVISOR_TOOL_TYPE = "advisor_20260301"
 ADVISOR_TOOL_NAME = "advisor"
 ADVISOR_MAX_USES = 3
+# Executor model -> advisor models the API accepts for it, per the advisor-tool
+# compatibility table (verified 2026-08-28). get_default_advisor_model takes
+# the FIRST entry and the advisor slash option is a bare toggle, so tuple order
+# is the selection surface: claude-opus-4-8 leads every tuple that allows it
+# because it returns plaintext advice, whereas claude-opus-5 / claude-fable-5
+# advisors return an encrypted advisor_redacted_result (harmless here: the bot
+# skips advisor_tool_result blocks by their outer type and replays them
+# verbatim). claude-mythos-5 is in the table but not publicly callable, so it
+# is omitted; claude-sonnet-4-5 and claude-opus-4-5 are not executors.
 ADVISOR_MODEL_COMPATIBILITY: dict[str, tuple[str, ...]] = {
-    "claude-haiku-4-5": ("claude-opus-4-6",),
-    "claude-sonnet-4-6": ("claude-opus-4-6",),
-    "claude-opus-4-6": ("claude-opus-4-6",),
+    "claude-haiku-4-5": (
+        "claude-opus-4-8",
+        "claude-opus-4-7",
+        "claude-opus-4-6",
+        "claude-opus-5",
+        "claude-fable-5",
+        "claude-sonnet-5",
+        "claude-sonnet-4-6",
+    ),
+    "claude-sonnet-4-6": (
+        "claude-opus-4-8",
+        "claude-opus-4-7",
+        "claude-opus-4-6",
+        "claude-opus-5",
+        "claude-fable-5",
+        "claude-sonnet-5",
+        "claude-sonnet-4-6",
+    ),
+    "claude-sonnet-5": (
+        "claude-opus-4-8",
+        "claude-opus-4-7",
+        "claude-opus-5",
+        "claude-fable-5",
+        "claude-sonnet-5",
+    ),
+    "claude-opus-4-6": (
+        "claude-opus-4-8",
+        "claude-opus-4-7",
+        "claude-opus-4-6",
+        "claude-opus-5",
+        "claude-fable-5",
+        "claude-sonnet-5",
+    ),
+    "claude-opus-4-7": (
+        "claude-opus-4-8",
+        "claude-opus-4-7",
+        "claude-opus-5",
+        "claude-fable-5",
+    ),
+    "claude-opus-4-8": (
+        "claude-opus-4-8",
+        "claude-opus-4-7",
+        "claude-opus-5",
+        "claude-fable-5",
+    ),
+    "claude-opus-5": ("claude-opus-5", "claude-fable-5"),
+    "claude-fable-5": ("claude-opus-5", "claude-fable-5"),
 }
 
 # Models that support adaptive thinking
@@ -119,9 +172,12 @@ ADAPTIVE_ONLY_THINKING_MODELS = {
     "claude-opus-4-7",
 }
 
-# Models that support server-side compaction (beta)
+# Models that support server-side compaction (beta compact-2026-01-12 with the
+# compact_20260112 edit). Every other selectable model (Opus 4.5, Sonnet 4.5,
+# Haiku 4.5) takes the manual path bounded by manual_compaction_trigger.
 COMPACTION_MODELS = {
     "claude-fable-5",
+    "claude-opus-5",
     "claude-sonnet-5",
     "claude-opus-4-8",
     "claude-opus-4-7",
@@ -130,13 +186,15 @@ COMPACTION_MODELS = {
 }
 
 # Server-side refusal fallback (beta). These models' safety classifiers can
-# decline a request (HTTP 200 with stop_reason "refusal"); with the beta
+# decline a request (HTTP 200 with stop_reason "refusal") — Anthropic's
+# refusals page names Claude Fable 5 and Claude Opus 5 (verified 2026-08-28);
+# the target Opus 4.8 has no classifier, which is what makes it a fallback. With the beta
 # active the API retries the same request on REFUSAL_FALLBACK_MODEL in one
 # round trip. The explicit-list form used here accepts up to three named
 # fallback models; a fallbacks="default" routing mode also exists under the
 # server-side-fallback-2026-07-01 header but has not been adopted.
 REFUSAL_FALLBACK_BETA = "server-side-fallback-2026-06-01"
-REFUSAL_FALLBACK_MODELS = {"claude-fable-5"}
+REFUSAL_FALLBACK_MODELS = {"claude-fable-5", "claude-opus-5"}
 REFUSAL_FALLBACK_MODEL = "claude-opus-4-8"
 
 # Context management thresholds
@@ -150,10 +208,12 @@ def manual_compaction_trigger(context_window: int) -> float:
 
     Manual compaction hands the *entire* message list to
     COMPACTION_SUMMARY_MODEL, so the trigger has to stay inside that
-    summarizer's window rather than the chat model's. Every manual-path model
-    used to have a 200k window, making the two identical; claude-opus-5 is the
-    first with a 1M window, and an unbounded 75% trigger (750k) would hand a
-    750k-token payload to a 200k-token summarizer and 400.
+    summarizer's window rather than the chat model's. Today's manual-path
+    models (Opus 4.5, Sonnet 4.5, Haiku 4.5) all share the summarizer's 200k
+    window, so the bound is currently a no-op; it stays because a 1M-window
+    model on this path (claude-opus-5 was, before it joined COMPACTION_MODELS)
+    would otherwise fire at 750k and hand a 750k-token payload to a 200k-token
+    summarizer and 400.
     """
     summary_window = MODEL_CONTEXT_WINDOWS.get(COMPACTION_SUMMARY_MODEL, 200_000)
     return min(context_window, summary_window) * CONTEXT_COMPACTION_THRESHOLD
