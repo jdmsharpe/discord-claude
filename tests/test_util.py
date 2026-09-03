@@ -7,9 +7,11 @@ from discord_claude.util import (
     ADAPTIVE_THINKING_MODELS,
     ADVISOR_MODEL_COMPATIBILITY,
     CHUNK_TEXT_SIZE,
+    COMPACTION_MODELS,
     DISCORD_EMBED_TOTAL_LIMIT,
     EFFORT_MODELS,
     EXTENDED_THINKING_MODELS,
+    FORCED_TOOL_CHOICE_UNSUPPORTED_MODELS,
     MAX_EFFORT_MODELS,
     MODEL_CONTEXT_WINDOWS,
     REFUSAL_FALLBACK_BETA,
@@ -211,6 +213,21 @@ class TestCalculateCost:
         cost = calculate_cost("claude-sonnet-4-6", 0, 0, cache_read_tokens=1_000_000)
         assert cost == pytest.approx(0.30)
 
+    def test_fable_5_1_cache_reads_bill_at_the_declared_quarter_rate(self):
+        """Fable 5.1 cache reads are 0.025x input ($0.25/MTok), not the 0.1x default.
+
+        The default multiplier would say $1.00; cache writes stay at 2x ($20/MTok) and
+        the base $10/$50 rates match Fable 5.
+        """
+        read = calculate_cost("claude-fable-5-1", 0, 0, cache_read_tokens=1_000_000)
+        assert read == pytest.approx(0.25)
+        write = calculate_cost("claude-fable-5-1", 0, 0, cache_creation_tokens=1_000_000)
+        assert write == pytest.approx(20.0)
+        assert calculate_cost("claude-fable-5-1", 1_000_000, 1_000_000) == pytest.approx(60.0)
+        # Every other model keeps the 0.1x default (Fable 5: $10 input -> $1.00 reads).
+        fable_5 = calculate_cost("claude-fable-5", 0, 0, cache_read_tokens=1_000_000)
+        assert fable_5 == pytest.approx(1.00)
+
     def test_all_token_types(self):
         """Cost with all token types combined."""
         cost = calculate_cost(
@@ -350,13 +367,14 @@ class TestModelCapabilitySets:
             assert bundled["models"][model_id]["context_window"] <= summary_window, model_id
 
     def test_advisor_model_compatibility_matches_docs_table(self):
-        """Pins the executor -> advisor table from the advisor-tool docs (verified 2026-08-28).
+        """Pins the executor -> advisor table from the advisor-tool docs (verified 2026-09-03).
 
         Tuple order matters: get_default_advisor_model takes the first entry, so
         claude-opus-4-8 leads wherever it is allowed (plaintext advice) and the
         Opus 5 / Fable 5 executors, which only accept Opus 5 / Fable 5 advisors,
-        default to claude-opus-5 (encrypted advisor_redacted_result).
-        claude-mythos-5 is in the docs table but not publicly callable;
+        default to claude-opus-5 (encrypted advisor_redacted_result). Fable 5.1
+        advises every executor but, as an executor, takes only a Fable 5.1 advisor.
+        claude-mythos-5 / claude-mythos-5-1 are in the docs table but not publicly callable;
         claude-sonnet-4-5 and claude-opus-4-5 are not executors.
         """
         assert ADVISOR_MODEL_COMPATIBILITY == {
@@ -366,6 +384,7 @@ class TestModelCapabilitySets:
                 "claude-opus-4-6",
                 "claude-opus-5",
                 "claude-fable-5",
+                "claude-fable-5-1",
                 "claude-sonnet-5",
                 "claude-sonnet-4-6",
             ),
@@ -375,6 +394,7 @@ class TestModelCapabilitySets:
                 "claude-opus-4-6",
                 "claude-opus-5",
                 "claude-fable-5",
+                "claude-fable-5-1",
                 "claude-sonnet-5",
                 "claude-sonnet-4-6",
             ),
@@ -383,6 +403,7 @@ class TestModelCapabilitySets:
                 "claude-opus-4-7",
                 "claude-opus-5",
                 "claude-fable-5",
+                "claude-fable-5-1",
                 "claude-sonnet-5",
             ),
             "claude-opus-4-6": (
@@ -391,6 +412,7 @@ class TestModelCapabilitySets:
                 "claude-opus-4-6",
                 "claude-opus-5",
                 "claude-fable-5",
+                "claude-fable-5-1",
                 "claude-sonnet-5",
             ),
             "claude-opus-4-7": (
@@ -398,19 +420,23 @@ class TestModelCapabilitySets:
                 "claude-opus-4-7",
                 "claude-opus-5",
                 "claude-fable-5",
+                "claude-fable-5-1",
             ),
             "claude-opus-4-8": (
                 "claude-opus-4-8",
                 "claude-opus-4-7",
                 "claude-opus-5",
                 "claude-fable-5",
+                "claude-fable-5-1",
             ),
-            "claude-opus-5": ("claude-opus-5", "claude-fable-5"),
-            "claude-fable-5": ("claude-opus-5", "claude-fable-5"),
+            "claude-opus-5": ("claude-opus-5", "claude-fable-5", "claude-fable-5-1"),
+            "claude-fable-5": ("claude-opus-5", "claude-fable-5", "claude-fable-5-1"),
+            "claude-fable-5-1": ("claude-fable-5-1",),
         }
-        assert "claude-mythos-5" not in ADVISOR_MODEL_COMPATIBILITY
-        for advisors in ADVISOR_MODEL_COMPATIBILITY.values():
-            assert "claude-mythos-5" not in advisors
+        for mythos in ("claude-mythos-5", "claude-mythos-5-1"):
+            assert mythos not in ADVISOR_MODEL_COMPATIBILITY
+            for advisors in ADVISOR_MODEL_COMPATIBILITY.values():
+                assert mythos not in advisors
 
     def test_default_advisor_model_prefers_plaintext_opus_4_8(self):
         """The auto-picked advisor is Opus 4.8 wherever the API allows it.
@@ -429,6 +455,7 @@ class TestModelCapabilitySets:
             assert get_default_advisor_model(executor) == "claude-opus-4-8", executor
         for executor in ("claude-opus-5", "claude-fable-5"):
             assert get_default_advisor_model(executor) == "claude-opus-5", executor
+        assert get_default_advisor_model("claude-fable-5-1") == "claude-fable-5-1"
         for executor in ("claude-sonnet-4-5", "claude-opus-4-5"):
             assert get_default_advisor_model(executor) is None, executor
 
@@ -443,15 +470,28 @@ class TestModelCapabilitySets:
         assert "claude-opus-5" in SAMPLING_LOCKED_MODELS
         assert "claude-opus-5" not in EXTENDED_THINKING_MODELS
 
+    def test_fable_5_1_capability_membership(self):
+        """Fable 5.1 (GA 2026-09-01) mirrors Fable 5 — adaptive-only, sampling-locked,
+        server-side compaction, refusal classifiers — and is the first model that 400s
+        on forced tool use (live-probed 2026-09-03)."""
+        assert "claude-fable-5-1" in ADAPTIVE_THINKING_MODELS
+        assert "claude-fable-5-1" in ADAPTIVE_ONLY_THINKING_MODELS
+        assert "claude-fable-5-1" in SAMPLING_LOCKED_MODELS
+        assert "claude-fable-5-1" in COMPACTION_MODELS
+        assert "claude-fable-5-1" in REFUSAL_FALLBACK_MODELS
+        assert "claude-fable-5-1" not in EXTENDED_THINKING_MODELS
+        assert {"claude-fable-5-1"} == FORCED_TOOL_CHOICE_UNSUPPORTED_MODELS
+
     def test_retired_opus_4_1_absent_from_capability_sets(self):
         """Opus 4.1 shut down 2026-08-05; its thinking config is dead once unselectable."""
         assert "claude-opus-4-1" not in EXTENDED_THINKING_MODELS
 
     def test_refusal_fallback_models_are_the_classifier_models(self):
         """Anthropic's refusals page names Fable 5 and Opus 5 as the models with safety
-        classifiers (verified 2026-08-28); the Opus 4.8 target carries none, which is what
-        makes it a fallback rather than another refusal."""
-        assert {"claude-fable-5", "claude-opus-5"} == REFUSAL_FALLBACK_MODELS
+        classifiers (verified 2026-08-28) and the Fable 5.1 launch notes add Fable 5.1
+        (2026-09-01); the Opus 4.8 target carries none, which is what makes it a
+        fallback rather than another refusal."""
+        assert {"claude-fable-5-1", "claude-fable-5", "claude-opus-5"} == REFUSAL_FALLBACK_MODELS
         assert REFUSAL_FALLBACK_MODEL == "claude-opus-4-8"
         assert REFUSAL_FALLBACK_MODEL not in REFUSAL_FALLBACK_MODELS
         assert REFUSAL_FALLBACK_BETA == "server-side-fallback-2026-06-01"
@@ -463,6 +503,7 @@ class TestModelCapabilitySets:
         the 4.6 pair adds max but not xhigh, everything newer takes all five.
         """
         assert {
+            "claude-fable-5-1",
             "claude-fable-5",
             "claude-opus-5",
             "claude-sonnet-5",
@@ -473,6 +514,7 @@ class TestModelCapabilitySets:
             "claude-opus-4-5",
         } == EFFORT_MODELS
         assert {
+            "claude-fable-5-1",
             "claude-fable-5",
             "claude-opus-5",
             "claude-sonnet-5",
@@ -493,6 +535,7 @@ class TestModelCapabilitySets:
         from discord_claude.cogs.claude.command_options import CHAT_MODEL_CHOICES
 
         expected = {
+            "claude-fable-5-1": {"low", "medium", "high", "xhigh", "max"},
             "claude-fable-5": {"low", "medium", "high", "xhigh", "max"},
             "claude-opus-5": {"low", "medium", "high", "xhigh", "max"},
             "claude-opus-4-8": {"low", "medium", "high", "xhigh", "max"},

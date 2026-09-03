@@ -55,6 +55,13 @@ MODEL_PRICING: dict[str, tuple[float, float]] = {
     if "input_per_million" in cfg and "output_per_million" in cfg
 }
 
+# Explicit cache-read rates; models absent here read at 0.1x their input price.
+CACHE_READ_PRICING: dict[str, float] = {
+    model_id: float(cfg["cache_read_per_million"])
+    for model_id, cfg in _MODELS.items()
+    if "cache_read_per_million" in cfg
+}
+
 UNKNOWN_MODEL_PRICING: tuple[float, float] = (
     float(_FALLBACK["input_per_million"]),
     float(_FALLBACK["output_per_million"]),
@@ -63,6 +70,7 @@ UNKNOWN_MODEL_PRICING: tuple[float, float] = (
 WEB_SEARCH_COST_PER_REQUEST: float = float(_TOOLS.get("web_search", {}).get("per_request", 0.01))
 
 __all__ = [
+    "CACHE_READ_PRICING",
     "MODEL_CONTEXT_WINDOWS",
     "MODEL_PRICING",
     "UNKNOWN_MODEL_PRICING",

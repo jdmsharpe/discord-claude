@@ -7,6 +7,7 @@ from typing import Any, Literal, Protocol, TypedDict
 from discord import Embed, Member, User
 
 from discord_claude.config.pricing import (
+    CACHE_READ_PRICING,
     MODEL_CONTEXT_WINDOWS,
     MODEL_PRICING,
     UNKNOWN_MODEL_PRICING,
@@ -22,14 +23,15 @@ ADVISOR_TOOL_TYPE = "advisor_20260301"
 ADVISOR_TOOL_NAME = "advisor"
 ADVISOR_MAX_USES = 3
 # Executor model -> advisor models the API accepts for it, per the advisor-tool
-# compatibility table (verified 2026-08-28). get_default_advisor_model takes
+# compatibility table (verified 2026-09-03). get_default_advisor_model takes
 # the FIRST entry and the advisor slash option is a bare toggle, so tuple order
 # is the selection surface: claude-opus-4-8 leads every tuple that allows it
-# because it returns plaintext advice, whereas claude-opus-5 / claude-fable-5
-# advisors return an encrypted advisor_redacted_result (harmless here: the bot
-# skips advisor_tool_result blocks by their outer type and replays them
-# verbatim). claude-mythos-5 is in the table but not publicly callable, so it
-# is omitted; claude-sonnet-4-5 and claude-opus-4-5 are not executors.
+# because it returns plaintext advice, whereas claude-opus-5 / claude-fable-5 /
+# claude-fable-5-1 advisors return an encrypted advisor_redacted_result (harmless
+# here: the bot skips advisor_tool_result blocks by their outer type and replays them
+# verbatim). claude-mythos-5 / claude-mythos-5-1 are in the table but not
+# publicly callable, so they are omitted; claude-sonnet-4-5 and claude-opus-4-5
+# are not executors.
 ADVISOR_MODEL_COMPATIBILITY: dict[str, tuple[str, ...]] = {
     "claude-haiku-4-5": (
         "claude-opus-4-8",
@@ -37,6 +39,7 @@ ADVISOR_MODEL_COMPATIBILITY: dict[str, tuple[str, ...]] = {
         "claude-opus-4-6",
         "claude-opus-5",
         "claude-fable-5",
+        "claude-fable-5-1",
         "claude-sonnet-5",
         "claude-sonnet-4-6",
     ),
@@ -46,6 +49,7 @@ ADVISOR_MODEL_COMPATIBILITY: dict[str, tuple[str, ...]] = {
         "claude-opus-4-6",
         "claude-opus-5",
         "claude-fable-5",
+        "claude-fable-5-1",
         "claude-sonnet-5",
         "claude-sonnet-4-6",
     ),
@@ -54,6 +58,7 @@ ADVISOR_MODEL_COMPATIBILITY: dict[str, tuple[str, ...]] = {
         "claude-opus-4-7",
         "claude-opus-5",
         "claude-fable-5",
+        "claude-fable-5-1",
         "claude-sonnet-5",
     ),
     "claude-opus-4-6": (
@@ -62,6 +67,7 @@ ADVISOR_MODEL_COMPATIBILITY: dict[str, tuple[str, ...]] = {
         "claude-opus-4-6",
         "claude-opus-5",
         "claude-fable-5",
+        "claude-fable-5-1",
         "claude-sonnet-5",
     ),
     "claude-opus-4-7": (
@@ -69,19 +75,24 @@ ADVISOR_MODEL_COMPATIBILITY: dict[str, tuple[str, ...]] = {
         "claude-opus-4-7",
         "claude-opus-5",
         "claude-fable-5",
+        "claude-fable-5-1",
     ),
     "claude-opus-4-8": (
         "claude-opus-4-8",
         "claude-opus-4-7",
         "claude-opus-5",
         "claude-fable-5",
+        "claude-fable-5-1",
     ),
-    "claude-opus-5": ("claude-opus-5", "claude-fable-5"),
-    "claude-fable-5": ("claude-opus-5", "claude-fable-5"),
+    "claude-opus-5": ("claude-opus-5", "claude-fable-5", "claude-fable-5-1"),
+    "claude-fable-5": ("claude-opus-5", "claude-fable-5", "claude-fable-5-1"),
+    # Fable 5.1 executors pair only with Fable 5.1 (and the non-public Mythos 5.1).
+    "claude-fable-5-1": ("claude-fable-5-1",),
 }
 
 # Models that support adaptive thinking
 ADAPTIVE_THINKING_MODELS = {
+    "claude-fable-5-1",
     "claude-fable-5",
     "claude-opus-5",
     "claude-sonnet-5",
@@ -93,17 +104,24 @@ ADAPTIVE_THINKING_MODELS = {
 
 # Models that reject explicit sampling parameter overrides.
 # claude-opus-5 and claude-sonnet-5 join the effort-parameter generation
-# (Fable 5, Opus 4.8/4.7). The anthropic 1.x SDK no longer exposes
+# (Fable 5 / 5.1, Opus 4.8/4.7). The anthropic 1.x SDK no longer exposes
 # temperature/top_p/top_k as typed request parameters, so build_api_params
 # sends them through extra_body; this set gates that path so these models
 # never receive the values and return a 400 from the API.
 SAMPLING_LOCKED_MODELS = {
+    "claude-fable-5-1",
     "claude-fable-5",
     "claude-opus-5",
     "claude-sonnet-5",
     "claude-opus-4-8",
     "claude-opus-4-7",
 }
+
+# Models that 400 on forced tool use — `tool_choice` type "any" or "tool"
+# ("tool_choice: type \"tool\" and \"any\" are not supported for this model",
+# live-probed 2026-09-03): thinking is always on for them and a forced call
+# would skip it. Only "auto" and "none" are accepted.
+FORCED_TOOL_CHOICE_UNSUPPORTED_MODELS = frozenset({"claude-fable-5-1"})
 
 # output_config.effort ladder in ascending order. Each model accepts only a
 # prefix of it (plus/minus "xhigh"), gated by supported_effort_levels below;
@@ -115,6 +133,7 @@ EFFORT_LEVELS: tuple[str, ...] = ("low", "medium", "high", "xhigh", "max")
 # effort parameter"), so they stay out of this set.
 EFFORT_MODELS = frozenset(
     {
+        "claude-fable-5-1",
         "claude-fable-5",
         "claude-opus-5",
         "claude-sonnet-5",
@@ -130,6 +149,7 @@ EFFORT_MODELS = frozenset(
 # these takes the full low..max ladder.
 XHIGH_EFFORT_MODELS = frozenset(
     {
+        "claude-fable-5-1",
         "claude-fable-5",
         "claude-opus-5",
         "claude-sonnet-5",
@@ -159,12 +179,14 @@ def supported_effort_levels(model: str) -> frozenset[str]:
 
 
 # Models that only support adaptive thinking (no budget_tokens mode).
-# claude-fable-5 additionally rejects an explicit {"type": "disabled"} config;
+# claude-fable-5 and claude-fable-5-1 additionally reject an explicit
+# {"type": "disabled"} config (thinking is always on for them);
 # build_thinking_config never emits one (it omits the param instead), so the
 # existing adaptive path is safe for it. claude-opus-5 and claude-sonnet-5 are
 # adaptive-only too (manual extended thinking with budget_tokens returns a 400)
 # but do accept {"type": "disabled"}.
 ADAPTIVE_ONLY_THINKING_MODELS = {
+    "claude-fable-5-1",
     "claude-fable-5",
     "claude-opus-5",
     "claude-sonnet-5",
@@ -176,6 +198,7 @@ ADAPTIVE_ONLY_THINKING_MODELS = {
 # compact_20260112 edit). Every other selectable model (Opus 4.5, Sonnet 4.5,
 # Haiku 4.5) takes the manual path bounded by manual_compaction_trigger.
 COMPACTION_MODELS = {
+    "claude-fable-5-1",
     "claude-fable-5",
     "claude-opus-5",
     "claude-sonnet-5",
@@ -187,14 +210,16 @@ COMPACTION_MODELS = {
 
 # Server-side refusal fallback (beta). These models' safety classifiers can
 # decline a request (HTTP 200 with stop_reason "refusal") — Anthropic's
-# refusals page names Claude Fable 5 and Claude Opus 5 (verified 2026-08-28);
-# the target Opus 4.8 has no classifier, which is what makes it a fallback. With the beta
+# refusals page names Claude Fable 5 and Claude Opus 5 (verified 2026-08-28) and
+# the Fable 5.1 launch notes add Claude Fable 5.1 (2026-09-01; its permitted
+# fallback targets are Opus 4.8 and Opus 5); the target Opus 4.8 has no
+# classifier, which is what makes it a fallback. With the beta
 # active the API retries the same request on REFUSAL_FALLBACK_MODEL in one
 # round trip. The explicit-list form used here accepts up to three named
 # fallback models; a fallbacks="default" routing mode also exists under the
 # server-side-fallback-2026-07-01 header but has not been adopted.
 REFUSAL_FALLBACK_BETA = "server-side-fallback-2026-06-01"
-REFUSAL_FALLBACK_MODELS = {"claude-fable-5", "claude-opus-5"}
+REFUSAL_FALLBACK_MODELS = {"claude-fable-5-1", "claude-fable-5", "claude-opus-5"}
 REFUSAL_FALLBACK_MODEL = "claude-opus-4-8"
 
 # Context management thresholds
@@ -247,15 +272,17 @@ def calculate_cost(
 ) -> float:
     """Calculate the cost in dollars for a given model and token usage.
 
-    Cache write tokens cost 2x base input price (1h TTL); cache read tokens cost 0.1x.
-    Web search requests cost $0.01 each ($10 per 1,000 searches).
+    Cache write tokens cost 2x base input price (1h TTL); cache read tokens cost 0.1x
+    unless pricing.yaml declares a `cache_read_per_million` for the model (Fable 5.1
+    reads at 0.025x). Web search requests cost $0.01 each ($10 per 1,000 searches).
     """
     input_price, output_price = MODEL_PRICING.get(model, UNKNOWN_MODEL_PRICING)
+    cache_read_price = CACHE_READ_PRICING.get(model, input_price * 0.10)
     return (
         (input_tokens / 1_000_000) * input_price
         + (output_tokens / 1_000_000) * output_price
         + (cache_creation_tokens / 1_000_000) * input_price * 2.0
-        + (cache_read_tokens / 1_000_000) * input_price * 0.10
+        + (cache_read_tokens / 1_000_000) * cache_read_price
         + web_search_requests * WEB_SEARCH_COST_PER_REQUEST
     )
 

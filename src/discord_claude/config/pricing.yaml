@@ -2,15 +2,25 @@
 #
 # Canonical source: https://docs.claude.com/en/docs/about-claude/pricing
 # Cross-referenced against: https://github.com/pydantic/genai-prices/blob/main/prices/providers/anthropic.yml
-# Last-verified: 2026-08-28
+# Last-verified: 2026-09-03
 #
 # Prices are USD per million tokens. The calculator derives cache-write cost
-# as 2.0x the input price (1h TTL), and cache-read cost as 0.1x the input price.
+# as 2.0x the input price (1h TTL), and cache-read cost as 0.1x the input price
+# unless a row declares `cache_read_per_million` (Claude Fable 5.1 reads at
+# 0.025x = $0.25/MTok per the pricing page; every other model is 0.1x).
 #
 # Override this file at runtime by setting CLAUDE_PRICING_PATH to an alternate
 # YAML path — useful for pushing new pricing without a code release.
 
 models:
+  # GA 2026-09-01. Same $10/$50 as Fable 5; cache reads are 0.025x ($0.25/MTok),
+  # not the 0.1x the calculator assumes, so the rate is declared explicitly.
+  claude-fable-5-1:
+    context_window: 1_000_000
+    input_per_million: 10.0
+    output_per_million: 50.0
+    cache_read_per_million: 0.25
+
   claude-fable-5:
     context_window: 1_000_000
     input_per_million: 10.0

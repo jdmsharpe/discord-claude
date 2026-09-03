@@ -19,6 +19,7 @@ from discord_claude.util import (
     COMPACTION_MODELS,
     EFFORT_LEVELS,
     EXTENDED_THINKING_MODELS,
+    FORCED_TOOL_CHOICE_UNSUPPORTED_MODELS,
     MODEL_CONTEXT_WINDOWS,
     REFUSAL_FALLBACK_BETA,
     REFUSAL_FALLBACK_MODEL,
@@ -156,6 +157,12 @@ def validate_request_configuration(params: ChatCompletionParameters) -> str | No
         return (
             "Advisor requires tool behavior `auto` or Anthropic default. "
             "Tool behavior `none` disables advisor calls."
+        )
+
+    if choice_type in {"any", "tool"} and params.model in FORCED_TOOL_CHOICE_UNSUPPORTED_MODELS:
+        return (
+            f"`{params.model}` does not support forced tool use (`any` / `tool`). "
+            "Use tool behavior `auto` or `none` for this model."
         )
 
     if has_thinking and choice_type in {"any", "tool"}:
