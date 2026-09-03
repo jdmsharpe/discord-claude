@@ -42,11 +42,20 @@ def extract_response_content(response) -> ParsedResponse:
     seen_urls: set[str] = set()
     seen_cited_texts: set[str] = set()
 
+    previous_block_type: str | None = None
     for block in response.content:
+        # Citations split one passage into consecutive text blocks at each
+        # citation boundary; concatenating them restores the passage. Text
+        # blocks separated by a tool call or result are separate paragraphs.
+        continues_previous_text = block.type == "text" and previous_block_type == "text"
+        previous_block_type = block.type
         if block.type == "thinking":
             thinking_parts.append(block.thinking)
         elif block.type == "text":
-            text_parts.append(block.text)
+            if continues_previous_text:
+                text_parts[-1] += block.text
+            else:
+                text_parts.append(block.text)
             block_citations = getattr(block, "citations", None)
             if block_citations:
                 for citation in block_citations:

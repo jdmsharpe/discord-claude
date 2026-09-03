@@ -124,6 +124,25 @@ class TestAppendCitationsEmbed:
         assert "Science PDF, p. 5" in embeds[0].description
         assert "> — *Nature Doc*\n\n> Water is essential." in embeds[0].description
 
+    def test_document_citation_line_breaks_stay_inside_the_quote(self):
+        """PDF cited_text carries layout newlines; every rendered line must keep the
+        `> ` prefix or Discord ends the blockquote at the first one."""
+        from discord_claude.cogs.claude.embeds import append_citations_embed
+
+        embeds = []
+        citations = [
+            {
+                "kind": "document",
+                "cited_text": "Or three short pages if\nyou're optimistic.\n",
+                "document_title": "sample-local-pdf.pdf",
+                "location": "p. 1",
+            }
+        ]
+        append_citations_embed(embeds, citations)
+        assert embeds[0].description == (
+            "> Or three short pages if you're optimistic.\n> — *sample-local-pdf.pdf, p. 1*"
+        )
+
     def test_mixed_web_and_document_citations(self):
         from discord_claude.cogs.claude.embeds import append_citations_embed
 

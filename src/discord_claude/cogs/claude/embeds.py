@@ -76,7 +76,9 @@ def append_citations_embed(embeds: list[Embed], citations: list[dict[str, str]])
             if url:
                 web_lines.append(f"[{title}]({url})")
         elif kind == "document":
-            cited_text = citation.get("cited_text", "")
+            # PDF extraction keeps layout line breaks. Discord's `>` quotes one
+            # line, so a raw newline drops the rest of the quote out of it.
+            cited_text = " ".join(citation.get("cited_text", "").split())
             doc_title = citation.get("document_title", "")
             location = citation.get("location", "")
             if cited_text:

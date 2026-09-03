@@ -62,6 +62,45 @@ class TestExtractResponseContent:
         assert parsed.text == "No response."
         assert parsed.thinking == ""
 
+    def test_adjacent_text_blocks_concatenate_without_separator(self):
+        """Citations split one sentence into consecutive text blocks; the join must not
+        insert paragraph breaks between them."""
+        from discord_claude.cogs.claude.responses import extract_response_content
+
+        response = MagicMock()
+        blocks = []
+        for text in ["It's a sample PDF ", "created for testing PDFObject", " (the library)."]:
+            block = MagicMock()
+            block.type = "text"
+            block.text = text
+            block.citations = None
+            blocks.append(block)
+        response.content = blocks
+
+        parsed = extract_response_content(response)
+        assert parsed.text == "It's a sample PDF created for testing PDFObject (the library)."
+
+    def test_text_blocks_around_tool_use_stay_separate_paragraphs(self):
+        from discord_claude.cogs.claude.responses import extract_response_content
+
+        response = MagicMock()
+        before = MagicMock()
+        before.type = "text"
+        before.text = "Let me search for that."
+        before.citations = None
+        search = MagicMock()
+        search.type = "server_tool_use"
+        search_result = MagicMock()
+        search_result.type = "web_search_tool_result"
+        after = MagicMock()
+        after.type = "text"
+        after.text = "Here is what I found."
+        after.citations = None
+        response.content = [before, search, search_result, after]
+
+        parsed = extract_response_content(response)
+        assert parsed.text == "Let me search for that.\n\nHere is what I found."
+
     def test_with_web_citations(self):
         from discord_claude.cogs.claude.responses import extract_response_content
 
