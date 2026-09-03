@@ -8,6 +8,7 @@ import pytest
 from discord_claude.cogs.claude.command_options import (
     CHAT_MODEL_CHOICES,
     RESPONSE_EFFORT_CHOICES,
+    THINKING_DISPLAY_CHOICES,
     TOOL_CHOICE_CHOICES,
 )
 
@@ -87,6 +88,7 @@ class TestClaudeCog:
         assert [command.name for command in commands_by_name["claude"].subcommands] == [
             "check_permissions",
             "chat",
+            "effort",
         ]
 
         payload_size = len(
@@ -278,3 +280,23 @@ def test_effort_choice_set():
 def test_tool_choice_set():
     values = {choice.value for choice in TOOL_CHOICE_CHOICES}
     assert values == {"auto", "none"}
+
+
+def test_thinking_display_choice_set():
+    """`summarized` is the bot's default; `updates` is the Fable 5 / 5.1 progress-line mode."""
+    values = [choice.value for choice in THINKING_DISPLAY_CHOICES]
+    assert values == ["summarized", "updates"]
+    from discord_claude.cogs.claude.cog import ClaudeCog
+
+    assert inspect.signature(ClaudeCog.chat.callback).parameters["thinking_display"].default == (
+        "summarized"
+    )
+
+
+def test_effort_command_offers_the_full_effort_ladder():
+    """`/claude effort` reuses the chat effort choices; per-model limits are enforced at runtime."""
+    from discord_claude.cogs.claude.cog import ClaudeCog
+
+    option = next(option for option in ClaudeCog.effort.options if option.name == "effort")
+    assert option.required is True
+    assert [choice.value for choice in option.choices] == ["low", "medium", "high", "xhigh", "max"]

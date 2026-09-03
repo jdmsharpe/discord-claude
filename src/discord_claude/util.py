@@ -123,6 +123,30 @@ SAMPLING_LOCKED_MODELS = {
 # would skip it. Only "auto" and "none" are accepted.
 FORCED_TOOL_CHOICE_UNSUPPORTED_MODELS = frozenset({"claude-fable-5-1"})
 
+# thinking.display values. "summarized" (the bot's default) returns summarized
+# reasoning in thinking blocks. "updates" (beta header THINKING_DISPLAY_UPDATES_BETA)
+# returns reasoning empty, as under "omitted", while the short progress updates
+# Fable 5 / Fable 5.1 write between tool calls come back readable — at most one
+# thinking block before a tool call — so each can be shown as a status line while
+# the tools run.
+# Other adaptive models accept the value but write no updates (Opus 5 probed
+# 2026-09-03: empty thinking block, no error), so the option is gated to the two
+# models that produce them.
+THINKING_DISPLAY_SUMMARIZED = "summarized"
+THINKING_DISPLAY_UPDATES = "updates"
+THINKING_DISPLAY_UPDATES_BETA = "thinking-display-updates-2026-08-18"
+THINKING_DISPLAY_UPDATES_MODELS = frozenset({"claude-fable-5-1", "claude-fable-5"})
+
+# Per-message effort (beta header PER_MESSAGE_EFFORT_BETA): a `role: "system"`
+# message carrying `output_config.effort` changes effort from the next user turn
+# while the top-level value, and so the cached prompt prefix, is unchanged.
+# Live-probed 2026-09-03: Opus 5 and Fable 5.1 accept it (two consecutive
+# override messages too); Fable 5 400s ("output_config.effort requires a model
+# that supports per-turn effort; this model does not"); without the header every
+# model 400s ("messages.N.output_config: Extra inputs are not permitted").
+PER_MESSAGE_EFFORT_BETA = "mid-conversation-output-config-2026-07-01"
+PER_MESSAGE_EFFORT_MODELS = frozenset({"claude-fable-5-1", "claude-opus-5"})
+
 # output_config.effort ladder in ascending order. Each model accepts only a
 # prefix of it (plus/minus "xhigh"), gated by supported_effort_levels below;
 # sending anything else returns a 400 (live-probed 2026-08-28).
@@ -424,6 +448,7 @@ class ChatCompletionParameters:
     channel_id: int | None = None
     effort: str | None = None
     thinking_budget: int | None = None
+    thinking_display: str = THINKING_DISPLAY_SUMMARIZED
     paused: bool | None = False
     tools: list[str] = field(default_factory=list)
     mcp_preset_names: list[str] = field(default_factory=list)

@@ -1,5 +1,6 @@
 import asyncio
 import contextlib
+from collections.abc import Awaitable, Callable
 from typing import Any
 
 import aiohttp
@@ -21,10 +22,16 @@ from discord_claude.util import (
     EXTENDED_THINKING_MODELS,
     FORCED_TOOL_CHOICE_UNSUPPORTED_MODELS,
     MODEL_CONTEXT_WINDOWS,
+    PER_MESSAGE_EFFORT_BETA,
+    PER_MESSAGE_EFFORT_MODELS,
     REFUSAL_FALLBACK_BETA,
     REFUSAL_FALLBACK_MODEL,
     REFUSAL_FALLBACK_MODELS,
     SAMPLING_LOCKED_MODELS,
+    THINKING_DISPLAY_SUMMARIZED,
+    THINKING_DISPLAY_UPDATES,
+    THINKING_DISPLAY_UPDATES_BETA,
+    THINKING_DISPLAY_UPDATES_MODELS,
     ChatCompletionParameters,
     Conversation,
     ConversationKey,
@@ -77,10 +84,13 @@ def handle_check_permissions(ctx: ApplicationContext) -> Any:
     return ctx.respond("Bot is missing necessary permissions in this channel.")
 
 
+ProgressCallback = Callable[[str], Awaitable[None]]
+
+
 def build_thinking_config(params: ChatCompletionParameters) -> dict[str, Any] | None:
     """Return the Anthropic thinking configuration for the current model/settings."""
     if params.model in ADAPTIVE_THINKING_MODELS:
-        return {"type": "adaptive", "display": "summarized"}
+        return {"type": "adaptive", "display": params.thinking_display}
     if params.thinking_budget is not None and params.model in EXTENDED_THINKING_MODELS:
         return {
             "type": "enabled",
@@ -104,6 +114,17 @@ def validate_request_configuration(params: ChatCompletionParameters) -> str | No
         return (
             f"`{params.model}` only supports adaptive thinking. "
             "Leave `thinking_budget` unset for this model."
+        )
+
+    if (
+        params.thinking_display == THINKING_DISPLAY_UPDATES
+        and params.model not in THINKING_DISPLAY_UPDATES_MODELS
+    ):
+        supported_models = ", ".join(f"`{m}`" for m in sorted(THINKING_DISPLAY_UPDATES_MODELS))
+        return (
+            f"`{params.model}` does not write progress updates between tool calls; "
+            f"thinking display `updates` is only available on {supported_models}. "
+            "Use `summarized` for this model."
         )
 
     if params.model in SAMPLING_LOCKED_MODELS:
@@ -283,14 +304,101 @@ def _is_advisor_tool(tool_definition: Any) -> bool:
     )
 
 
+def is_effort_override_message(message: Any) -> bool:
+    """True for the effort-only `role: "system"` messages `apply_effort_change` appends."""
+    return (
+        isinstance(message, dict)
+        and message.get("role") == "system"
+        and isinstance(message.get("output_config"), dict)
+    )
+
+
+def effort_override_message(level: str) -> dict[str, Any]:
+    """Per-message effort change: applies from the next user turn without invalidating the cache."""
+    return {"role": "system", "content": [], "output_config": {"effort": level}}
+
+
+def current_effort(conversation: Conversation) -> str | None:
+    """The effort that applies to later turns: the latest override if any, else the top-level value."""
+    for message in reversed(conversation.messages):
+        if is_effort_override_message(message):
+            return message["output_config"].get("effort")
+    return conversation.params.effort
+
+
+def apply_effort_change(conversation: Conversation, level: str) -> str | None:
+    """Change the conversation's effort for its following turns.
+
+    Models in PER_MESSAGE_EFFORT_MODELS get an effort-only system message appended to
+    the history (a trailing one is replaced, so consecutive changes do not accumulate)
+    and keep the top-level `output_config.effort` unchanged, so the cached prompt prefix
+    stays valid. Every other model gets the top-level value changed instead, which
+    changes the rendered prompt and invalidates the cache. Returns a user-facing
+    error, or None on success.
+    """
+    params = conversation.params
+    supported_levels = supported_effort_levels(params.model)
+    if not supported_levels:
+        return f"`{params.model}` does not support the `effort` parameter."
+    if level not in supported_levels:
+        formatted_levels = ", ".join(
+            f"`{effort}`" for effort in EFFORT_LEVELS if effort in supported_levels
+        )
+        return (
+            f"`{params.model}` does not support effort `{level}`. "
+            f"Supported effort levels: {formatted_levels}."
+        )
+    if params.model in PER_MESSAGE_EFFORT_MODELS:
+        override = effort_override_message(level)
+        if conversation.messages and is_effort_override_message(conversation.messages[-1]):
+            conversation.messages[-1] = override
+        else:
+            conversation.messages.append(override)
+    else:
+        params.effort = level
+    conversation.touch()
+    return None
+
+
+def _progress_lines(response: Any) -> list[str]:
+    """Readable progress text in a tool_use response: text blocks plus any thinking
+    block that came back non-empty (under `display: "updates"` those are the
+    between-tool-call status lines; reasoning itself is returned empty)."""
+    lines: list[str] = []
+    for block in response.content:
+        if block.type == "text" and (block.text or "").strip():
+            lines.append(block.text.strip())
+        elif block.type == "thinking" and (getattr(block, "thinking", "") or "").strip():
+            lines.append(block.thinking.strip())
+    return lines
+
+
+def make_progress_poster(send, logger) -> ProgressCallback:
+    """Build the callback that posts a progress update to Discord as a small embed."""
+
+    async def _post(text: str) -> None:
+        await send_embed_batches(
+            send,
+            embed=Embed(description=f"⏳ {truncate_text(text, 3900)}", color=Colour.greyple()),
+            logger=logger,
+        )
+
+    return _post
+
+
 async def call_api_with_tool_loop(
     cog,
     api_params: dict[str, Any],
     messages: list[dict[str, Any]],
     user_id: int,
     max_iterations: int = 10,
+    progress_callback: ProgressCallback | None = None,
 ) -> ParsedResponse:
-    """Call the Anthropic API, handling tool-use loops and context management."""
+    """Call the Anthropic API, handling tool-use loops and context management.
+
+    ``progress_callback`` receives the readable progress text of each tool_use
+    iteration when the request runs with ``thinking.display == "updates"``.
+    """
     model = api_params.get("model", "")
     use_compaction = model in COMPACTION_MODELS
     tools = api_params.get("tools") or []
@@ -298,9 +406,16 @@ async def call_api_with_tool_loop(
     has_advisor = any(_is_advisor_tool(tool) for tool in tools)
     has_thinking = bool(api_params.get("thinking"))
     has_mcp = bool(api_params.get("mcp_servers"))
+    thinking_display = (api_params.get("thinking") or {}).get("display")
+    show_progress = thinking_display == THINKING_DISPLAY_UPDATES
+    has_effort_override = any(is_effort_override_message(message) for message in messages)
 
     betas: list[str] = []
     edits: list[dict[str, Any]] = []
+    if show_progress:
+        betas.append(THINKING_DISPLAY_UPDATES_BETA)
+    if has_effort_override:
+        betas.append(PER_MESSAGE_EFFORT_BETA)
     if has_thinking:
         edits.append(
             {
@@ -390,6 +505,13 @@ async def call_api_with_tool_loop(
             continue
         if response.stop_reason == "tool_use":
             messages.append({"role": "assistant", "content": response.content})
+            if show_progress and progress_callback is not None:
+                progress_text = "\n".join(_progress_lines(response))
+                if progress_text:
+                    try:
+                        await progress_callback(progress_text)
+                    except Exception:
+                        cog.logger.warning("Failed to post progress update", exc_info=True)
             tool_results = []
             for tool_block in parsed.tool_use_blocks:
                 result_text = await cog._execute_tool(tool_block.name, tool_block.input, user_id)
@@ -472,6 +594,11 @@ async def handle_new_message_in_conversation(cog, message, conversation: Convers
             api_params=api_params,
             messages=messages,
             user_id=message.author.id,
+            progress_callback=(
+                make_progress_poster(message.channel.send, cog.logger)
+                if params.thinking_display == THINKING_DISPLAY_UPDATES
+                else None
+            ),
         )
         conversation.touch()
         response_text = parsed.text
@@ -586,6 +713,59 @@ async def handle_on_message(cog, message) -> None:
         await handle_new_message_in_conversation(cog, message, conversation)
 
 
+async def run_effort_command(cog, ctx: ApplicationContext, *, effort: str) -> None:
+    """Run the /claude effort command: change effort for the caller's active conversation."""
+    if ctx.channel is None:
+        await ctx.respond(
+            embed=Embed(
+                title="Error",
+                description="This command must be used in a channel.",
+                color=Colour.red(),
+            )
+        )
+        return
+
+    conversation = cog.conversations.get((ctx.author.id, ctx.channel.id))
+    if conversation is None:
+        await ctx.respond(
+            embed=Embed(
+                title="Error",
+                description=(
+                    "You have no active conversation in this channel. "
+                    "Start one with `/claude chat` first."
+                ),
+                color=Colour.red(),
+            )
+        )
+        return
+
+    error = apply_effort_change(conversation, effort)
+    if error:
+        await ctx.respond(
+            embed=Embed(title="Unsupported Effort", description=error, color=Colour.red())
+        )
+        return
+
+    model = conversation.params.model
+    if model in PER_MESSAGE_EFFORT_MODELS:
+        note = (
+            f"Effort set to `{effort}` for your next messages. `{model}` applies it "
+            "per message (beta), so the prompt cache is preserved."
+        )
+    else:
+        note = (
+            f"Effort set to `{effort}` for your next messages. `{model}` changes the rendered "
+            "prompt for a new effort level, so its cached prefix is invalidated."
+        )
+    cog.logger.info(
+        "Effort changed to %s for conversation %s (%s)",
+        effort,
+        conversation.params.conversation_id,
+        model,
+    )
+    await ctx.respond(embed=Embed(title="Effort Updated", description=note, color=Colour.green()))
+
+
 async def run_chat_command(
     cog,
     ctx: ApplicationContext,
@@ -600,6 +780,7 @@ async def run_chat_command(
     top_k: int | None = None,
     effort: str | None = None,
     thinking_budget: int | None = None,
+    thinking_display: str = THINKING_DISPLAY_SUMMARIZED,
     web_search: bool = False,
     web_fetch: bool = False,
     code_execution: bool = False,
@@ -708,6 +889,7 @@ async def run_chat_command(
             top_k=top_k,
             effort=effort,
             thinking_budget=thinking_budget,
+            thinking_display=thinking_display,
             conversation_starter=ctx.author,
             channel_id=ctx.channel.id,
             conversation_id=ctx.interaction.id,
@@ -736,6 +918,11 @@ async def run_chat_command(
             api_params=api_params,
             messages=conversation_messages,
             user_id=ctx.author.id,
+            progress_callback=(
+                make_progress_poster(ctx.send_followup, cog.logger)
+                if thinking_display == THINKING_DISPLAY_UPDATES
+                else None
+            ),
         )
         response_text = parsed.text
 
@@ -754,6 +941,8 @@ async def run_chat_command(
             description += f"**Effort:** {effort}\n"
         if thinking_budget is not None:
             description += f"**Thinking Budget:** {thinking_budget} tokens\n"
+        if thinking_display != THINKING_DISPLAY_SUMMARIZED:
+            description += f"**Thinking Display:** {thinking_display}\n"
         if enabled_tools:
             description += f"**Tools:** {', '.join(enabled_tools)}\n"
         if mcp_preset_names:

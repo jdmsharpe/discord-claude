@@ -29,6 +29,7 @@ from .chat import (
     handle_check_permissions,
     handle_on_message,
     run_chat_command,
+    run_effort_command,
     validate_request_configuration,
 )
 from .chat import (
@@ -44,7 +45,12 @@ from .client import (
     close_http_session,
     get_http_session,
 )
-from .command_options import CHAT_MODEL_CHOICES, RESPONSE_EFFORT_CHOICES, TOOL_CHOICE_CHOICES
+from .command_options import (
+    CHAT_MODEL_CHOICES,
+    RESPONSE_EFFORT_CHOICES,
+    THINKING_DISPLAY_CHOICES,
+    TOOL_CHOICE_CHOICES,
+)
 from .embeds import (
     append_citations_embed,
     append_compaction_embed,
@@ -164,6 +170,7 @@ class ClaudeCog(commands.Cog):
         messages: list[dict[str, Any]],
         user_id: int,
         max_iterations: int = 10,
+        progress_callback=None,
     ):
         return await call_api_with_tool_loop(
             self,
@@ -171,6 +178,7 @@ class ClaudeCog(commands.Cog):
             messages=messages,
             user_id=user_id,
             max_iterations=max_iterations,
+            progress_callback=progress_callback,
         )
 
     async def _execute_tool(self, tool_name: str, tool_input: dict[str, Any], user_id: int) -> str:
@@ -297,6 +305,13 @@ class ClaudeCog(commands.Cog):
         type=int,
     )
     @option(
+        "thinking_display",
+        description="Summarized reasoning, or live progress lines between tool calls (Fable 5+). (default: summarized)",
+        required=False,
+        choices=THINKING_DISPLAY_CHOICES,
+        type=str,
+    )
+    @option(
         "web_search",
         description="Enable web search to find current information. (default: false)",
         required=False,
@@ -352,6 +367,7 @@ class ClaudeCog(commands.Cog):
         top_k: int | None = None,
         effort: str | None = None,
         thinking_budget: int | None = None,
+        thinking_display: str = "summarized",
         web_search: bool = False,
         web_fetch: bool = False,
         code_execution: bool = False,
@@ -373,6 +389,7 @@ class ClaudeCog(commands.Cog):
             top_k=top_k,
             effort=effort,
             thinking_budget=thinking_budget,
+            thinking_display=thinking_display,
             web_search=web_search,
             web_fetch=web_fetch,
             code_execution=code_execution,
@@ -381,3 +398,17 @@ class ClaudeCog(commands.Cog):
             mcp=mcp,
             tool_choice=tool_choice,
         )
+
+    @claude.command(
+        name="effort",
+        description="Change the effort level of your active conversation in this channel.",
+    )
+    @option(
+        "effort",
+        description="Effort for your following messages: low, medium, high, xhigh, or max.",
+        required=True,
+        choices=RESPONSE_EFFORT_CHOICES,
+        type=str,
+    )
+    async def effort(self, ctx: ApplicationContext, effort: str):
+        await run_effort_command(self, ctx=ctx, effort=effort)

@@ -27,8 +27,17 @@ TOOL_CHOICE_CHOICES = [
     OptionChoice(name="None", value="none"),
 ]
 
+THINKING_DISPLAY_CHOICES = [
+    OptionChoice(name="Summarized", value="summarized"),
+    OptionChoice(
+        name="Progress updates (Fable 5 / 5.1: live status lines between tool calls, reasoning hidden)",
+        value="updates",
+    ),
+]
+
 __all__ = [
     "CHAT_MODEL_CHOICES",
     "RESPONSE_EFFORT_CHOICES",
+    "THINKING_DISPLAY_CHOICES",
     "TOOL_CHOICE_CHOICES",
 ]

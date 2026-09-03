@@ -229,6 +229,139 @@ class TestCallApiWithToolLoop:
 
         assert parsed.stop_reason == "model_context_window_exceeded"
 
+    async def test_updates_display_posts_progress_and_sends_beta(self, cog):
+        """Under thinking.display "updates" every tool_use iteration's readable text is
+        posted through the progress callback and the beta header is sent."""
+        tool_response = MagicMock()
+        status = MagicMock()
+        status.type = "thinking"
+        status.thinking = "Checking your memories first."
+        tool_text = MagicMock()
+        tool_text.type = "text"
+        tool_text.text = "Let me look."
+        tool_text.citations = None
+        tool_block = MagicMock()
+        tool_block.type = "tool_use"
+        tool_block.id = "toolu_123"
+        tool_block.name = "memory"
+        tool_block.input = {"command": "view", "path": "/memories"}
+        tool_response.content = [status, tool_text, tool_block]
+        tool_response.stop_reason = "tool_use"
+        tool_response.usage = None
+
+        final_response = MagicMock()
+        empty_thinking = MagicMock()
+        empty_thinking.type = "thinking"
+        empty_thinking.thinking = ""
+        final_text = MagicMock()
+        final_text.type = "text"
+        final_text.text = "Nothing stored."
+        final_text.citations = None
+        final_response.content = [empty_thinking, final_text]
+        final_response.stop_reason = "end_turn"
+        final_response.usage = None
+
+        cog.client.beta.messages.create = AsyncMock(side_effect=[tool_response, final_response])
+        progress = AsyncMock()
+        messages = [{"role": "user", "content": "Check my memories"}]
+        api_params = {
+            "model": "claude-fable-5-1",
+            "max_tokens": 1024,
+            "thinking": {"type": "adaptive", "display": "updates"},
+        }
+
+        with patch("discord_claude.memory.execute_memory_operation") as mock_exec:
+            mock_exec.return_value = "No memory files found."
+            parsed = await cog._call_api_with_tool_loop(
+                api_params=api_params,
+                messages=messages,
+                user_id=123,
+                progress_callback=progress,
+            )
+
+        assert parsed.text == "Nothing stored."
+        assert parsed.thinking == ""
+        progress.assert_awaited_once_with("Checking your memories first.\nLet me look.")
+        for call in cog.client.beta.messages.create.call_args_list:
+            assert "thinking-display-updates-2026-08-18" in call.kwargs["betas"]
+
+    async def test_summarized_display_posts_no_progress(self, cog):
+        """The default display is unchanged: no progress posts, no updates beta."""
+        tool_response = MagicMock()
+        tool_text = MagicMock()
+        tool_text.type = "text"
+        tool_text.text = "Let me look."
+        tool_text.citations = None
+        tool_block = MagicMock()
+        tool_block.type = "tool_use"
+        tool_block.id = "toolu_123"
+        tool_block.name = "memory"
+        tool_block.input = {"command": "view", "path": "/memories"}
+        tool_response.content = [tool_text, tool_block]
+        tool_response.stop_reason = "tool_use"
+        tool_response.usage = None
+        final_response = MagicMock()
+        final_text = MagicMock()
+        final_text.type = "text"
+        final_text.text = "Nothing stored."
+        final_text.citations = None
+        final_response.content = [final_text]
+        final_response.stop_reason = "end_turn"
+        final_response.usage = None
+        cog.client.beta.messages.create = AsyncMock(side_effect=[tool_response, final_response])
+        progress = AsyncMock()
+        api_params = {
+            "model": "claude-fable-5-1",
+            "max_tokens": 1024,
+            "thinking": {"type": "adaptive", "display": "summarized"},
+        }
+
+        with patch("discord_claude.memory.execute_memory_operation") as mock_exec:
+            mock_exec.return_value = "No memory files found."
+            await cog._call_api_with_tool_loop(
+                api_params=api_params,
+                messages=[{"role": "user", "content": "Check my memories"}],
+                user_id=123,
+                progress_callback=progress,
+            )
+
+        progress.assert_not_awaited()
+        for call in cog.client.beta.messages.create.call_args_list:
+            assert "thinking-display-updates-2026-08-18" not in call.kwargs["betas"]
+
+    async def test_effort_override_message_sends_per_message_effort_beta(self, cog):
+        """An effort-only system message in the history needs the per-message effort beta
+        (without it the API 400s: "messages.N.output_config: Extra inputs are not permitted")."""
+        mock_response = MagicMock()
+        text_block = MagicMock()
+        text_block.type = "text"
+        text_block.text = "Short answer."
+        text_block.citations = None
+        mock_response.content = [text_block]
+        mock_response.stop_reason = "end_turn"
+        mock_response.usage = None
+        cog.client.beta.messages.create = AsyncMock(return_value=mock_response)
+        messages = [
+            {"role": "user", "content": "Plan it."},
+            {"role": "assistant", "content": "1. 2. 3."},
+            {"role": "system", "content": [], "output_config": {"effort": "low"}},
+            {"role": "user", "content": "Summarize."},
+        ]
+
+        await cog._call_api_with_tool_loop(
+            api_params={"model": "claude-opus-5", "max_tokens": 1024},
+            messages=messages,
+            user_id=123,
+        )
+
+        call_kwargs = cog.client.beta.messages.create.call_args[1]
+        assert "mid-conversation-output-config-2026-07-01" in call_kwargs["betas"]
+        assert call_kwargs["messages"][2] == {
+            "role": "system",
+            "content": [],
+            "output_config": {"effort": "low"},
+        }
+
     async def test_compaction_model_uses_beta_api(self, cog):
         """Compaction models use client.beta.messages.create with compaction params."""
         mock_response = MagicMock()
@@ -883,3 +1016,108 @@ class TestRunChatCommand:
         for call in cog.client.beta.messages.create.call_args_list:
             assert "compact-2026-01-12" in call.kwargs["betas"]
             assert {"type": "compact_20260112"} in call.kwargs["context_management"]["edits"]
+
+
+class TestEffortChange:
+    """apply_effort_change / current_effort / the /claude effort command."""
+
+    @pytest.fixture
+    def cog(self, mock_bot):
+        with patch("discord_claude.cogs.claude.client.AsyncAnthropic") as mock_client_class:
+            mock_client = AsyncMock()
+            mock_client_class.return_value = mock_client
+
+            from discord_claude.cogs.claude.cog import ClaudeCog
+
+            cog = ClaudeCog(bot=mock_bot)
+            cog.client = mock_client
+            return cog
+
+    @staticmethod
+    def _conversation(model: str, effort: str | None = None):
+        from discord_claude.util import ChatCompletionParameters, Conversation
+
+        params = ChatCompletionParameters(model=model, effort=effort, conversation_id=1)
+        return Conversation(params=params, messages=[{"role": "user", "content": "Hi"}])
+
+    @pytest.mark.parametrize("model", ["claude-opus-5", "claude-fable-5-1"])
+    def test_per_message_models_get_an_effort_override_message(self, model):
+        from discord_claude.cogs.claude.chat import apply_effort_change, current_effort
+
+        conversation = self._conversation(model, effort="high")
+
+        assert apply_effort_change(conversation, "low") is None
+        assert conversation.messages[-1] == {
+            "role": "system",
+            "content": [],
+            "output_config": {"effort": "low"},
+        }
+        # The top-level effort (and so the cached prefix) is unchanged.
+        assert conversation.params.effort == "high"
+        assert current_effort(conversation) == "low"
+
+    def test_consecutive_changes_replace_the_trailing_override(self):
+        from discord_claude.cogs.claude.chat import apply_effort_change
+
+        conversation = self._conversation("claude-opus-5")
+        apply_effort_change(conversation, "medium")
+        apply_effort_change(conversation, "max")
+
+        overrides = [m for m in conversation.messages if m.get("role") == "system"]
+        assert overrides == [{"role": "system", "content": [], "output_config": {"effort": "max"}}]
+
+    def test_other_models_change_the_top_level_effort(self):
+        """Fable 5 400s on per-message effort, so it (and every non-beta model) gets the
+        top-level value changed instead — cache reset, but the effort still applies."""
+        from discord_claude.cogs.claude.chat import apply_effort_change, current_effort
+
+        conversation = self._conversation("claude-fable-5", effort="high")
+
+        assert apply_effort_change(conversation, "low") is None
+        assert conversation.params.effort == "low"
+        assert all(m.get("role") != "system" for m in conversation.messages)
+        assert current_effort(conversation) == "low"
+
+    def test_unsupported_levels_are_rejected_without_modifying_the_conversation(self):
+        from discord_claude.cogs.claude.chat import apply_effort_change
+
+        opus_4_5 = self._conversation("claude-opus-4-5", effort="high")
+        error = apply_effort_change(opus_4_5, "max")
+        assert error is not None and "`max`" in error and "`high`" in error
+        assert opus_4_5.params.effort == "high"
+        assert len(opus_4_5.messages) == 1
+
+        haiku = self._conversation("claude-haiku-4-5")
+        error = apply_effort_change(haiku, "low")
+        assert error is not None and "does not support the `effort` parameter" in error
+
+    async def test_effort_command_without_conversation_errors(self, cog, mock_discord_context):
+        await cog.effort.callback(cog, ctx=mock_discord_context, effort="low")
+
+        embed = mock_discord_context.respond.call_args.kwargs["embed"]
+        assert embed.title == "Error"
+        assert "no active conversation" in embed.description
+
+    async def test_effort_command_updates_the_active_conversation(self, cog, mock_discord_context):
+        conversation = self._conversation("claude-opus-5", effort="high")
+        key = (mock_discord_context.author.id, mock_discord_context.channel.id)
+        cog.conversations[key] = conversation
+
+        await cog.effort.callback(cog, ctx=mock_discord_context, effort="low")
+
+        embed = mock_discord_context.respond.call_args.kwargs["embed"]
+        assert embed.title == "Effort Updated"
+        assert "`low`" in embed.description
+        assert "per message" in embed.description
+        assert conversation.messages[-1]["output_config"] == {"effort": "low"}
+
+    async def test_effort_command_reports_unsupported_level(self, cog, mock_discord_context):
+        conversation = self._conversation("claude-opus-4-5", effort="high")
+        key = (mock_discord_context.author.id, mock_discord_context.channel.id)
+        cog.conversations[key] = conversation
+
+        await cog.effort.callback(cog, ctx=mock_discord_context, effort="xhigh")
+
+        embed = mock_discord_context.respond.call_args.kwargs["embed"]
+        assert embed.title == "Unsupported Effort"
+        assert conversation.params.effort == "high"

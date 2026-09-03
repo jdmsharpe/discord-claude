@@ -212,7 +212,7 @@ _ASSERTABLE_OPTIONS, _UNASSERTABLE_OPTIONS = _discover_defaulted_choice_options(
 # default, UPDATE these two numbers deliberately in the same commit. A mismatch
 # means either a real change to the command surface or a discovery regression —
 # both deserve a human look, which is the entire point of pinning them.
-_EXPECTED_ASSERTABLE_OPTIONS = 1
+_EXPECTED_ASSERTABLE_OPTIONS = 2
 _EXPECTED_UNASSERTABLE_OPTIONS = 0
 
 

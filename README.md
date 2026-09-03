@@ -47,9 +47,14 @@ Start a conversation with Claude.
 - **`advisor`**: Enable Anthropic's advisor beta on supported executor models. The advisor model is picked per executor: Claude Opus 4.8 for Haiku 4.5, Sonnet 4.6, Sonnet 5, Opus 4.6, Opus 4.7, and Opus 4.8 executors; Claude Opus 5 for Opus 5 and Fable 5 executors, which only accept Opus 5 / Fable 5 / Fable 5.1 advisors; and Claude Fable 5.1 for Fable 5.1 executors, which accept nothing else. Those Opus 5 / Fable advisors return encrypted `advisor_redacted_result` blocks instead of plaintext advice. Opus 4.5 and Sonnet 4.5 cannot use the advisor.
 - **`effort`**: Control response effort — low (fast), medium (balanced), high (thorough), xhigh, or max. Per-model limits are enforced before the request is sent: Fable 5.1, Fable 5, Opus 5, Opus 4.8, Opus 4.7, and Sonnet 5 accept all five; Opus 4.6 and Sonnet 4.6 accept everything except `xhigh`; Opus 4.5 stops at `high`; Sonnet 4.5 and Haiku 4.5 do not accept `effort` at all.
 - **`thinking_budget`**: Token budget for legacy models that still support extended thinking budgets.
+- **`thinking_display`**: `summarized` (default) shows Claude's summarized reasoning in a spoiler after each reply. `updates` (Fable 5.1 and Fable 5 only) hides the reasoning and instead posts the short progress lines the model writes between tool calls while the tools run, instead of showing only the typing indicator until the reply is ready.
 - **`tool_choice`**: Tool behavior for enabled tools (`auto` or `none`; Fable 5.1 rejects forced tool use entirely).
 - **Advanced Tuning**: `temperature`, `top_p`, `top_k` (supported models only).
 - **`mcp`**: Optional comma-separated MCP preset names (persists for the life of the conversation).
+
+### `/claude effort`
+
+Change the effort level of your active conversation in this channel for the messages that follow (`low`, `medium`, `high`, `xhigh`, or `max`; the same per-model limits as `/claude chat` apply). On Claude Fable 5.1 and Claude Opus 5 the change is applied per message (Anthropic's per-message effort beta), so the cached prompt prefix stays valid; on every other model the top-level effort is changed, which changes the rendered prompt and invalidates the cache.
 
 ### `/claude check_permissions`
 

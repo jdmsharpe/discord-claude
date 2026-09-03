@@ -1,3 +1,6 @@
+import pytest
+
+
 class TestToolChoiceSupport:
     """Tests for tool_choice request handling and validation."""
 
@@ -404,3 +407,48 @@ class TestToolChoiceSupport:
                 "max_uses": 5,
             }
         ]
+
+
+class TestThinkingDisplay:
+    @staticmethod
+    def _params(model: str, **kwargs):
+        from discord_claude.util import ChatCompletionParameters
+
+        return ChatCompletionParameters(model=model, **kwargs)
+
+    def test_build_thinking_config_defaults_to_summarized_display(self):
+        from discord_claude.cogs.claude.chat import build_thinking_config
+
+        assert build_thinking_config(self._params("claude-fable-5-1")) == {
+            "type": "adaptive",
+            "display": "summarized",
+        }
+
+    def test_build_thinking_config_passes_updates_display(self):
+        from discord_claude.cogs.claude.chat import (
+            build_thinking_config,
+            validate_request_configuration,
+        )
+
+        params = self._params("claude-fable-5-1", thinking_display="updates")
+        assert build_thinking_config(params) == {"type": "adaptive", "display": "updates"}
+        assert validate_request_configuration(params) is None
+
+    @pytest.mark.parametrize("model", ["claude-fable-5-1", "claude-fable-5"])
+    def test_validate_request_configuration_accepts_updates_display_on_fable(self, model):
+        from discord_claude.cogs.claude.chat import validate_request_configuration
+
+        params = self._params(model, thinking_display="updates")
+        assert validate_request_configuration(params) is None
+
+    @pytest.mark.parametrize("model", ["claude-opus-5", "claude-sonnet-5", "claude-opus-4-6"])
+    def test_validate_request_configuration_rejects_updates_display_elsewhere(self, model):
+        """Other adaptive models accept the value but write no progress updates (Opus 5
+        probed 2026-09-03), so the option would only hide reasoning — refuse it."""
+        from discord_claude.cogs.claude.chat import validate_request_configuration
+
+        error = validate_request_configuration(self._params(model, thinking_display="updates"))
+        assert error is not None
+        assert "`updates`" in error
+        assert "`claude-fable-5-1`" in error
+        assert "`claude-fable-5`" in error
