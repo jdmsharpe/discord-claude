@@ -362,6 +362,52 @@ class TestCallApiWithToolLoop:
             "output_config": {"effort": "low"},
         }
 
+    @pytest.mark.parametrize("model", ["claude-opus-5", "claude-fable-5-1"])
+    async def test_per_message_effort_models_send_the_beta_from_the_first_request(self, cog, model):
+        """Probed 2026-09-03 (Discord + API): sending the header only once an override
+        exists re-renders the prompt and rewrites the whole cached prefix on that turn
+        (write 2,366 / read 0); sent from turn 1, the override turn reads the cache
+        (read 2,349 / write 19). So the header is constant for these models."""
+        mock_response = MagicMock()
+        text_block = MagicMock()
+        text_block.type = "text"
+        text_block.text = "Hello!"
+        text_block.citations = None
+        mock_response.content = [text_block]
+        mock_response.stop_reason = "end_turn"
+        mock_response.usage = None
+        cog.client.beta.messages.create = AsyncMock(return_value=mock_response)
+
+        await cog._call_api_with_tool_loop(
+            api_params={"model": model, "max_tokens": 1024},
+            messages=[{"role": "user", "content": "Hi"}],
+            user_id=123,
+        )
+
+        call_kwargs = cog.client.beta.messages.create.call_args[1]
+        assert "mid-conversation-output-config-2026-07-01" in call_kwargs["betas"]
+
+    async def test_models_without_per_message_effort_do_not_send_the_beta(self, cog):
+        """Fable 5 rejects per-turn effort, so its header set is unchanged."""
+        mock_response = MagicMock()
+        text_block = MagicMock()
+        text_block.type = "text"
+        text_block.text = "Hello!"
+        text_block.citations = None
+        mock_response.content = [text_block]
+        mock_response.stop_reason = "end_turn"
+        mock_response.usage = None
+        cog.client.beta.messages.create = AsyncMock(return_value=mock_response)
+
+        await cog._call_api_with_tool_loop(
+            api_params={"model": "claude-fable-5", "max_tokens": 1024},
+            messages=[{"role": "user", "content": "Hi"}],
+            user_id=123,
+        )
+
+        call_kwargs = cog.client.beta.messages.create.call_args[1]
+        assert "mid-conversation-output-config-2026-07-01" not in call_kwargs["betas"]
+
     async def test_compaction_model_uses_beta_api(self, cog):
         """Compaction models use client.beta.messages.create with compaction params."""
         mock_response = MagicMock()

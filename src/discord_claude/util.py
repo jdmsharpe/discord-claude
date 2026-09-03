@@ -139,7 +139,10 @@ THINKING_DISPLAY_UPDATES_MODELS = frozenset({"claude-fable-5-1", "claude-fable-5
 
 # Per-message effort (beta header PER_MESSAGE_EFFORT_BETA): a `role: "system"`
 # message carrying `output_config.effort` changes effort from the next user turn
-# while the top-level value, and so the cached prompt prefix, is unchanged.
+# while the top-level value, and so the cached prompt prefix, is unchanged. The
+# header is sent on EVERY request for these models (see call_api_with_tool_loop):
+# adding it only when an override appears re-renders the prompt and rewrites the
+# cache on that turn (probed 2026-09-03), which defeats the purpose.
 # Live-probed 2026-09-03: Opus 5 and Fable 5.1 accept it (two consecutive
 # override messages too); Fable 5 400s ("output_config.effort requires a model
 # that supports per-turn effort; this model does not"); without the header every
