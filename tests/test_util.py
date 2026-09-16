@@ -724,6 +724,41 @@ class TestUsageTotals:
         assert totals.cache_read_tokens == 30
         assert totals.advisor_calls == 0
 
+    def test_accumulate_compaction_iterations(self):
+        """compaction iterations (server-side compact_20260112) bill at the executor's
+        rates: the top-level counts exclude them, so they are summed from
+        usage.iterations like every other executor entry, and the compaction embed
+        is shown."""
+        totals = UsageTotals()
+        usage = MagicMock(
+            iterations=[
+                MagicMock(
+                    type="compaction",
+                    input_tokens=180_000,
+                    output_tokens=3_500,
+                    cache_creation_input_tokens=0,
+                    cache_read_input_tokens=150_000,
+                ),
+                MagicMock(
+                    type="message",
+                    input_tokens=4_000,
+                    output_tokens=300,
+                    cache_creation_input_tokens=3_500,
+                    cache_read_input_tokens=0,
+                ),
+            ],
+            server_tool_use=None,
+        )
+
+        totals.accumulate(usage)
+
+        assert totals.input_tokens == 184_000
+        assert totals.output_tokens == 3_800
+        assert totals.cache_creation_tokens == 3_500
+        assert totals.cache_read_tokens == 150_000
+        assert totals.context_compacted is True
+        assert totals.advisor_calls == 0
+
     def test_apply_to_sets_all_fields(self):
         """apply_to stamps all fields onto a target object."""
         totals = UsageTotals(

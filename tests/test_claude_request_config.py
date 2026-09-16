@@ -395,7 +395,9 @@ class TestToolChoiceSupport:
             lambda names: ([], None),
         )
 
-        params = ChatCompletionParameters(model="claude-haiku-4-5", tools=["web_search"])
+        # Opus 5 keeps the registry payload verbatim; Haiku 4.5 gains allowed_callers
+        # (TestProgrammaticToolCallingGate), so it is not the right model for this check.
+        params = ChatCompletionParameters(model="claude-opus-5", tools=["web_search"])
 
         api_params = ClaudeCog._build_api_params(params, [{"role": "user", "content": "Hello"}])
 
@@ -452,3 +454,46 @@ class TestThinkingDisplay:
         assert "`updates`" in error
         assert "`claude-fable-5-1`" in error
         assert "`claude-fable-5`" in error
+
+
+class TestProgrammaticToolCallingGate:
+    """Web tools get allowed_callers=["direct"] on models without programmatic tool calling.
+
+    Live-probed 2026-09-15: claude-haiku-4-5 400s on the web tools' default
+    allowed_callers; every other menu model accepts the default.
+    """
+
+    def test_haiku_web_tools_get_direct_callers(self):
+        from discord_claude.cogs.claude.cog import ClaudeCog
+        from discord_claude.util import ChatCompletionParameters
+
+        params = ChatCompletionParameters(
+            model="claude-haiku-4-5", tools=["web_search", "web_fetch", "memory"]
+        )
+
+        api_params = ClaudeCog._build_api_params(params, [{"role": "user", "content": "Hi"}])
+
+        by_name = {tool["name"]: tool for tool in api_params["tools"]}
+        assert by_name["web_search"]["allowed_callers"] == ["direct"]
+        assert by_name["web_fetch"]["allowed_callers"] == ["direct"]
+        assert "allowed_callers" not in by_name["memory"]
+
+    def test_other_models_keep_the_default_callers(self):
+        from discord_claude.cogs.claude.cog import ClaudeCog
+        from discord_claude.util import ChatCompletionParameters
+
+        params = ChatCompletionParameters(model="claude-opus-5", tools=["web_search", "web_fetch"])
+
+        api_params = ClaudeCog._build_api_params(params, [{"role": "user", "content": "Hi"}])
+
+        assert all("allowed_callers" not in tool for tool in api_params["tools"])
+
+    def test_registry_payloads_are_not_mutated(self):
+        from discord_claude.cogs.claude.cog import ClaudeCog
+        from discord_claude.cogs.claude.tool_registry import TOOL_REGISTRY
+        from discord_claude.util import ChatCompletionParameters
+
+        params = ChatCompletionParameters(model="claude-haiku-4-5", tools=["web_search"])
+        ClaudeCog._build_api_params(params, [{"role": "user", "content": "Hi"}])
+
+        assert "allowed_callers" not in TOOL_REGISTRY["web_search"].anthropic_tool

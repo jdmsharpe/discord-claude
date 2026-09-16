@@ -24,6 +24,7 @@ from discord_claude.util import (
     MODEL_CONTEXT_WINDOWS,
     PER_MESSAGE_EFFORT_BETA,
     PER_MESSAGE_EFFORT_MODELS,
+    PROGRAMMATIC_TOOL_CALLING_UNSUPPORTED_MODELS,
     REFUSAL_FALLBACK_BETA,
     REFUSAL_FALLBACK_MODEL,
     REFUSAL_FALLBACK_MODELS,
@@ -246,6 +247,15 @@ def build_api_params(
         raise ValueError(mcp_error)
 
     api_tools = get_anthropic_tools(params.tools)
+    if params.model in PROGRAMMATIC_TOOL_CALLING_UNSUPPORTED_MODELS:
+        # The web tools' default allowed_callers needs programmatic tool calling,
+        # which this model lacks; "direct" keeps them callable by the model itself.
+        api_tools = [
+            {**tool, "allowed_callers": ["direct"]}
+            if str(tool.get("type", "")).startswith(("web_search_", "web_fetch_"))
+            else tool
+            for tool in api_tools
+        ]
     if params.advisor_model is not None:
         api_tools.append(
             {

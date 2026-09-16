@@ -2,7 +2,7 @@
 #
 # Canonical source: https://docs.claude.com/en/docs/about-claude/pricing
 # Cross-referenced against: https://github.com/pydantic/genai-prices/blob/main/prices/providers/anthropic.yml
-# Last-verified: 2026-09-03
+# Last-verified: 2026-09-15
 #
 # Prices are USD per million tokens. The calculator derives cache-write cost
 # as 2.0x the input price (1h TTL), and cache-read cost as 0.1x the input price

@@ -123,6 +123,14 @@ SAMPLING_LOCKED_MODELS = {
 # would skip it. Only "auto" and "none" are accepted.
 FORCED_TOOL_CHOICE_UNSUPPORTED_MODELS = frozenset({"claude-fable-5-1"})
 
+# Models without programmatic tool calling. web_search_20260209 and
+# web_fetch_20260309 default `allowed_callers` to the code-execution caller, and a
+# model that lacks programmatic tool calling rejects that default with a 400
+# ("does not support programmatic tool calling ... Explicitly set
+# allowed_callers=["direct"]"). build_api_params sets allowed_callers=["direct"]
+# on the web tools for these models only.
+PROGRAMMATIC_TOOL_CALLING_UNSUPPORTED_MODELS = frozenset({"claude-haiku-4-5"})
+
 # thinking.display values. "summarized" (the bot's default) returns summarized
 # reasoning in thinking blocks. "updates" (beta header THINKING_DISPLAY_UPDATES_BETA)
 # returns reasoning empty, as under "omitted", while the short progress updates
@@ -378,6 +386,12 @@ class UsageTotals:
                     # "fallback_message" = the attempt served by the refusal
                     # fallback model; billed at that model's rates.
                     self._accumulate_executor_usage(iteration)
+                elif iteration_type == "compaction":
+                    # Server-side compaction (compact_20260112): the summarisation
+                    # call bills at the request model's rates and is excluded from
+                    # the top-level input/output counts, so it is added here.
+                    self._accumulate_executor_usage(iteration)
+                    self.context_compacted = True
         else:
             self._accumulate_executor_usage(usage)
 
