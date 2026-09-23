@@ -8,25 +8,31 @@ from discord_claude.util import (
     ADVISOR_MODEL_COMPATIBILITY,
     CHUNK_TEXT_SIZE,
     COMPACTION_MODELS,
+    COMPACTION_SUMMARY_MODEL,
     DISCORD_EMBED_TOTAL_LIMIT,
     EFFORT_MODELS,
     EXTENDED_THINKING_MODELS,
     FORCED_TOOL_CHOICE_UNSUPPORTED_MODELS,
     MAX_EFFORT_MODELS,
     MODEL_CONTEXT_WINDOWS,
+    PER_MESSAGE_EFFORT_MODELS,
+    PROGRAMMATIC_TOOL_CALLING_UNSUPPORTED_MODELS,
     REFUSAL_FALLBACK_BETA,
     REFUSAL_FALLBACK_MODEL,
     REFUSAL_FALLBACK_MODELS,
     SAMPLING_LOCKED_MODELS,
+    THINKING_DISPLAY_UPDATES_MODELS,
     XHIGH_EFFORT_MODELS,
     ChatCompletionParameters,
     Conversation,
+    ModelTokenUsage,
     UsageTotals,
     available_embed_space,
     calculate_cost,
     chunk_text,
     format_anthropic_error,
     get_default_advisor_model,
+    priced_model,
     supported_effort_levels,
     truncate_text,
 )
@@ -239,6 +245,17 @@ class TestCalculateCost:
         )
         assert cost == pytest.approx(4.50)
 
+    def test_opus_5_5_pricing(self):
+        """Opus 5.5: $4/MTok input, $20/MTok output, cache reads $0.20/MTok (0.05x, not
+        the 0.1x default), 1h cache writes $8/MTok (2x), 1M-token window."""
+        assert calculate_cost("claude-opus-5-5", 1_000_000, 0) == pytest.approx(4.0)
+        assert calculate_cost("claude-opus-5-5", 0, 1_000_000) == pytest.approx(20.0)
+        read = calculate_cost("claude-opus-5-5", 0, 0, cache_read_tokens=1_000_000)
+        assert read == pytest.approx(0.20)
+        write = calculate_cost("claude-opus-5-5", 0, 0, cache_creation_tokens=1_000_000)
+        assert write == pytest.approx(8.0)
+        assert MODEL_CONTEXT_WINDOWS.get("claude-opus-5-5") == 1_000_000
+
     def test_opus_5_pricing(self):
         """Opus 5 uses $5/MTok input, $25/MTok output."""
         cost = calculate_cost("claude-opus-5", 1_000_000, 1_000_000)
@@ -293,6 +310,14 @@ class TestCalculateCost:
         """Unknown model should use default pricing."""
         cost = calculate_cost("unknown-model", 1_000_000, 0)
         assert cost == 15.0  # Default input price
+
+    def test_priced_model_resolves_ids_without_a_pricing_row_to_the_request_model(self):
+        """Usage entries bill at the named model's row when it has one; None and ids
+        without a row (such as a dated snapshot id) use the request model's row
+        instead of the $15/$75 unknown-model fallback."""
+        assert priced_model("claude-opus-4-8", "claude-opus-5-5") == "claude-opus-4-8"
+        assert priced_model(None, "claude-opus-5-5") == "claude-opus-5-5"
+        assert priced_model("claude-haiku-4-5-20251001", "claude-haiku-4-5") == "claude-haiku-4-5"
 
     def test_opus_4_7_context_window(self):
         """Opus 4.7 uses the 1M token context window."""
@@ -366,16 +391,19 @@ class TestModelCapabilitySets:
         for model_id in manual_path:
             assert bundled["models"][model_id]["context_window"] <= summary_window, model_id
 
-    def test_advisor_model_compatibility_matches_docs_table(self):
-        """Pins the executor -> advisor table from the advisor-tool docs (verified 2026-09-03).
+    def test_advisor_model_compatibility_matches_accepted_pairs(self):
+        """Pins the executor -> advisor pairs the API accepts: the advisor-tool docs table
+        (verified 2026-09-03) plus claude-opus-5-5, which the table does not list but the
+        API accepted for every executor, and as an executor with Opus 5.5 / Opus 5 /
+        Fable 5 / Fable 5.1 advisors (count_tokens checks, 2026-09-22).
 
         Tuple order matters: get_default_advisor_model takes the first entry, so
-        claude-opus-4-8 leads wherever it is allowed (plaintext advice) and the
-        Opus 5 / Fable 5 executors, which only accept Opus 5 / Fable 5 advisors,
-        default to claude-opus-5 (encrypted advisor_redacted_result). Fable 5.1
-        advises every executor but, as an executor, takes only a Fable 5.1 advisor.
-        claude-mythos-5 / claude-mythos-5-1 are in the docs table but not publicly callable;
-        claude-sonnet-4-5 and claude-opus-4-5 are not executors.
+        claude-opus-4-8 leads wherever it is allowed (plaintext advice), the Opus 5 /
+        Fable 5 executors default to claude-opus-5 (encrypted advisor_redacted_result),
+        and the Opus 5.5 executor defaults to claude-opus-5-5. Adding claude-opus-5-5
+        changed no tuple's first entry. claude-mythos-5 / claude-mythos-5-1 are in the
+        docs table but not publicly callable; claude-sonnet-4-5 and claude-opus-4-5 are
+        not executors.
         """
         assert ADVISOR_MODEL_COMPATIBILITY == {
             "claude-haiku-4-5": (
@@ -383,6 +411,7 @@ class TestModelCapabilitySets:
                 "claude-opus-4-7",
                 "claude-opus-4-6",
                 "claude-opus-5",
+                "claude-opus-5-5",
                 "claude-fable-5",
                 "claude-fable-5-1",
                 "claude-sonnet-5",
@@ -393,6 +422,7 @@ class TestModelCapabilitySets:
                 "claude-opus-4-7",
                 "claude-opus-4-6",
                 "claude-opus-5",
+                "claude-opus-5-5",
                 "claude-fable-5",
                 "claude-fable-5-1",
                 "claude-sonnet-5",
@@ -402,6 +432,7 @@ class TestModelCapabilitySets:
                 "claude-opus-4-8",
                 "claude-opus-4-7",
                 "claude-opus-5",
+                "claude-opus-5-5",
                 "claude-fable-5",
                 "claude-fable-5-1",
                 "claude-sonnet-5",
@@ -411,6 +442,7 @@ class TestModelCapabilitySets:
                 "claude-opus-4-7",
                 "claude-opus-4-6",
                 "claude-opus-5",
+                "claude-opus-5-5",
                 "claude-fable-5",
                 "claude-fable-5-1",
                 "claude-sonnet-5",
@@ -419,6 +451,7 @@ class TestModelCapabilitySets:
                 "claude-opus-4-8",
                 "claude-opus-4-7",
                 "claude-opus-5",
+                "claude-opus-5-5",
                 "claude-fable-5",
                 "claude-fable-5-1",
             ),
@@ -426,23 +459,43 @@ class TestModelCapabilitySets:
                 "claude-opus-4-8",
                 "claude-opus-4-7",
                 "claude-opus-5",
+                "claude-opus-5-5",
                 "claude-fable-5",
                 "claude-fable-5-1",
             ),
-            "claude-opus-5": ("claude-opus-5", "claude-fable-5", "claude-fable-5-1"),
-            "claude-fable-5": ("claude-opus-5", "claude-fable-5", "claude-fable-5-1"),
+            "claude-opus-5-5": (
+                "claude-opus-5-5",
+                "claude-opus-5",
+                "claude-fable-5",
+                "claude-fable-5-1",
+            ),
+            "claude-opus-5": (
+                "claude-opus-5",
+                "claude-opus-5-5",
+                "claude-fable-5",
+                "claude-fable-5-1",
+            ),
+            "claude-fable-5": (
+                "claude-opus-5",
+                "claude-opus-5-5",
+                "claude-fable-5",
+                "claude-fable-5-1",
+            ),
             "claude-fable-5-1": ("claude-fable-5-1",),
         }
         for mythos in ("claude-mythos-5", "claude-mythos-5-1"):
             assert mythos not in ADVISOR_MODEL_COMPATIBILITY
             for advisors in ADVISOR_MODEL_COMPATIBILITY.values():
                 assert mythos not in advisors
+        # The API rejects Opus 4.8 as the advisor of an Opus 5.5 executor.
+        assert "claude-opus-4-8" not in ADVISOR_MODEL_COMPATIBILITY["claude-opus-5-5"]
 
     def test_default_advisor_model_prefers_plaintext_opus_4_8(self):
         """The auto-picked advisor is Opus 4.8 wherever the API allows it.
 
-        Only Opus 5 / Fable 5 executors fall through to claude-opus-5; models
-        outside the table (Sonnet 4.5, Opus 4.5) get no advisor at all.
+        Only Opus 5 / Fable 5 executors fall through to claude-opus-5 and the Opus 5.5
+        executor to claude-opus-5-5; models outside the table (Sonnet 4.5, Opus 4.5) get
+        no advisor at all.
         """
         for executor in (
             "claude-haiku-4-5",
@@ -455,6 +508,7 @@ class TestModelCapabilitySets:
             assert get_default_advisor_model(executor) == "claude-opus-4-8", executor
         for executor in ("claude-opus-5", "claude-fable-5"):
             assert get_default_advisor_model(executor) == "claude-opus-5", executor
+        assert get_default_advisor_model("claude-opus-5-5") == "claude-opus-5-5"
         assert get_default_advisor_model("claude-fable-5-1") == "claude-fable-5-1"
         for executor in ("claude-sonnet-4-5", "claude-opus-4-5"):
             assert get_default_advisor_model(executor) is None, executor
@@ -480,7 +534,41 @@ class TestModelCapabilitySets:
         assert "claude-fable-5-1" in COMPACTION_MODELS
         assert "claude-fable-5-1" in REFUSAL_FALLBACK_MODELS
         assert "claude-fable-5-1" not in EXTENDED_THINKING_MODELS
-        assert {"claude-fable-5-1"} == FORCED_TOOL_CHOICE_UNSUPPORTED_MODELS
+        assert "claude-fable-5-1" in FORCED_TOOL_CHOICE_UNSUPPORTED_MODELS
+
+    def test_opus_5_5_capability_membership(self):
+        """Opus 5.5: adaptive thinking only (enabled and disabled both 400), sampling-locked,
+        all five effort levels, per-message effort, thinking display `updates`, server-side
+        compaction, refusal classifiers, and a 400 on forced tool use. It supports
+        programmatic tool calling, and the API accepts it as an executor with the advisor
+        tool and as the advisor of every executor, although the advisor docs table lists
+        neither."""
+        model = "claude-opus-5-5"
+        for member_of in (
+            ADAPTIVE_THINKING_MODELS,
+            ADAPTIVE_ONLY_THINKING_MODELS,
+            SAMPLING_LOCKED_MODELS,
+            FORCED_TOOL_CHOICE_UNSUPPORTED_MODELS,
+            THINKING_DISPLAY_UPDATES_MODELS,
+            PER_MESSAGE_EFFORT_MODELS,
+            EFFORT_MODELS,
+            XHIGH_EFFORT_MODELS,
+            MAX_EFFORT_MODELS,
+            COMPACTION_MODELS,
+            REFUSAL_FALLBACK_MODELS,
+        ):
+            assert model in member_of
+        assert model not in EXTENDED_THINKING_MODELS
+        assert model not in PROGRAMMATIC_TOOL_CALLING_UNSUPPORTED_MODELS
+        for executor, advisors in ADVISOR_MODEL_COMPATIBILITY.items():
+            if executor == "claude-fable-5-1":
+                # The API rejects an Opus 5.5 advisor for a Fable 5.1 executor.
+                assert model not in advisors
+            else:
+                assert model in advisors, executor
+        assert get_default_advisor_model(model) == model
+        assert supported_effort_levels(model) == {"low", "medium", "high", "xhigh", "max"}
+        assert {"claude-fable-5-1", "claude-opus-5-5"} == FORCED_TOOL_CHOICE_UNSUPPORTED_MODELS
 
     def test_retired_opus_4_1_absent_from_capability_sets(self):
         """Opus 4.1 shut down 2026-08-05; its thinking config is dead once unselectable."""
@@ -488,10 +576,15 @@ class TestModelCapabilitySets:
 
     def test_refusal_fallback_models_are_the_classifier_models(self):
         """Anthropic's refusals page names Fable 5 and Opus 5 as the models with safety
-        classifiers (verified 2026-08-28) and the Fable 5.1 launch notes add Fable 5.1
-        (2026-09-01); the Opus 4.8 target carries none, which is what makes it a
-        fallback rather than another refusal."""
-        assert {"claude-fable-5-1", "claude-fable-5", "claude-opus-5"} == REFUSAL_FALLBACK_MODELS
+        classifiers (verified 2026-08-28), the Fable 5.1 launch notes add Fable 5.1
+        (2026-09-01) and Opus 5.5 has them too (2026-09-22); the Opus 4.8 target carries
+        none, which is what makes it a fallback rather than another refusal."""
+        assert {
+            "claude-fable-5-1",
+            "claude-fable-5",
+            "claude-opus-5-5",
+            "claude-opus-5",
+        } == REFUSAL_FALLBACK_MODELS
         assert REFUSAL_FALLBACK_MODEL == "claude-opus-4-8"
         assert REFUSAL_FALLBACK_MODEL not in REFUSAL_FALLBACK_MODELS
         assert REFUSAL_FALLBACK_BETA == "server-side-fallback-2026-06-01"
@@ -505,6 +598,7 @@ class TestModelCapabilitySets:
         assert {
             "claude-fable-5-1",
             "claude-fable-5",
+            "claude-opus-5-5",
             "claude-opus-5",
             "claude-sonnet-5",
             "claude-opus-4-8",
@@ -516,6 +610,7 @@ class TestModelCapabilitySets:
         assert {
             "claude-fable-5-1",
             "claude-fable-5",
+            "claude-opus-5-5",
             "claude-opus-5",
             "claude-sonnet-5",
             "claude-opus-4-8",
@@ -537,6 +632,7 @@ class TestModelCapabilitySets:
         expected = {
             "claude-fable-5-1": {"low", "medium", "high", "xhigh", "max"},
             "claude-fable-5": {"low", "medium", "high", "xhigh", "max"},
+            "claude-opus-5-5": {"low", "medium", "high", "xhigh", "max"},
             "claude-opus-5": {"low", "medium", "high", "xhigh", "max"},
             "claude-opus-4-8": {"low", "medium", "high", "xhigh", "max"},
             "claude-sonnet-5": {"low", "medium", "high", "xhigh", "max"},
@@ -692,21 +788,25 @@ class TestUsageTotals:
         assert totals.advisor_cache_read_tokens == 25
 
     def test_accumulate_fallback_message_iterations(self):
-        """fallback_message iterations (refusal fallback) count as executor usage."""
+        """A refusal-fallback turn's entries are grouped under the model each one names:
+        the declined model's "message" attempt and the fallback model's
+        "fallback_message" answer bill at different rates."""
         totals = UsageTotals()
         usage = MagicMock(
             iterations=[
-                # Declined-before-output attempt: reported but unbilled (zeros).
+                # The requested model's attempt, which declined.
                 MagicMock(
                     type="message",
-                    input_tokens=0,
-                    output_tokens=0,
+                    model="claude-opus-5-5",
+                    input_tokens=140,
+                    output_tokens=12,
                     cache_creation_input_tokens=0,
                     cache_read_input_tokens=0,
                 ),
                 # The attempt served by the fallback model.
                 MagicMock(
                     type="fallback_message",
+                    model="claude-opus-4-8",
                     input_tokens=150,
                     output_tokens=90,
                     cache_creation_input_tokens=20,
@@ -718,11 +818,116 @@ class TestUsageTotals:
 
         totals.accumulate(usage)
 
-        assert totals.input_tokens == 150
-        assert totals.output_tokens == 90
+        assert totals.input_tokens == 290
+        assert totals.output_tokens == 102
         assert totals.cache_creation_tokens == 20
         assert totals.cache_read_tokens == 30
         assert totals.advisor_calls == 0
+        assert totals.tokens_by_model == {
+            "claude-opus-5-5": ModelTokenUsage(140, 12, 0, 0),
+            "claude-opus-4-8": ModelTokenUsage(150, 90, 20, 30),
+        }
+        # The serving entry is the last one, so it gives the prompt size.
+        assert totals.prompt_tokens == 150 + 20 + 30
+
+    def test_accumulate_groups_entries_without_a_model_under_the_request_model(self):
+        """Top-level usage, compaction entries and entries that name no model share the
+        None key, which track_daily_cost bills at the request model's rates."""
+        totals = UsageTotals()
+        totals.accumulate(
+            MagicMock(
+                input_tokens=100,
+                output_tokens=50,
+                cache_creation_input_tokens=10,
+                cache_read_input_tokens=20,
+                server_tool_use=None,
+            )
+        )
+        totals.accumulate(
+            MagicMock(
+                iterations=[
+                    MagicMock(
+                        type="compaction",
+                        input_tokens=1_000,
+                        output_tokens=200,
+                        cache_creation_input_tokens=0,
+                        cache_read_input_tokens=0,
+                    ),
+                    MagicMock(
+                        type="message",
+                        model=None,
+                        input_tokens=30,
+                        output_tokens=5,
+                        cache_creation_input_tokens=0,
+                        cache_read_input_tokens=0,
+                    ),
+                ],
+                server_tool_use=None,
+            )
+        )
+
+        assert totals.tokens_by_model == {None: ModelTokenUsage(1_130, 255, 10, 20)}
+
+    def test_prompt_tokens_is_the_full_prompt_of_the_latest_response(self):
+        """prompt_tokens counts uncached, cache-read and cache-write input tokens of the
+        most recent response only (not a running sum), and a compaction entry, which
+        reports the summarisation call, does not set it."""
+        totals = UsageTotals()
+        totals.accumulate(
+            MagicMock(
+                input_tokens=4_000,
+                output_tokens=100,
+                cache_creation_input_tokens=1_000,
+                cache_read_input_tokens=120_000,
+                server_tool_use=None,
+            )
+        )
+        assert totals.prompt_tokens == 125_000
+
+        totals.accumulate(
+            MagicMock(
+                iterations=[
+                    MagicMock(
+                        type="compaction",
+                        input_tokens=150_000,
+                        output_tokens=3_000,
+                        cache_creation_input_tokens=0,
+                        cache_read_input_tokens=0,
+                    ),
+                    MagicMock(
+                        type="message",
+                        input_tokens=500,
+                        output_tokens=100,
+                        cache_creation_input_tokens=3_000,
+                        cache_read_input_tokens=0,
+                    ),
+                ],
+                server_tool_use=None,
+            )
+        )
+        assert totals.prompt_tokens == 3_500
+
+    def test_accumulate_compaction_summary_bills_at_the_summary_model(self):
+        """A manual compaction's summarizer call is grouped under COMPACTION_SUMMARY_MODEL
+        and leaves prompt_tokens unchanged."""
+        totals = UsageTotals(prompt_tokens=160_000)
+        totals.accumulate_compaction_summary(
+            MagicMock(
+                input_tokens=158_000,
+                output_tokens=1_500,
+                cache_creation_input_tokens=None,
+                cache_read_input_tokens=None,
+                output_tokens_details=None,
+            )
+        )
+        totals.accumulate_compaction_summary(None)
+
+        assert totals.tokens_by_model == {
+            COMPACTION_SUMMARY_MODEL: ModelTokenUsage(158_000, 1_500, 0, 0)
+        }
+        assert totals.input_tokens == 158_000
+        assert totals.output_tokens == 1_500
+        assert totals.prompt_tokens == 160_000
 
     def test_accumulate_compaction_iterations(self):
         """compaction iterations (server-side compact_20260112) bill at the executor's
@@ -780,11 +985,17 @@ class TestUsageTotals:
         assert target.advisor_calls == 0
 
     def test_apply_to_context_warning(self):
-        """context_warning is True when input tokens exceed 85% of window."""
-        totals = UsageTotals(input_tokens=175_000)
+        """context_warning is True when the latest prompt exceeds 85% of the window,
+        whether or not its tokens were read from the cache."""
+        totals = UsageTotals(prompt_tokens=175_000)
         target = MagicMock()
         totals.apply_to(target, context_window=200_000)
         assert target.context_warning is True
+
+        # Uncached input alone is not the measure.
+        totals = UsageTotals(input_tokens=175_000, prompt_tokens=20_000)
+        totals.apply_to(target, context_window=200_000)
+        assert target.context_warning is False
 
 
 class TestAvailableEmbedSpace:

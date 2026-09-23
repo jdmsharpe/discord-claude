@@ -19,15 +19,15 @@ A Discord bot built on Pycord 2.0 that wraps Anthropic's Claude API, providing a
 ## Features
 
 - **Multi-turn Conversations:** Start conversations with Claude that maintain context across multiple messages.
-- **Multiple Claude Models:** Choose from Claude Fable (5.1, 5), Opus (5, 4.8, 4.7, 4.6, 4.5), Sonnet (5, 4.6, 4.5), and Haiku (4.5).
-- **Refusal Fallback (Beta):** If Claude Fable 5.1's, Claude Fable 5's, or Claude Opus 5's safety classifiers decline a request, the API retries it on Claude Opus 4.8 in the same round trip. The response notes the fallback, and cost tracking bills at the serving model's rates.
+- **Multiple Claude Models:** Choose from Claude Fable (5.1, 5), Opus (5.5, 5, 4.8, 4.7, 4.6, 4.5), Sonnet (5, 4.6, 4.5), and Haiku (4.5).
+- **Refusal Fallback (Beta):** If the safety classifiers of Claude Fable 5.1, Claude Fable 5, Claude Opus 5.5, or Claude Opus 5 decline a request, the API retries it on Claude Opus 4.8 in the same round trip. The response notes the fallback, and cost tracking bills each attempt at the rates of the model that ran it.
 - **Multimodal Input:** Attach images (JPEG, PNG, GIF, WEBP), PDFs, or text files (TXT, MD, CSV).
-- **Built-In Tools:** Enable web search, web fetch, code execution, and memory with `tool_choice` control (`auto` / `none`) and mid-conversation toggles. On Haiku 4.5, which lacks programmatic tool calling, the web tools are sent with `allowed_callers: ["direct"]` so they work instead of failing.
-- **Advisor Mode (Beta):** Enable Anthropic's advisor tool so supported executor models can consult a stronger Claude model (Opus 4.8 by default; Opus 5 for Opus 5 / Fable 5 executors; Fable 5.1 for Fable 5.1 executors) for higher-quality planning during complex tasks.
+- **Built-In Tools:** Enable web search, web fetch, code execution, and memory with `tool_choice` control (`auto` / `none`) and mid-conversation toggles. On Haiku 4.5, which lacks programmatic tool calling, the web tools are sent with `allowed_callers: ["direct"]` so they work instead of failing. Code execution uses `code_execution_20260521`, which can be enabled together with the web tools.
+- **Advisor Mode (Beta):** Enable Anthropic's advisor tool so supported executor models can consult a stronger Claude model (Opus 4.8 by default; Opus 5.5 for Opus 5.5 executors; Opus 5 for Opus 5 / Fable 5 executors; Fable 5.1 for Fable 5.1 executors) for higher-quality planning during complex tasks.
 - **Remote MCP Support:** Enable trusted remote MCP servers per conversation through named presets, featuring optional authorization, allow-lists, and deferred tool loading.
 - **Citations:** Web search and document citations are displayed as a separate Sources embed.
-- **Prompt Caching:** Automatic prompt caching reduces costs (cache reads at 10% of input price) and latency on multi-turn conversations.
-- **Context Management:** Uses server-side compaction on Fable 5.1, Fable 5, Opus 5, Sonnet 5, Opus 4.8 / 4.7 / 4.6, and Sonnet 4.6; Opus 4.5, Sonnet 4.5, and Haiku 4.5 fall back to local summarization at 75% of the smaller of the model window and the 200K summarizer window, with warnings as conversations approach the context limit. The tokens a server-side compaction consumes are included in the reply's cost embed.
+- **Prompt Caching:** Automatic prompt caching reduces costs (cache reads at 10% of input price; 5% on Opus 5.5 and 2.5% on Fable 5.1) and latency on multi-turn conversations.
+- **Context Management:** Uses server-side compaction on Fable 5.1, Fable 5, Opus 5.5, Opus 5, Sonnet 5, Opus 4.8 / 4.7 / 4.6, and Sonnet 4.6; Opus 4.5, Sonnet 4.5, and Haiku 4.5 fall back to local summarization once a request's full prompt (cached tokens included) passes 75% of the smaller of the model window and the 200K summarizer window, with warnings as conversations approach the context limit. The tokens either kind of compaction consumes are included in the reply's cost embed; the local summarizer's tokens are billed at Haiku 4.5's rates.
 - **Pricing Display:** Per-request cost, token counts (including thinking tokens), advisor-call counts, cache hits, and daily spend shown as a separate embed after each response (configurable).
 - **Conversation Controls:** Pause, resume, regenerate responses, and end conversations with interactive buttons.
 - **Customization:** Fine-tune supported models with system prompts, sampling controls, effort, thinking budgets, and output limits.
@@ -39,22 +39,22 @@ A Discord bot built on Pycord 2.0 that wraps Anthropic's Claude API, providing a
 Start a conversation with Claude.
 
 - **`prompt`** *(required)*: Your initial message to Claude.
-- **`model`**: Choose the Claude model (default: Claude Opus 5).
+- **`model`**: Choose the Claude model (default: Claude Opus 5.5).
 - **`system`**: System prompt to set Claude's behavior.
 - **`attachment`**: Attach an image, PDF, or text file.
 - **`max_tokens`**: Maximum tokens in the response (default: 16384).
 - **`web_search` / `web_fetch` / `code_execution` / `memory`**: Toggle individual tools (default: false).
-- **`advisor`**: Enable Anthropic's advisor beta on supported executor models. The advisor model is picked per executor: Claude Opus 4.8 for Haiku 4.5, Sonnet 4.6, Sonnet 5, Opus 4.6, Opus 4.7, and Opus 4.8 executors; Claude Opus 5 for Opus 5 and Fable 5 executors, which only accept Opus 5 / Fable 5 / Fable 5.1 advisors; and Claude Fable 5.1 for Fable 5.1 executors, which accept nothing else. Those Opus 5 / Fable advisors return encrypted `advisor_redacted_result` blocks instead of plaintext advice. Opus 4.5 and Sonnet 4.5 cannot use the advisor.
-- **`effort`**: Control response effort — low (fast), medium (balanced), high (thorough), xhigh, or max. Per-model limits are enforced before the request is sent: Fable 5.1, Fable 5, Opus 5, Opus 4.8, Opus 4.7, and Sonnet 5 accept all five; Opus 4.6 and Sonnet 4.6 accept everything except `xhigh`; Opus 4.5 stops at `high`; Sonnet 4.5 and Haiku 4.5 do not accept `effort` at all.
+- **`advisor`**: Enable Anthropic's advisor beta on supported executor models. The advisor model is picked per executor: Claude Opus 4.8 for Haiku 4.5, Sonnet 4.6, Sonnet 5, Opus 4.6, Opus 4.7, and Opus 4.8 executors; Claude Opus 5.5 for Opus 5.5 executors and Claude Opus 5 for Opus 5 and Fable 5 executors, which only accept Opus 5.5 / Opus 5 / Fable 5 / Fable 5.1 advisors; and Claude Fable 5.1 for Fable 5.1 executors, which accept only Fable 5.1 advisors. Those Opus 5 / Fable advisors return encrypted `advisor_redacted_result` blocks instead of plaintext advice. Opus 4.5 and Sonnet 4.5 cannot use the advisor.
+- **`effort`**: Control response effort — low (fast), medium (balanced), high (thorough), xhigh, or max. Per-model limits are enforced before the request is sent: Fable 5.1, Fable 5, Opus 5.5, Opus 5, Opus 4.8, Opus 4.7, and Sonnet 5 accept all five; Opus 4.6 and Sonnet 4.6 accept everything except `xhigh`; Opus 4.5 stops at `high`; Sonnet 4.5 and Haiku 4.5 do not accept `effort` at all. When `effort` is not set, the model's own default applies (`medium` on Opus 5.5).
 - **`thinking_budget`**: Token budget for legacy models that still support extended thinking budgets.
-- **`thinking_display`**: `summarized` (default) shows Claude's summarized reasoning in a spoiler after each reply. `updates` (Fable 5.1 and Fable 5 only) hides the reasoning and instead posts the short progress lines the model writes between tool calls while the tools run, instead of showing only the typing indicator until the reply is ready.
-- **`tool_choice`**: Tool behavior for enabled tools (`auto` or `none`; Fable 5.1 rejects forced tool use entirely).
+- **`thinking_display`**: `summarized` (default) shows Claude's summarized reasoning in a spoiler after each reply. `updates` (Fable 5.1, Fable 5, and Opus 5.5 only) hides the reasoning and instead posts the short progress lines the model writes between tool calls while the tools run, instead of showing only the typing indicator until the reply is ready.
+- **`tool_choice`**: Tool behavior for enabled tools (`auto` or `none`; Fable 5.1 and Opus 5.5 reject forced tool use entirely).
 - **Advanced Tuning**: `temperature`, `top_p`, `top_k` (supported models only).
 - **`mcp`**: Optional comma-separated MCP preset names (persists for the life of the conversation).
 
 ### `/claude effort`
 
-Change the effort level of your active conversation in this channel for the messages that follow (`low`, `medium`, `high`, `xhigh`, or `max`; the same per-model limits as `/claude chat` apply). On Claude Fable 5.1 and Claude Opus 5 the change is applied per message (Anthropic's per-message effort beta), so the cached prompt prefix stays valid; on every other model the top-level effort is changed, which changes the rendered prompt and invalidates the cache.
+Change the effort level of your active conversation in this channel for the messages that follow (`low`, `medium`, `high`, `xhigh`, or `max`; the same per-model limits as `/claude chat` apply). On Claude Fable 5.1, Claude Opus 5.5, and Claude Opus 5 the change is applied per message (Anthropic's per-message effort beta), so the cached prompt prefix stays valid; on every other model the top-level effort is changed, which changes the rendered prompt and invalidates the cache.
 
 ### `/claude check_permissions`
 

@@ -143,9 +143,9 @@ class TestToolChoiceSupport:
     def test_validate_request_configuration_rejects_advisor_outside_executor_pairs(self):
         """Each executor rejects an advisor the docs table does not list for it.
 
-        Opus 5 / Fable 5 only take Opus 5 / Fable 5 / Fable 5.1 advisors and Fable 5.1
-        takes only a Fable 5.1 advisor, so the otherwise
-        default claude-opus-4-8 must be refused there; the mid-tier executors
+        Opus 5.5 / Opus 5 / Fable 5 only take Opus 5.5 / Opus 5 / Fable 5 / Fable 5.1
+        advisors and Fable 5.1 takes only Fable 5.1 and Opus 5.5 advisors, so the
+        otherwise default claude-opus-4-8 must be refused there; the mid-tier executors
         drop the weaker 4.6-generation advisors; and nothing accepts Haiku.
         """
         from discord_claude.cogs.claude.cog import ClaudeCog
@@ -155,6 +155,7 @@ class TestToolChoiceSupport:
             ("claude-fable-5-1", "claude-opus-4-8"),
             ("claude-fable-5-1", "claude-opus-5"),
             ("claude-fable-5-1", "claude-fable-5"),
+            ("claude-opus-5-5", "claude-opus-4-8"),
             ("claude-opus-5", "claude-opus-4-8"),
             ("claude-fable-5", "claude-opus-4-8"),
             ("claude-opus-4-8", "claude-opus-4-6"),
@@ -202,22 +203,24 @@ class TestToolChoiceSupport:
         assert error is not None
         assert "Thinking mode only supports tool behavior `auto` or `none`" in error
 
-    def test_validate_request_configuration_rejects_forced_tool_use_on_fable_5_1(self):
-        """Fable 5.1 400s on `tool_choice` any/tool (live-probed 2026-09-03), so it is
-        refused with a model-specific message ahead of the generic thinking rule."""
+    @pytest.mark.parametrize("model", ["claude-fable-5-1", "claude-opus-5-5"])
+    def test_validate_request_configuration_rejects_forced_tool_use(self, model):
+        """Fable 5.1 (live-probed 2026-09-03) and Opus 5.5 (2026-09-22) 400 on `tool_choice`
+        any/tool, so they are refused with a model-specific message ahead of the generic
+        thinking rule."""
         from discord_claude.cogs.claude.cog import ClaudeCog
         from discord_claude.util import ChatCompletionParameters
 
         for tool_choice in ({"type": "any"}, {"type": "tool", "name": "memory"}):
             params = ChatCompletionParameters(
-                model="claude-fable-5-1", tools=["memory"], tool_choice=tool_choice
+                model=model, tools=["memory"], tool_choice=tool_choice
             )
             error = ClaudeCog._validate_request_configuration(params)
             assert error is not None, tool_choice
-            assert "does not support forced tool use" in error
+            assert f"`{model}` does not support forced tool use" in error
 
         params = ChatCompletionParameters(
-            model="claude-fable-5-1", tools=["memory"], tool_choice={"type": "auto"}
+            model=model, tools=["memory"], tool_choice={"type": "auto"}
         )
         assert ClaudeCog._validate_request_configuration(params) is None
 
@@ -436,8 +439,8 @@ class TestThinkingDisplay:
         assert build_thinking_config(params) == {"type": "adaptive", "display": "updates"}
         assert validate_request_configuration(params) is None
 
-    @pytest.mark.parametrize("model", ["claude-fable-5-1", "claude-fable-5"])
-    def test_validate_request_configuration_accepts_updates_display_on_fable(self, model):
+    @pytest.mark.parametrize("model", ["claude-fable-5-1", "claude-fable-5", "claude-opus-5-5"])
+    def test_validate_request_configuration_accepts_updates_display_on_update_writers(self, model):
         from discord_claude.cogs.claude.chat import validate_request_configuration
 
         params = self._params(model, thinking_display="updates")
@@ -454,6 +457,7 @@ class TestThinkingDisplay:
         assert "`updates`" in error
         assert "`claude-fable-5-1`" in error
         assert "`claude-fable-5`" in error
+        assert "`claude-opus-5-5`" in error
 
 
 class TestProgrammaticToolCallingGate:

@@ -362,7 +362,7 @@ class TestCallApiWithToolLoop:
             "output_config": {"effort": "low"},
         }
 
-    @pytest.mark.parametrize("model", ["claude-opus-5", "claude-fable-5-1"])
+    @pytest.mark.parametrize("model", ["claude-opus-5-5", "claude-opus-5", "claude-fable-5-1"])
     async def test_per_message_effort_models_send_the_beta_from_the_first_request(self, cog, model):
         """Probed 2026-09-03 (Discord + API): sending the header only once an override
         exists re-renders the prompt and rewrites the whole cached prefix on that turn
@@ -434,9 +434,11 @@ class TestCallApiWithToolLoop:
         assert {"type": "compact_20260112"} in call_kwargs["context_management"]["edits"]
         assert call_kwargs["cache_control"] == {"type": "ephemeral", "ttl": "1h"}
 
-    @pytest.mark.parametrize("model", ["claude-fable-5", "claude-opus-5"])
+    @pytest.mark.parametrize(
+        "model", ["claude-fable-5-1", "claude-fable-5", "claude-opus-5-5", "claude-opus-5"]
+    )
     async def test_refusal_fallback_models_send_the_opus_4_8_fallback(self, cog, model):
-        """Both classifier models carry the refusal-fallback beta and the explicit Opus 4.8 target."""
+        """Every classifier model carries the refusal-fallback beta and the explicit Opus 4.8 target."""
         mock_response = MagicMock()
         text_block = MagicMock()
         text_block.type = "text"
@@ -903,7 +905,8 @@ class TestRunChatCommand:
         assert parsed.code_execution_requests == 0
 
     async def test_context_warning_at_85_percent(self, cog):
-        """context_warning is set when input tokens exceed 85% of context window."""
+        """context_warning is set when the latest prompt, cache reads and writes
+        included, exceeds 85% of the context window (850k of Sonnet 4.6's 1M)."""
         mock_response = MagicMock()
         text_block = MagicMock()
         text_block.type = "text"
@@ -911,11 +914,16 @@ class TestRunChatCommand:
         text_block.citations = None
         mock_response.content = [text_block]
         mock_response.stop_reason = "end_turn"
-        mock_response.usage = _make_usage(input_tokens=175_000, output_tokens=500)
-        cog.client.messages.create = AsyncMock(return_value=mock_response)
+        mock_response.usage = _make_usage(
+            input_tokens=6_000,
+            output_tokens=500,
+            cache_creation_input_tokens=4_000,
+            cache_read_input_tokens=850_000,
+        )
+        cog.client.beta.messages.create = AsyncMock(return_value=mock_response)
 
         messages = [{"role": "user", "content": "Hi"}]
-        api_params = {"model": "claude-haiku-4-5", "max_tokens": 1024}
+        api_params = {"model": "claude-sonnet-4-6", "max_tokens": 1024}
 
         parsed = await cog._call_api_with_tool_loop(
             api_params=api_params, messages=messages, user_id=123
@@ -974,6 +982,7 @@ class TestRunChatCommand:
             current_state="awaiting follow-up",
             next_steps="respond to next user question",
         )
+        parse_response.usage = _make_usage(input_tokens=155_500, output_tokens=800)
 
         cog.client.messages.create = AsyncMock(side_effect=[pause_response, final_response])
         cog.client.messages.parse = AsyncMock(return_value=parse_response)
@@ -993,6 +1002,187 @@ class TestRunChatCommand:
         assert parsed.text == "Done!"
         assert cog.client.messages.create.call_count == 2
         cog.client.messages.parse.assert_called_once()
+
+    @staticmethod
+    def _text_response(text: str, stop_reason: str, usage):
+        response = MagicMock()
+        block = MagicMock()
+        block.type = "text"
+        block.text = text
+        block.citations = None
+        response.content = [block]
+        response.stop_reason = stop_reason
+        response.usage = usage
+        return response
+
+    @staticmethod
+    def _summary_response(usage):
+        from discord_claude.cogs.claude.state import ConversationSummary
+
+        response = MagicMock()
+        response.parsed_output = ConversationSummary(
+            task="long chat",
+            key_context="facts so far",
+            current_state="answered the latest question",
+            next_steps="answer the next question",
+        )
+        response.usage = usage
+        return response
+
+    async def test_manual_compaction_counts_cached_prompt_tokens(self, cog):
+        """A plain chat turn whose prompt is mostly cache reads still compacts.
+
+        Top-level cache_control reports most of a long history as cache reads, so the
+        uncached input_tokens stays small. The trigger uses the full prompt (3k + 150k
+        read + 1k written = 154k, past Haiku's 150k), and a turn with one response has
+        no follow-up request, so compaction runs after the final response and the next
+        user turn starts from the summary.
+        """
+        cog.client.messages.create = AsyncMock(
+            return_value=self._text_response(
+                "Answer.",
+                "end_turn",
+                _make_usage(
+                    input_tokens=3_000,
+                    output_tokens=400,
+                    cache_creation_input_tokens=1_000,
+                    cache_read_input_tokens=150_000,
+                ),
+            )
+        )
+        cog.client.messages.parse = AsyncMock(
+            return_value=self._summary_response(_make_usage(input_tokens=154_400))
+        )
+
+        messages = [
+            {"role": "user", "content": "First question"},
+            {"role": "assistant", "content": "First answer"},
+            {"role": "user", "content": "Second question"},
+        ]
+        parsed = await cog._call_api_with_tool_loop(
+            api_params={"model": "claude-haiku-4-5", "max_tokens": 1024},
+            messages=messages,
+            user_id=123,
+        )
+
+        assert parsed.text == "Answer."
+        assert parsed.context_compacted is True
+        # The history was replaced, so no warning about the old prompt size.
+        assert parsed.context_warning is False
+        cog.client.messages.parse.assert_called_once()
+        summarized = cog.client.messages.parse.call_args.kwargs["messages"]
+        assert summarized[-2]["role"] == "assistant"  # the reply is part of the summary
+        assert len(messages) == 1
+        assert messages[0]["role"] == "user"
+        assert messages[0]["content"].startswith("<summary>")
+
+    async def test_manual_compaction_uses_the_latest_prompt_not_the_turn_total(self, cog):
+        """Four 60k-token prompts in one tool loop add up past the 150k trigger before the
+        last request, but no single prompt reaches it, so nothing is compacted."""
+        responses = [
+            self._text_response("Working...", "pause_turn", _make_usage(input_tokens=60_000)),
+            self._text_response("Working...", "pause_turn", _make_usage(input_tokens=60_000)),
+            self._text_response("Working...", "pause_turn", _make_usage(input_tokens=60_000)),
+            self._text_response("Done!", "end_turn", _make_usage(input_tokens=60_000)),
+        ]
+        cog.client.messages.create = AsyncMock(side_effect=responses)
+        cog.client.messages.parse = AsyncMock()
+
+        messages = [{"role": "user", "content": "Hi"}]
+        parsed = await cog._call_api_with_tool_loop(
+            api_params={"model": "claude-haiku-4-5", "max_tokens": 1024},
+            messages=messages,
+            user_id=123,
+        )
+
+        assert parsed.input_tokens == 240_000
+        assert parsed.context_compacted is False
+        cog.client.messages.parse.assert_not_called()
+
+    async def test_manual_compaction_bills_the_summarizer_call(self, cog):
+        """The summarizer call's tokens are added to the turn and billed at
+        COMPACTION_SUMMARY_MODEL's rates, not the chat model's."""
+        from discord_claude.util import COMPACTION_SUMMARY_MODEL, calculate_cost
+
+        cog.client.messages.create = AsyncMock(
+            return_value=self._text_response(
+                "Answer.",
+                "end_turn",
+                _make_usage(input_tokens=2_000, output_tokens=500, cache_read_input_tokens=160_000),
+            )
+        )
+        cog.client.messages.parse = AsyncMock(
+            return_value=self._summary_response(
+                _make_usage(input_tokens=162_500, output_tokens=1_200)
+            )
+        )
+
+        parsed = await cog._call_api_with_tool_loop(
+            api_params={"model": "claude-opus-4-5", "max_tokens": 1024},
+            messages=[
+                {"role": "user", "content": "First question"},
+                {"role": "assistant", "content": "First answer"},
+                {"role": "user", "content": "Second question"},
+            ],
+            user_id=123,
+        )
+
+        assert parsed.context_compacted is True
+        assert parsed.input_tokens == 2_000 + 162_500
+        assert parsed.output_tokens == 500 + 1_200
+        request_cost, _ = cog._track_daily_cost(123, "claude-opus-4-5", parsed)
+        expected = calculate_cost(
+            "claude-opus-4-5", 2_000, 500, cache_read_tokens=160_000
+        ) + calculate_cost(COMPACTION_SUMMARY_MODEL, 162_500, 1_200)
+        assert request_cost == pytest.approx(expected)
+
+    async def test_refusal_fallback_turn_bills_each_attempt_at_its_models_rates(self, cog):
+        """The declined Opus 5.5 attempt bills at Opus 5.5 rates and the Opus 4.8 answer
+        at Opus 4.8 rates, instead of the whole turn at the served model's rates."""
+        from discord_claude.util import calculate_cost
+
+        response = self._text_response(
+            "Answer.",
+            "end_turn",
+            MagicMock(
+                iterations=[
+                    MagicMock(
+                        type="message",
+                        model="claude-opus-5-5",
+                        input_tokens=2_000,
+                        output_tokens=300,
+                        cache_creation_input_tokens=0,
+                        cache_read_input_tokens=0,
+                    ),
+                    MagicMock(
+                        type="fallback_message",
+                        model="claude-opus-4-8",
+                        input_tokens=2_000,
+                        output_tokens=900,
+                        cache_creation_input_tokens=0,
+                        cache_read_input_tokens=0,
+                    ),
+                ],
+                server_tool_use=None,
+            ),
+        )
+        response.model = "claude-opus-4-8"
+        response.stop_details = None
+        cog.client.beta.messages.create = AsyncMock(return_value=response)
+
+        parsed = await cog._call_api_with_tool_loop(
+            api_params={"model": "claude-opus-5-5", "max_tokens": 1024},
+            messages=[{"role": "user", "content": "Hi"}],
+            user_id=123,
+        )
+
+        assert parsed.served_model == "claude-opus-4-8"
+        request_cost, _ = cog._track_daily_cost(123, "claude-opus-5-5", parsed)
+        expected = calculate_cost("claude-opus-5-5", 2_000, 300) + calculate_cost(
+            "claude-opus-4-8", 2_000, 900
+        )
+        assert request_cost == pytest.approx(expected)
+        assert request_cost != pytest.approx(calculate_cost("claude-opus-4-8", 4_000, 1_200))
 
     async def test_compaction_model_skips_manual_compaction(self, cog):
         """Compaction models (server-side) never trigger manual compaction."""
@@ -1017,8 +1207,9 @@ class TestRunChatCommand:
         assert parsed.context_warning is True
         cog.client.beta.messages.create.assert_called_once()
 
-    async def test_opus_5_uses_server_side_compaction(self, cog):
-        """Opus 5 (1M window) takes the compact beta, never the Haiku-bounded manual path.
+    @pytest.mark.parametrize("model", ["claude-opus-5-5", "claude-opus-5"])
+    async def test_opus_5_uses_server_side_compaction(self, cog, model):
+        """Opus 5 / 5.5 (1M window) take the compact beta, never the Haiku-bounded manual path.
 
         The first turn reports 155k input tokens, past the 150k manual trigger
         that would fire for a non-compaction model; the second call must still
@@ -1049,7 +1240,7 @@ class TestRunChatCommand:
             {"role": "assistant", "content": "Hello!"},
             {"role": "user", "content": "Continue"},
         ]
-        api_params = {"model": "claude-opus-5", "max_tokens": 1024}
+        api_params = {"model": model, "max_tokens": 1024}
 
         parsed = await cog._call_api_with_tool_loop(
             api_params=api_params, messages=messages, user_id=123
@@ -1086,7 +1277,7 @@ class TestEffortChange:
         params = ChatCompletionParameters(model=model, effort=effort, conversation_id=1)
         return Conversation(params=params, messages=[{"role": "user", "content": "Hi"}])
 
-    @pytest.mark.parametrize("model", ["claude-opus-5", "claude-fable-5-1"])
+    @pytest.mark.parametrize("model", ["claude-opus-5-5", "claude-opus-5", "claude-fable-5-1"])
     def test_per_message_models_get_an_effort_override_message(self, model):
         from discord_claude.cogs.claude.chat import apply_effort_change, current_effort
 

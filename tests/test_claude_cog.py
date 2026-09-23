@@ -243,6 +243,7 @@ class TestClaudeCog:
 
 
 def test_critical_choice_values_present():
+    assert any(choice.value == "claude-opus-5-5" for choice in CHAT_MODEL_CHOICES)
     assert any(choice.value == "claude-opus-5" for choice in CHAT_MODEL_CHOICES)
     assert any(choice.value == "claude-sonnet-5" for choice in CHAT_MODEL_CHOICES)
     assert any(choice.value == "claude-fable-5-1" for choice in CHAT_MODEL_CHOICES)
@@ -267,9 +268,19 @@ def test_chat_command_default_model():
     cog_default = inspect.signature(ClaudeCog.chat.callback).parameters["model"].default
     command_default = inspect.signature(run_chat_command).parameters["model"].default
 
-    assert cog_default == "claude-opus-5"
+    assert cog_default == "claude-opus-5-5"
     assert command_default == cog_default
     assert any(choice.value == cog_default for choice in CHAT_MODEL_CHOICES)
+
+
+def test_default_chat_model_has_an_advisor():
+    """`/claude chat advisor:true` on the default model must resolve an advisor rather
+    than return the "Advisor is not supported" error."""
+    from discord_claude.cogs.claude.cog import ClaudeCog
+    from discord_claude.util import get_default_advisor_model
+
+    default_model = inspect.signature(ClaudeCog.chat.callback).parameters["model"].default
+    assert get_default_advisor_model(default_model) is not None
 
 
 def test_effort_choice_set():
@@ -283,7 +294,8 @@ def test_tool_choice_set():
 
 
 def test_thinking_display_choice_set():
-    """`summarized` is the bot's default; `updates` is the Fable 5 / 5.1 progress-line mode."""
+    """`summarized` is the bot's default; `updates` is the Fable 5 / 5.1 and Opus 5.5
+    progress-line mode."""
     values = [choice.value for choice in THINKING_DISPLAY_CHOICES]
     assert values == ["summarized", "updates"]
     from discord_claude.cogs.claude.cog import ClaudeCog

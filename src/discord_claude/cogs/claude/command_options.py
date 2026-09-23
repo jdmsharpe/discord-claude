@@ -3,6 +3,7 @@ from discord.commands import OptionChoice
 CHAT_MODEL_CHOICES = [
     OptionChoice(name="Claude Fable 5.1", value="claude-fable-5-1"),
     OptionChoice(name="Claude Fable 5", value="claude-fable-5"),
+    OptionChoice(name="Claude Opus 5.5", value="claude-opus-5-5"),
     OptionChoice(name="Claude Opus 5", value="claude-opus-5"),
     OptionChoice(name="Claude Opus 4.8", value="claude-opus-4-8"),
     OptionChoice(name="Claude Sonnet 5", value="claude-sonnet-5"),
@@ -30,7 +31,7 @@ TOOL_CHOICE_CHOICES = [
 THINKING_DISPLAY_CHOICES = [
     OptionChoice(name="Summarized", value="summarized"),
     OptionChoice(
-        name="Progress updates (Fable 5 / 5.1: live status lines between tool calls, reasoning hidden)",
+        name="Progress updates (Fable 5 / 5.1, Opus 5.5: live status lines between tool calls, reasoning hidden)",
         value="updates",
     ),
 ]

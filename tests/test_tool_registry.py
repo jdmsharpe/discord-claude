@@ -44,6 +44,16 @@ class TestToolRegistry:
         for tool_id in ("web_search", "web_fetch", "code_execution"):
             assert TOOL_REGISTRY[tool_id].execution_mode == "server"
 
+    def test_tool_versions(self):
+        """code_execution must be code_execution_20260120 or later next to these web tool
+        versions: with code_execution_20250825 in the same request as web_search_20260209
+        or web_fetch_20260309, every menu model except Haiku 4.5 returns a 400
+        ("Auto-injecting tools would conflict with existing tool names:
+        ['code_execution']")."""
+        assert TOOL_REGISTRY["code_execution"].anthropic_tool["type"] == "code_execution_20260521"
+        assert TOOL_REGISTRY["web_search"].anthropic_tool["type"] == "web_search_20260209"
+        assert TOOL_REGISTRY["web_fetch"].anthropic_tool["type"] == "web_fetch_20260309"
+
 
 class TestGetAnthropicTools:
     """Tests for get_anthropic_tools()."""

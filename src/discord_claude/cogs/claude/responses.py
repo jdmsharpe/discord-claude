@@ -1,6 +1,8 @@
 from dataclasses import dataclass, field
 from typing import Any
 
+from discord_claude.util import ModelTokenUsage
+
 
 @dataclass
 class ParsedResponse:
@@ -31,6 +33,10 @@ class ParsedResponse:
     # different model than the one requested (e.g. claude-fable-5 declined
     # and claude-opus-4-8 answered).
     served_model: str | None = None
+    # The token counts above grouped by the model whose rates apply (None: the
+    # requested model); stamped by UsageTotals.apply_to and billed per model by
+    # track_daily_cost.
+    tokens_by_model: dict[str | None, ModelTokenUsage] = field(default_factory=dict)
 
 
 def extract_response_content(response) -> ParsedResponse:

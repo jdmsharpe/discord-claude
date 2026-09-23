@@ -465,15 +465,37 @@ async def call_api_with_tool_loop(
     compaction_trigger = manual_compaction_trigger(context_window)
     parsed: ParsedResponse | None = None
 
+    async def compact_if_over_trigger() -> None:
+        """Manual compaction for models outside COMPACTION_MODELS.
+
+        The trigger compares the full prompt of the most recent response, cached
+        tokens included, because the top-level cache_control reports most of a long
+        history as cache reads rather than input_tokens. It runs before each
+        follow-up request of the tool loop and once more after the final response,
+        so the next user turn starts from the summary.
+        """
+        if use_compaction or totals.prompt_tokens <= compaction_trigger or len(messages) <= 1:
+            return
+        cog.logger.info(
+            "Prompt tokens (%d) exceeded compaction trigger (%.0f), compacting...",
+            totals.prompt_tokens,
+            compaction_trigger,
+        )
+        await compact_conversation(
+            cog, messages, system=api_params.get("system"), usage_totals=totals
+        )
+        totals.context_compacted = True
+        # The history is now the summary alone; the next response measures it again.
+        totals.prompt_tokens = 0
+
+    async def finish(result: ParsedResponse) -> ParsedResponse:
+        """Compact if the final response passed the trigger, then stamp the totals."""
+        await compact_if_over_trigger()
+        totals.apply_to(result, context_window)
+        return result
+
     for iteration in range(max_iterations):
-        if not use_compaction and totals.input_tokens > compaction_trigger and len(messages) > 1:
-            cog.logger.info(
-                "Input tokens (%d) exceeded compaction trigger (%.0f), compacting...",
-                totals.input_tokens,
-                compaction_trigger,
-            )
-            await compact_conversation(cog, messages, system=api_params.get("system"))
-            totals.context_compacted = True
+        await compact_if_over_trigger()
 
         api_params["messages"] = messages
         if betas:
@@ -513,8 +535,7 @@ async def call_api_with_tool_loop(
 
         if response.stop_reason == "end_turn":
             messages.append({"role": "assistant", "content": response.content})
-            totals.apply_to(parsed, context_window)
-            return parsed
+            return await finish(parsed)
         if response.stop_reason == "pause_turn":
             messages.append({"role": "assistant", "content": response.content})
             cog.logger.info("pause_turn received, continuing (iteration %d)", iteration + 1)
@@ -550,14 +571,12 @@ async def call_api_with_tool_loop(
             "model_context_window_exceeded",
         ):
             cog.logger.warning("Unknown stop_reason: %s", response.stop_reason)
-        totals.apply_to(parsed, context_window)
-        return parsed
+        return await finish(parsed)
 
     cog.logger.warning("Tool loop hit max_iterations (%d)", max_iterations)
     if parsed is None:
         raise RuntimeError("Tool loop completed without any API response")
-    totals.apply_to(parsed, context_window)
-    return parsed
+    return await finish(parsed)
 
 
 async def handle_new_message_in_conversation(cog, message, conversation: Conversation) -> None:
@@ -787,7 +806,7 @@ async def run_chat_command(
     ctx: ApplicationContext,
     *,
     prompt: str,
-    model: str = "claude-opus-5",
+    model: str = "claude-opus-5-5",
     system: str | None = None,
     attachment: Attachment | None = None,
     max_tokens: int = 16384,

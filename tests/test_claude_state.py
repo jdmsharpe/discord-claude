@@ -27,6 +27,89 @@ class TestCompactConversation:
         cog.logger.warning.assert_called_once()
 
 
+class TestCompactionSummaryUsage:
+    async def test_summarizer_usage_is_added_to_the_given_totals(self):
+        from discord_claude.cogs.claude.state import compact_conversation
+        from discord_claude.util import COMPACTION_SUMMARY_MODEL, ModelTokenUsage, UsageTotals
+
+        response = MagicMock()
+        response.parsed_output = None
+        response.content = [MagicMock(text="Summary.")]
+        response.usage = MagicMock(
+            input_tokens=40_000,
+            output_tokens=900,
+            cache_creation_input_tokens=0,
+            cache_read_input_tokens=0,
+            output_tokens_details=None,
+        )
+        cog = MagicMock()
+        cog.client.messages.parse = AsyncMock(return_value=response)
+        totals = UsageTotals()
+
+        await compact_conversation(cog, [{"role": "user", "content": "x"}], usage_totals=totals)
+
+        assert totals.tokens_by_model == {
+            COMPACTION_SUMMARY_MODEL: ModelTokenUsage(40_000, 900, 0, 0)
+        }
+
+
+class TestTrackDailyCost:
+    """Cost of one turn: every token group at the rates of the model that produced it."""
+
+    @staticmethod
+    def _cog():
+        cog = MagicMock()
+        cog.daily_costs = {}
+        return cog
+
+    def test_each_model_bills_at_its_own_rates(self):
+        from discord_claude.cogs.claude.responses import ParsedResponse
+        from discord_claude.cogs.claude.state import track_daily_cost
+        from discord_claude.util import ModelTokenUsage
+
+        parsed = ParsedResponse(
+            input_tokens=2_000_000,
+            output_tokens=1_000_000,
+            served_model="claude-opus-4-8",
+            tokens_by_model={
+                # The declined attempt: $4/MTok input on Opus 5.5.
+                "claude-opus-5-5": ModelTokenUsage(input_tokens=1_000_000),
+                # The fallback answer: $5 input + $25 output on Opus 4.8.
+                "claude-opus-4-8": ModelTokenUsage(input_tokens=1_000_000, output_tokens=1_000_000),
+            },
+            web_search_requests=2,
+        )
+
+        cost, daily = track_daily_cost(self._cog(), 1, "claude-opus-5-5", parsed)
+
+        assert cost == pytest.approx(4.0 + 5.0 + 25.0 + 0.02)
+        assert daily == pytest.approx(cost)
+
+    def test_none_key_bills_at_the_request_model(self):
+        from discord_claude.cogs.claude.responses import ParsedResponse
+        from discord_claude.cogs.claude.state import track_daily_cost
+        from discord_claude.util import ModelTokenUsage
+
+        parsed = ParsedResponse(
+            input_tokens=1_000_000,
+            tokens_by_model={None: ModelTokenUsage(input_tokens=1_000_000)},
+        )
+
+        cost, _ = track_daily_cost(self._cog(), 1, "claude-opus-5-5", parsed)
+
+        assert cost == pytest.approx(4.0)
+
+    def test_totals_without_a_breakdown_bill_at_the_served_model(self):
+        from discord_claude.cogs.claude.responses import ParsedResponse
+        from discord_claude.cogs.claude.state import track_daily_cost
+
+        parsed = ParsedResponse(input_tokens=1_000_000, served_model="claude-opus-4-8")
+
+        cost, _ = track_daily_cost(self._cog(), 1, "claude-opus-5-5", parsed)
+
+        assert cost == pytest.approx(5.0)
+
+
 class TestAdvisorHistorySanitization:
     """Tests for stripping advisor-only blocks before manual compaction."""
 

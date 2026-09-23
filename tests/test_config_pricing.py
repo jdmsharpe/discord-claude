@@ -19,6 +19,7 @@ class TestPricingLoader:
         assert ("claude-opus-4-7") in pricing.MODEL_PRICING
         assert pricing.MODEL_PRICING["claude-fable-5-1"] == (10.0, 50.0)
         assert pricing.MODEL_PRICING["claude-fable-5"] == (10.0, 50.0)
+        assert pricing.MODEL_PRICING["claude-opus-5-5"] == (4.0, 20.0)
         assert pricing.MODEL_PRICING["claude-opus-4-7"] == (5.0, 25.0)
         assert pricing.MODEL_PRICING["claude-haiku-4-5"] == (1.0, 5.0)
 
@@ -26,13 +27,15 @@ class TestPricingLoader:
         pricing = _reload_pricing()
         assert pricing.MODEL_CONTEXT_WINDOWS["claude-fable-5-1"] == 1_000_000
         assert pricing.MODEL_CONTEXT_WINDOWS["claude-fable-5"] == 1_000_000
+        assert pricing.MODEL_CONTEXT_WINDOWS["claude-opus-5-5"] == 1_000_000
         assert pricing.MODEL_CONTEXT_WINDOWS["claude-opus-4-7"] == 1_000_000
         assert pricing.MODEL_CONTEXT_WINDOWS["claude-haiku-4-5"] == 200_000
 
     def test_cache_read_rate_is_declared_only_where_it_departs_from_the_default(self):
-        """Only Fable 5.1 publishes a non-0.1x cache-read rate ($0.25/MTok = 0.025x)."""
+        """Only Fable 5.1 ($0.25/MTok = 0.025x) and Opus 5.5 ($0.20/MTok = 0.05x) publish a
+        non-0.1x cache-read rate."""
         pricing = _reload_pricing()
-        assert pricing.CACHE_READ_PRICING == {"claude-fable-5-1": 0.25}
+        assert pricing.CACHE_READ_PRICING == {"claude-fable-5-1": 0.25, "claude-opus-5-5": 0.20}
 
     def test_web_search_cost_loaded(self):
         pricing = _reload_pricing()

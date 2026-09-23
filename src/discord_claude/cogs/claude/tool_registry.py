@@ -53,10 +53,14 @@ TOOL_REGISTRY: dict[str, ToolRegistryEntry] = {
         ui_description="Fetch full content from web pages.",
         execution_mode="server",
     ),
+    # With their default allowed_callers, the web tool versions above make the API
+    # add its own `code_execution` tool; a request that also carries an explicit
+    # code_execution tool older than code_execution_20260120 fails with a 400
+    # tool-name conflict.
     "code_execution": ToolRegistryEntry(
         id="code_execution",
         anthropic_tool={
-            "type": "code_execution_20250825",
+            "type": "code_execution_20260521",
             "name": "code_execution",
         },
         ui_label="Code Execution",

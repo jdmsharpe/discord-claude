@@ -256,7 +256,7 @@ class ClaudeCog(commands.Cog):
     )
     @option(
         "model",
-        description="Choose from the following Claude models. (default: Claude Opus 5. warning: Opus is expensive!)",
+        description="Choose from the following Claude models. (default: Claude Opus 5.5. warning: Opus is expensive!)",
         required=False,
         choices=CHAT_MODEL_CHOICES,
         type=str,
@@ -306,7 +306,7 @@ class ClaudeCog(commands.Cog):
     )
     @option(
         "thinking_display",
-        description="Summarized reasoning, or live progress lines between tool calls (Fable 5+). (default: summarized)",
+        description="Summarized reasoning, or progress lines between tool calls (Fable, Opus 5.5). (default: summarized)",
         required=False,
         choices=THINKING_DISPLAY_CHOICES,
         type=str,
@@ -358,7 +358,7 @@ class ClaudeCog(commands.Cog):
         self,
         ctx: ApplicationContext,
         prompt: str,
-        model: str = "claude-opus-5",
+        model: str = "claude-opus-5-5",
         system: str | None = None,
         attachment: Attachment | None = None,
         max_tokens: int = 16384,

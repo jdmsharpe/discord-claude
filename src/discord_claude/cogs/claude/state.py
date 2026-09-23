@@ -9,7 +9,10 @@ from discord_claude.util import (
     ADVISOR_TOOL_NAME,
     COMPACTION_SUMMARY_MODEL,
     ConversationKey,
+    ModelTokenUsage,
+    UsageTotals,
     calculate_cost,
+    priced_model,
 )
 
 from .responses import ParsedResponse
@@ -122,8 +125,13 @@ async def compact_conversation(
     cog,
     messages: list[dict[str, Any]],
     system: str | None = None,
+    usage_totals: UsageTotals | None = None,
 ) -> str:
-    """Compact conversation history into a structured summary for non-compaction models."""
+    """Compact conversation history into a structured summary for non-compaction models.
+
+    When ``usage_totals`` is given, the summarizer call's usage is added to it so the
+    turn's cost includes it at COMPACTION_SUMMARY_MODEL's rates.
+    """
     summary_prompt = (
         "Summarize this conversation so it can continue in a fresh context window. "
         "Populate every section: capture the task, the established context and decisions, "
@@ -145,6 +153,8 @@ async def compact_conversation(
         parse_kwargs["system"] = system
 
     summary_response = await cog.client.messages.parse(**parse_kwargs)
+    if usage_totals is not None:
+        usage_totals.accumulate_compaction_summary(getattr(summary_response, "usage", None))
     summary_text = _render_compaction_summary(summary_response)
     if not isinstance(getattr(summary_response, "parsed_output", None), ConversationSummary):
         cog.logger.warning(
@@ -231,17 +241,30 @@ def track_daily_cost(
     advisor_model: str | None = None,
 ) -> tuple[float, float]:
     """Add this request's cost to the user's daily total and return request and daily totals."""
-    # If the refusal fallback served this turn, bill at the served model's
-    # rates — its tokens were generated (and are billed) by that model.
-    billed_model = parsed.served_model or model
-    cost = calculate_cost(
-        billed_model,
-        parsed.input_tokens,
-        parsed.output_tokens,
-        parsed.cache_creation_tokens,
-        parsed.cache_read_tokens,
-        parsed.web_search_requests,
+    # Each group of tokens bills at the rates of the model that produced it: a
+    # refusal-fallback turn holds the declined model's attempt and the fallback
+    # model's answer, and a manual compaction adds the summarizer's call. A
+    # ParsedResponse without that breakdown bills its totals at the served model's
+    # rates.
+    tokens_by_model = parsed.tokens_by_model or {
+        parsed.served_model: ModelTokenUsage(
+            parsed.input_tokens,
+            parsed.output_tokens,
+            parsed.cache_creation_tokens,
+            parsed.cache_read_tokens,
+        )
+    }
+    cost = sum(
+        calculate_cost(
+            priced_model(tokens_model, model),
+            tokens.input_tokens,
+            tokens.output_tokens,
+            tokens.cache_creation_tokens,
+            tokens.cache_read_tokens,
+        )
+        for tokens_model, tokens in tokens_by_model.items()
     )
+    cost += calculate_cost(model, 0, 0, web_search_requests=parsed.web_search_requests)
     if advisor_model and parsed.advisor_calls:
         cost += calculate_cost(
             advisor_model,
