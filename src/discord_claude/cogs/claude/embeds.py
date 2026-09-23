@@ -2,6 +2,7 @@ import re
 
 from discord import Colour, Embed
 
+from discord_claude.cost_line import count_label, format_cost_line
 from discord_claude.util import chunk_text
 
 from .responses import ParsedResponse
@@ -209,32 +210,28 @@ def append_pricing_embed(
     request_cost: float,
     daily_cost: float,
 ) -> None:
-    """Append a compact pricing embed showing cost and token usage."""
-    parts = [
-        f"${request_cost:.4f} · {parsed.input_tokens:,} tokens in / {parsed.output_tokens:,} tokens out"
-    ]
-    if parsed.thinking_tokens:
-        parts.append(f"{parsed.thinking_tokens:,} thinking")
-    if parsed.cache_read_tokens:
-        parts.append(f"{parsed.cache_read_tokens:,} cached")
-    if parsed.advisor_calls:
-        parts.append(
-            f"advisor {parsed.advisor_calls} call{'s' if parsed.advisor_calls != 1 else ''}"
-        )
-    if parsed.web_search_requests:
-        parts.append(
-            f"{parsed.web_search_requests} search{'es' if parsed.web_search_requests != 1 else ''}"
-        )
-    if parsed.web_fetch_requests:
-        parts.append(
-            f"{parsed.web_fetch_requests} fetch{'es' if parsed.web_fetch_requests != 1 else ''}"
-        )
-    if parsed.code_execution_requests:
-        parts.append(
-            f"{parsed.code_execution_requests} code exec{'s' if parsed.code_execution_requests != 1 else ''}"
-        )
-    parts.append(f"daily ${daily_cost:.2f}")
-    embeds.append(Embed(description=" · ".join(parts), color=Colour.orange()))
+    """Append the one-line cost embed: request cost, tokens, tool counts and daily total.
+
+    The advisor model's tokens are billed in ``request_cost`` but are not added to the
+    token counts; the advisor shows only as a call count.
+    """
+    tool_counts = (
+        (parsed.web_search_requests, "search", "searches"),
+        (parsed.web_fetch_requests, "fetch", "fetches"),
+        (parsed.code_execution_requests, "code run", None),
+        (parsed.advisor_calls, "advisor call", None),
+    )
+    line = format_cost_line(
+        request_cost,
+        daily_cost,
+        # Anthropic's usage.input_tokens excludes cache reads and cache writes.
+        input_tokens=parsed.input_tokens + parsed.cache_read_tokens + parsed.cache_creation_tokens,
+        output_tokens=parsed.output_tokens,
+        cached_tokens=parsed.cache_read_tokens,
+        thinking_tokens=parsed.thinking_tokens,
+        details=[count_label(count, one, many) for count, one, many in tool_counts if count],
+    )
+    embeds.append(Embed(description=line, color=Colour.orange()))
 
 
 __all__ = [

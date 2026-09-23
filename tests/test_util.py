@@ -719,6 +719,37 @@ class TestUsageTotals:
         totals.accumulate(usage)
         assert totals.thinking_tokens == 0
 
+    def test_accumulate_thinking_tokens_with_iterations(self):
+        """With usage.iterations present, thinking_tokens are read from the top-level
+        output_tokens_details, because the iteration entries do not carry them."""
+        totals = UsageTotals()
+        usage = MagicMock(
+            iterations=[
+                MagicMock(
+                    type="message",
+                    model=None,
+                    input_tokens=100,
+                    output_tokens=40,
+                    cache_creation_input_tokens=0,
+                    cache_read_input_tokens=0,
+                ),
+                MagicMock(
+                    type="message",
+                    model=None,
+                    input_tokens=150,
+                    output_tokens=60,
+                    cache_creation_input_tokens=0,
+                    cache_read_input_tokens=0,
+                ),
+            ],
+            output_tokens=100,
+            output_tokens_details=MagicMock(thinking_tokens=70),
+            server_tool_use=None,
+        )
+        totals.accumulate(usage)
+        assert totals.output_tokens == 100
+        assert totals.thinking_tokens == 70
+
     def test_accumulate_none_is_noop(self):
         """Accumulating None usage should not change totals."""
         totals = UsageTotals()

@@ -241,78 +241,93 @@ class TestAppendPricingEmbed:
             setattr(parsed, key, value)
         return parsed
 
+    def _line(self, parsed, request_cost=0.01, daily_cost=0.10):
+        from discord_claude.cogs.claude.embeds import append_pricing_embed
+
+        embeds = []
+        append_pricing_embed(embeds, parsed, request_cost=request_cost, daily_cost=daily_cost)
+        assert len(embeds) == 1
+        return embeds[0].description
+
     def test_basic_pricing_embed(self):
+        from discord import Colour
+
         from discord_claude.cogs.claude.embeds import append_pricing_embed
 
         embeds = []
         parsed = self._make_parsed(input_tokens=1000, output_tokens=500)
         append_pricing_embed(embeds, parsed, request_cost=0.01, daily_cost=0.50)
         assert len(embeds) == 1
-        desc = embeds[0].description
-        assert "1,000 tokens in" in desc
-        assert "500 tokens out" in desc
-        assert "daily $0.50" in desc
+        assert embeds[0].description == "$0.0100 · 1k in / 500 out · $0.50 today"
+        assert embeds[0].color == Colour.orange()
+
+    def test_input_count_includes_cache_reads_and_writes(self):
+        """usage.input_tokens excludes cache reads and writes, so the line adds both;
+        only cache reads are shown as cached."""
+        parsed = self._make_parsed(
+            input_tokens=8,
+            cache_creation_tokens=40,
+            cache_read_tokens=12_457,
+            output_tokens=405,
+            thinking_tokens=80,
+            web_search_requests=2,
+        )
+        assert self._line(parsed, request_cost=0.0871, daily_cost=0.0871) == (
+            "$0.0871 · 12.5k in (12.5k cached) / 405 out (80 thinking) · 2 searches · $0.09 today"
+        )
 
     def test_pricing_embed_with_cache_hits(self):
-        from discord_claude.cogs.claude.embeds import append_pricing_embed
-
-        embeds = []
         parsed = self._make_parsed(cache_read_tokens=5000)
-        append_pricing_embed(embeds, parsed, request_cost=0.01, daily_cost=0.10)
-        assert "5,000 cached" in embeds[0].description
+        assert self._line(parsed) == "$0.0100 · 6k in (5k cached) / 500 out · $0.10 today"
+
+    def test_cache_writes_count_as_input_but_not_as_cached(self):
+        parsed = self._make_parsed(input_tokens=100, cache_creation_tokens=2_000)
+        assert self._line(parsed) == "$0.0100 · 2.1k in / 500 out · $0.10 today"
 
     def test_pricing_embed_with_web_searches(self):
-        from discord_claude.cogs.claude.embeds import append_pricing_embed
-
-        embeds = []
         parsed = self._make_parsed(web_search_requests=3)
-        append_pricing_embed(embeds, parsed, request_cost=0.01, daily_cost=0.10)
-        assert "3 searches" in embeds[0].description
+        assert self._line(parsed) == "$0.0100 · 1k in / 500 out · 3 searches · $0.10 today"
 
     def test_pricing_embed_with_advisor_calls(self):
-        from discord_claude.cogs.claude.embeds import append_pricing_embed
-
-        embeds = []
-        parsed = self._make_parsed(advisor_calls=2)
-        append_pricing_embed(embeds, parsed, request_cost=0.15, daily_cost=0.35)
-        assert "advisor 2 calls" in embeds[0].description
+        """The advisor model's tokens are billed in the request cost but are not
+        added to the token counts."""
+        parsed = self._make_parsed(
+            advisor_calls=2,
+            advisor_input_tokens=50_000,
+            advisor_output_tokens=2_000,
+            advisor_cache_read_tokens=10_000,
+        )
+        assert (
+            self._line(parsed, request_cost=0.15, daily_cost=0.35)
+            == "$0.1500 · 1k in / 500 out · 2 advisor calls · $0.35 today"
+        )
 
     def test_pricing_embed_single_search_no_plural(self):
-        from discord_claude.cogs.claude.embeds import append_pricing_embed
-
-        embeds = []
         parsed = self._make_parsed(web_search_requests=1)
-        append_pricing_embed(embeds, parsed, request_cost=0.01, daily_cost=0.10)
-        assert "1 search" in embeds[0].description
-        assert "searches" not in embeds[0].description
+        assert self._line(parsed) == "$0.0100 · 1k in / 500 out · 1 search · $0.10 today"
 
     def test_pricing_embed_with_web_fetches(self):
-        from discord_claude.cogs.claude.embeds import append_pricing_embed
-
-        embeds = []
         parsed = self._make_parsed(web_fetch_requests=2)
-        append_pricing_embed(embeds, parsed, request_cost=0.01, daily_cost=0.10)
-        assert "2 fetches" in embeds[0].description
+        assert self._line(parsed) == "$0.0100 · 1k in / 500 out · 2 fetches · $0.10 today"
 
     def test_pricing_embed_with_code_execution(self):
-        from discord_claude.cogs.claude.embeds import append_pricing_embed
-
-        embeds = []
         parsed = self._make_parsed(code_execution_requests=1)
-        append_pricing_embed(embeds, parsed, request_cost=0.01, daily_cost=0.10)
-        assert "1 code exec" in embeds[0].description
-        assert "execs" not in embeds[0].description
+        assert self._line(parsed) == "$0.0100 · 1k in / 500 out · 1 code run · $0.10 today"
+
+    def test_tool_counts_follow_the_fleet_order(self):
+        parsed = self._make_parsed(
+            advisor_calls=1,
+            code_execution_requests=3,
+            web_fetch_requests=2,
+            web_search_requests=1,
+        )
+        assert self._line(parsed) == (
+            "$0.0100 · 1k in / 500 out · 1 search · 2 fetches · 3 code runs · 1 advisor call"
+            " · $0.10 today"
+        )
 
     def test_pricing_embed_no_server_tools_hidden(self):
-        from discord_claude.cogs.claude.embeds import append_pricing_embed
-
-        embeds = []
-        parsed = self._make_parsed()
-        append_pricing_embed(embeds, parsed, request_cost=0.01, daily_cost=0.10)
-        desc = embeds[0].description
-        assert "search" not in desc
-        assert "fetch" not in desc
-        assert "code exec" not in desc
+        assert self._line(self._make_parsed()) == "$0.0100 · 1k in / 500 out · $0.10 today"
 
 
 class TestContextEmbeds:

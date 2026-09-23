@@ -433,6 +433,14 @@ class UsageTotals:
         bucket.output_tokens += output_tokens
         bucket.cache_creation_tokens += cache_creation_tokens
         bucket.cache_read_tokens += cache_read_tokens
+
+    def _accumulate_thinking_tokens(self, usage: Any) -> None:
+        """Add the thinking subset of a response's output tokens.
+
+        Only the top-level usage object carries output_tokens_details; the
+        usage.iterations entries do not, so this reads the top-level object whether
+        or not iterations are present.
+        """
         details = getattr(usage, "output_tokens_details", None)
         if details is not None:
             thinking = getattr(details, "thinking_tokens", 0) or 0
@@ -476,6 +484,7 @@ class UsageTotals:
         else:
             self._accumulate_executor_usage(usage)
             self.prompt_tokens = _prompt_tokens(usage)
+        self._accumulate_thinking_tokens(usage)
 
         server_tool_use = getattr(usage, "server_tool_use", None)
         if server_tool_use:
@@ -490,6 +499,7 @@ class UsageTotals:
         rates. The call does not continue the conversation, so prompt_tokens is kept."""
         if usage is not None:
             self._accumulate_executor_usage(usage, COMPACTION_SUMMARY_MODEL)
+            self._accumulate_thinking_tokens(usage)
 
     def apply_to(self, parsed: Any, context_window: int) -> None:
         """Stamp all accumulated totals onto a ParsedResponse."""

@@ -28,7 +28,7 @@ A Discord bot built on Pycord 2.0 that wraps Anthropic's Claude API, providing a
 - **Citations:** Web search and document citations are displayed as a separate Sources embed.
 - **Prompt Caching:** Automatic prompt caching reduces costs (cache reads at 10% of input price; 5% on Opus 5.5 and 2.5% on Fable 5.1) and latency on multi-turn conversations.
 - **Context Management:** Uses server-side compaction on Fable 5.1, Fable 5, Opus 5.5, Opus 5, Sonnet 5, Opus 4.8 / 4.7 / 4.6, and Sonnet 4.6; Opus 4.5, Sonnet 4.5, and Haiku 4.5 fall back to local summarization once a request's full prompt (cached tokens included) passes 75% of the smaller of the model window and the 200K summarizer window, with warnings as conversations approach the context limit. The tokens either kind of compaction consumes are included in the reply's cost embed; the local summarizer's tokens are billed at Haiku 4.5's rates.
-- **Pricing Display:** Per-request cost, token counts (including thinking tokens), advisor-call counts, cache hits, and daily spend shown as a separate embed after each response (configurable).
+- **Pricing Display:** A one-line embed after each response shows the request cost, input tokens (cache reads and writes included; the cache-read part in parentheses), output tokens (thinking included; the thinking part in parentheses), tool and advisor call counts, and your spend so far today, for example `$0.0871 · 12.5k in (12.5k cached) / 405 out (80 thinking) · 2 searches · $0.09 today` (configurable).
 - **Conversation Controls:** Pause, resume, regenerate responses, and end conversations with interactive buttons.
 - **Customization:** Fine-tune supported models with system prompts, sampling controls, effort, thinking budgets, and output limits.
 
@@ -180,7 +180,7 @@ bot.add_cog(ClaudeCog(bot=bot))
    - ⏹️ End the conversation
    - 🔧 Toggle built-in tools mid-conversation via the select menu.
 4. **Note on MCP:** If MCP presets are enabled, the bot adds an explicit MCP safety note to the opening embeds and keeps those presets active until the conversation ends.
-5. **Note on Advisor:** Advisor guidance is billed separately at the advisor model's rates, so request cost can rise even when the executor model stays the same.
+5. **Note on Advisor:** Advisor guidance is billed separately at the advisor model's rates, so request cost can rise even when the executor model stays the same. The cost line counts advisor calls, but its token counts cover only the executor model.
 
 ## Development
 
