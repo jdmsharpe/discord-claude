@@ -422,8 +422,8 @@ async def call_api_with_tool_loop(
     # The per-message effort beta is sent from the FIRST request on the models that
     # support it, not only once an override exists: adding the header mid-conversation
     # changes how the prompt is rendered and writes the whole prefix to cache again
-    # (2,366 tokens in the 2026-09-03 probe) instead of reading it, which is exactly
-    # the cost the per-message change is meant to avoid.
+    # instead of reading it, which is exactly the cost the per-message change is
+    # meant to avoid.
     per_message_effort = model in PER_MESSAGE_EFFORT_MODELS or has_effort_override
 
     betas: list[str] = []

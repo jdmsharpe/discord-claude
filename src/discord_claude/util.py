@@ -132,8 +132,8 @@ SAMPLING_LOCKED_MODELS = {
 }
 
 # Models that 400 on forced tool use — `tool_choice` type "any" or "tool"
-# ("tool_choice: type \"tool\" and \"any\" are not supported for this model",
-# live-probed 2026-09-03): thinking is always on for them and a forced call
+# ("tool_choice: type \"tool\" and \"any\" are not supported for this model"):
+# thinking is always on for them and a forced call
 # would skip it. Only "auto" and "none" are accepted.
 FORCED_TOOL_CHOICE_UNSUPPORTED_MODELS = frozenset({"claude-fable-5-1", "claude-opus-5-5"})
 
@@ -166,9 +166,9 @@ THINKING_DISPLAY_UPDATES_MODELS = frozenset(
 # while the top-level value, and so the cached prompt prefix, is unchanged. The
 # header is sent on EVERY request for these models (see call_api_with_tool_loop):
 # adding it only when an override appears re-renders the prompt and rewrites the
-# cache on that turn (probed 2026-09-03), which defeats the purpose.
-# Live-probed 2026-09-03: Opus 5 and Fable 5.1 accept it (two consecutive
-# override messages too); Fable 5 400s ("output_config.effort requires a model
+# cache on that turn, which defeats the purpose.
+# Opus 5.5, Opus 5 and Fable 5.1 accept it (two consecutive override messages
+# too); Fable 5 400s ("output_config.effort requires a model
 # that supports per-turn effort; this model does not"); without the header every
 # model 400s ("messages.N.output_config: Extra inputs are not permitted").
 PER_MESSAGE_EFFORT_BETA = "mid-conversation-output-config-2026-07-01"
@@ -176,7 +176,7 @@ PER_MESSAGE_EFFORT_MODELS = frozenset({"claude-fable-5-1", "claude-opus-5-5", "c
 
 # output_config.effort ladder in ascending order. Each model accepts only a
 # prefix of it (plus/minus "xhigh"), gated by supported_effort_levels below;
-# sending anything else returns a 400 (live-probed 2026-08-28).
+# sending anything else returns a 400.
 EFFORT_LEVELS: tuple[str, ...] = ("low", "medium", "high", "xhigh", "max")
 
 # Models that accept the effort parameter at all. claude-sonnet-4-5 and
@@ -265,9 +265,9 @@ COMPACTION_MODELS = {
 
 # Server-side refusal fallback (beta). These models' safety classifiers can
 # decline a request (HTTP 200 with stop_reason "refusal") — Anthropic's
-# refusals page names Claude Fable 5 and Claude Opus 5 (verified 2026-08-28) and
-# the Fable 5.1 launch notes add Claude Fable 5.1 (2026-09-01; its permitted
-# fallback targets are Opus 4.8 and Opus 5). Claude Opus 5.5 also has the
+# refusals page names Claude Fable 5 and Claude Opus 5, and the Fable 5.1
+# launch notes add Claude Fable 5.1 (its permitted fallback targets are Opus 4.8
+# and Opus 5). Claude Opus 5.5 also has the
 # classifiers and permits the same two targets. The target Opus 4.8 has no
 # classifier, which is what makes it a fallback. With the beta active the API
 # retries the same request on REFUSAL_FALLBACK_MODEL in one round trip. The
