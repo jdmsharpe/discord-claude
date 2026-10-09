@@ -46,9 +46,18 @@ def validate_required_config() -> None:
             "Missing required environment configuration: "
             f"{missing_list}. Please set these variables before starting the bot."
         )
+    # Anthropic holds ANTHROPIC_API_KEY, so a `metadata.user_id` identifier keyed with it
+    # could be reversed by hashing known Discord user IDs.
+    safety_secret = _get_env_or_none("SAFETY_IDENTIFIER_SECRET")
+    if safety_secret is not None and safety_secret == _get_env_or_none("ANTHROPIC_API_KEY"):
+        raise RuntimeError(
+            "SAFETY_IDENTIFIER_SECRET must not equal ANTHROPIC_API_KEY. "
+            "Set it to a separate random string or leave it unset."
+        )
 
 
 BOT_TOKEN = _get_env_or_none("BOT_TOKEN")
 GUILD_IDS = _parse_guild_ids(os.getenv("GUILD_IDS", ""))
 ANTHROPIC_API_KEY = _get_env_or_none("ANTHROPIC_API_KEY")
 SHOW_COST_EMBEDS = _parse_bool_env("SHOW_COST_EMBEDS")
+SAFETY_IDENTIFIER_SECRET = _get_env_or_none("SAFETY_IDENTIFIER_SECRET")

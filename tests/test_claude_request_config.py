@@ -203,11 +203,11 @@ class TestToolChoiceSupport:
         assert error is not None
         assert "Thinking mode only supports tool behavior `auto` or `none`" in error
 
-    @pytest.mark.parametrize("model", ["claude-fable-5-1", "claude-opus-5-5"])
+    @pytest.mark.parametrize("model", ["claude-fable-5-1", "claude-opus-5-5", "claude-sonnet-5-5"])
     def test_validate_request_configuration_rejects_forced_tool_use(self, model):
-        """Fable 5.1 (live-probed 2026-09-03) and Opus 5.5 (2026-09-22) 400 on `tool_choice`
-        any/tool, so they are refused with a model-specific message ahead of the generic
-        thinking rule."""
+        """Fable 5.1 (live-probed 2026-09-03), Opus 5.5 (2026-09-22) and Sonnet 5.5
+        (2026-10-08) 400 on `tool_choice` any/tool, so they are refused with a
+        model-specific message ahead of the generic thinking rule."""
         from discord_claude.cogs.claude.cog import ClaudeCog
         from discord_claude.util import ChatCompletionParameters
 
@@ -429,6 +429,17 @@ class TestThinkingDisplay:
             "display": "summarized",
         }
 
+    @pytest.mark.parametrize("model", ["claude-sonnet-5-5", "claude-haiku-5-5"])
+    def test_build_thinking_config_sends_display_for_the_5_5_models(self, model):
+        """Sonnet 5.5 and Haiku 5.5 think by default with display "omitted", so without an
+        explicit adaptive config their thinking blocks come back empty."""
+        from discord_claude.cogs.claude.chat import build_thinking_config
+
+        assert build_thinking_config(self._params(model)) == {
+            "type": "adaptive",
+            "display": "summarized",
+        }
+
     def test_build_thinking_config_passes_updates_display(self):
         from discord_claude.cogs.claude.chat import (
             build_thinking_config,
@@ -439,14 +450,18 @@ class TestThinkingDisplay:
         assert build_thinking_config(params) == {"type": "adaptive", "display": "updates"}
         assert validate_request_configuration(params) is None
 
-    @pytest.mark.parametrize("model", ["claude-fable-5-1", "claude-fable-5", "claude-opus-5-5"])
+    @pytest.mark.parametrize(
+        "model", ["claude-fable-5-1", "claude-fable-5", "claude-opus-5-5", "claude-sonnet-5-5"]
+    )
     def test_validate_request_configuration_accepts_updates_display_on_update_writers(self, model):
         from discord_claude.cogs.claude.chat import validate_request_configuration
 
         params = self._params(model, thinking_display="updates")
         assert validate_request_configuration(params) is None
 
-    @pytest.mark.parametrize("model", ["claude-opus-5", "claude-sonnet-5", "claude-opus-4-6"])
+    @pytest.mark.parametrize(
+        "model", ["claude-opus-5", "claude-sonnet-5", "claude-opus-4-6", "claude-haiku-5-5"]
+    )
     def test_validate_request_configuration_rejects_updates_display_elsewhere(self, model):
         """Other adaptive models accept the value but write no progress updates (Opus 5
         probed 2026-09-03), so the option would only hide reasoning — refuse it."""

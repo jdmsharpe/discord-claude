@@ -29,14 +29,20 @@ class ParsedResponse:
     advisor_cache_read_tokens: int = 0
     context_warning: bool = False
     context_compacted: bool = False
+    # A manual compaction was due but the summarizer returned no summary, so the
+    # history was kept in full.
+    compaction_failed: bool = False
     # Set when the server-side refusal fallback served this response with a
     # different model than the one requested (e.g. claude-fable-5 declined
     # and claude-opus-4-8 answered).
     served_model: str | None = None
     # The token counts above grouped by the model whose rates apply (None: the
     # requested model); stamped by UsageTotals.apply_to and billed per model by
-    # track_daily_cost.
+    # track_daily_cost. tokens_by_model holds requests billed at the standard
+    # prices, long_context_tokens_by_model those whose prompt reached the model's
+    # long-context tier.
     tokens_by_model: dict[str | None, ModelTokenUsage] = field(default_factory=dict)
+    long_context_tokens_by_model: dict[str | None, ModelTokenUsage] = field(default_factory=dict)
 
 
 def extract_response_content(response) -> ParsedResponse:

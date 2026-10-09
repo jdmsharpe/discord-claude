@@ -1,13 +1,17 @@
 from __future__ import annotations
 
+import hashlib
+import hmac
 from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
 from typing import Any, Literal, Protocol, TypedDict
 
 from discord import Embed, Member, User
 
+from discord_claude.config.auth import BOT_TOKEN, SAFETY_IDENTIFIER_SECRET
 from discord_claude.config.pricing import (
     CACHE_READ_PRICING,
+    LONG_CONTEXT_PRICING,
     MODEL_CONTEXT_WINDOWS,
     MODEL_PRICING,
     UNKNOWN_MODEL_PRICING,
@@ -22,18 +26,18 @@ ADVISOR_BETA = "advisor-tool-2026-03-01"
 ADVISOR_TOOL_TYPE = "advisor_20260301"
 ADVISOR_TOOL_NAME = "advisor"
 ADVISOR_MAX_USES = 3
-# Executor model -> advisor models the API accepts for it: the advisor-tool
-# compatibility table plus claude-opus-5-5, which the table does not list but the
-# API accepts as an advisor for every executor here except Fable 5.1, and as an
-# executor with an Opus 5.5 / Opus 5 / Fable 5 / Fable 5.1 advisor (it rejects
-# claude-opus-4-8).
+# Executor model -> advisor models the API accepts for it (the advisor-tool
+# compatibility table, which matches the API for every pair here).
 # get_default_advisor_model takes the FIRST entry and the advisor slash option is
 # a bare toggle, so tuple order is the selection surface: claude-opus-4-8 leads
 # every tuple that allows it because it returns plaintext advice, whereas
-# claude-opus-5 / claude-fable-5 / claude-fable-5-1 advisors return an encrypted
+# claude-opus-5 / claude-opus-5-5 / claude-fable-5 / claude-fable-5-1 /
+# claude-sonnet-5-5 / claude-haiku-5-5 advisors return an encrypted
 # advisor_redacted_result (harmless here: the bot skips advisor_tool_result blocks
-# by their outer type and replays them verbatim). An Opus 5.5 executor defaults to
-# claude-opus-5-5, the cheapest advisor it accepts. claude-mythos-5 /
+# by their outer type and replays them verbatim). Executors that do not accept
+# claude-opus-4-8 lead with the cheapest advisor they accept: claude-opus-5-5 for
+# an Opus 5.5 executor, claude-sonnet-5-5 for a Sonnet 5.5 executor. New advisors
+# are appended to the existing tuples so no default changes. claude-mythos-5 /
 # claude-mythos-5-1 are in the table but not publicly callable, so they are
 # omitted; claude-sonnet-4-5 and claude-opus-4-5 are not executors.
 ADVISOR_MODEL_COMPATIBILITY: dict[str, tuple[str, ...]] = {
@@ -47,6 +51,19 @@ ADVISOR_MODEL_COMPATIBILITY: dict[str, tuple[str, ...]] = {
         "claude-fable-5-1",
         "claude-sonnet-5",
         "claude-sonnet-4-6",
+        "claude-sonnet-5-5",
+        "claude-haiku-5-5",
+    ),
+    "claude-haiku-5-5": (
+        "claude-opus-4-8",
+        "claude-opus-4-7",
+        "claude-opus-5",
+        "claude-opus-5-5",
+        "claude-fable-5",
+        "claude-fable-5-1",
+        "claude-sonnet-5",
+        "claude-sonnet-5-5",
+        "claude-haiku-5-5",
     ),
     "claude-sonnet-4-6": (
         "claude-opus-4-8",
@@ -58,6 +75,8 @@ ADVISOR_MODEL_COMPATIBILITY: dict[str, tuple[str, ...]] = {
         "claude-fable-5-1",
         "claude-sonnet-5",
         "claude-sonnet-4-6",
+        "claude-sonnet-5-5",
+        "claude-haiku-5-5",
     ),
     "claude-sonnet-5": (
         "claude-opus-4-8",
@@ -67,6 +86,15 @@ ADVISOR_MODEL_COMPATIBILITY: dict[str, tuple[str, ...]] = {
         "claude-fable-5",
         "claude-fable-5-1",
         "claude-sonnet-5",
+        "claude-sonnet-5-5",
+        "claude-haiku-5-5",
+    ),
+    "claude-sonnet-5-5": (
+        "claude-sonnet-5-5",
+        "claude-opus-5-5",
+        "claude-opus-5",
+        "claude-fable-5",
+        "claude-fable-5-1",
     ),
     "claude-opus-4-6": (
         "claude-opus-4-8",
@@ -77,6 +105,8 @@ ADVISOR_MODEL_COMPATIBILITY: dict[str, tuple[str, ...]] = {
         "claude-fable-5",
         "claude-fable-5-1",
         "claude-sonnet-5",
+        "claude-sonnet-5-5",
+        "claude-haiku-5-5",
     ),
     "claude-opus-4-7": (
         "claude-opus-4-8",
@@ -85,6 +115,7 @@ ADVISOR_MODEL_COMPATIBILITY: dict[str, tuple[str, ...]] = {
         "claude-opus-5-5",
         "claude-fable-5",
         "claude-fable-5-1",
+        "claude-sonnet-5-5",
     ),
     "claude-opus-4-8": (
         "claude-opus-4-8",
@@ -93,22 +124,27 @@ ADVISOR_MODEL_COMPATIBILITY: dict[str, tuple[str, ...]] = {
         "claude-opus-5-5",
         "claude-fable-5",
         "claude-fable-5-1",
+        "claude-sonnet-5-5",
     ),
     "claude-opus-5-5": ("claude-opus-5-5", "claude-opus-5", "claude-fable-5", "claude-fable-5-1"),
     "claude-opus-5": ("claude-opus-5", "claude-opus-5-5", "claude-fable-5", "claude-fable-5-1"),
     "claude-fable-5": ("claude-opus-5", "claude-opus-5-5", "claude-fable-5", "claude-fable-5-1"),
-    # Fable 5.1 executors pair only with Fable 5.1 (and the non-public Mythos 5.1);
-    # the API rejects an Opus 5.5 advisor here.
+    # Fable 5.1 executors pair only with Fable 5.1 (and the non-public Mythos 5.1).
     "claude-fable-5-1": ("claude-fable-5-1",),
 }
 
-# Models that support adaptive thinking
+# Models that support adaptive thinking. build_thinking_config sends
+# {"type": "adaptive", "display": ...} only for these; a model left out that thinks
+# by default (Sonnet 5.5, Haiku 5.5) then returns empty thinking blocks, because its
+# default display is "omitted".
 ADAPTIVE_THINKING_MODELS = {
     "claude-fable-5-1",
     "claude-fable-5",
     "claude-opus-5-5",
     "claude-opus-5",
+    "claude-sonnet-5-5",
     "claude-sonnet-5",
+    "claude-haiku-5-5",
     "claude-opus-4-8",
     "claude-opus-4-7",
     "claude-opus-4-6",
@@ -126,7 +162,9 @@ SAMPLING_LOCKED_MODELS = {
     "claude-fable-5",
     "claude-opus-5-5",
     "claude-opus-5",
+    "claude-sonnet-5-5",
     "claude-sonnet-5",
+    "claude-haiku-5-5",
     "claude-opus-4-8",
     "claude-opus-4-7",
 }
@@ -134,8 +172,12 @@ SAMPLING_LOCKED_MODELS = {
 # Models that 400 on forced tool use — `tool_choice` type "any" or "tool"
 # ("tool_choice: type \"tool\" and \"any\" are not supported for this model"):
 # thinking is always on for them and a forced call
-# would skip it. Only "auto" and "none" are accepted.
-FORCED_TOOL_CHOICE_UNSUPPORTED_MODELS = frozenset({"claude-fable-5-1", "claude-opus-5-5"})
+# would skip it. Only "auto" and "none" are accepted. claude-haiku-5-5 accepts
+# forced tool use (the response starts with the tool call and has no thinking
+# block).
+FORCED_TOOL_CHOICE_UNSUPPORTED_MODELS = frozenset(
+    {"claude-fable-5-1", "claude-opus-5-5", "claude-sonnet-5-5"}
+)
 
 # Models without programmatic tool calling. web_search_20260209 and
 # web_fetch_20260309 default `allowed_callers` to the code-execution caller, and a
@@ -148,9 +190,9 @@ PROGRAMMATIC_TOOL_CALLING_UNSUPPORTED_MODELS = frozenset({"claude-haiku-4-5"})
 # thinking.display values. "summarized" (the bot's default) returns summarized
 # reasoning in thinking blocks. "updates" (beta header THINKING_DISPLAY_UPDATES_BETA)
 # returns reasoning empty, as under "omitted", while the short progress updates
-# Fable 5 / Fable 5.1 / Opus 5.5 write between tool calls come back readable — at
-# most one thinking block before a tool call — so each can be shown as a status
-# line while the tools run.
+# Fable 5 / Fable 5.1 / Opus 5.5 / Sonnet 5.5 write between tool calls come back
+# readable — at most one thinking block before a tool call — so each can be shown
+# as a status line while the tools run.
 # Other adaptive models accept the value but write no updates (Opus 5 returns an
 # empty thinking block without an error), so the option is gated to the models
 # that produce them.
@@ -158,7 +200,7 @@ THINKING_DISPLAY_SUMMARIZED = "summarized"
 THINKING_DISPLAY_UPDATES = "updates"
 THINKING_DISPLAY_UPDATES_BETA = "thinking-display-updates-2026-08-18"
 THINKING_DISPLAY_UPDATES_MODELS = frozenset(
-    {"claude-fable-5-1", "claude-fable-5", "claude-opus-5-5"}
+    {"claude-fable-5-1", "claude-fable-5", "claude-opus-5-5", "claude-sonnet-5-5"}
 )
 
 # Per-message effort (beta header PER_MESSAGE_EFFORT_BETA): a `role: "system"`
@@ -167,12 +209,20 @@ THINKING_DISPLAY_UPDATES_MODELS = frozenset(
 # header is sent on EVERY request for these models (see call_api_with_tool_loop):
 # adding it only when an override appears re-renders the prompt and rewrites the
 # cache on that turn, which defeats the purpose.
-# Opus 5.5, Opus 5 and Fable 5.1 accept it (two consecutive override messages
-# too); Fable 5 400s ("output_config.effort requires a model
+# Opus 5.5, Opus 5, Fable 5.1, Sonnet 5.5 and Haiku 5.5 accept it (two
+# consecutive override messages too); Fable 5 400s ("output_config.effort requires a model
 # that supports per-turn effort; this model does not"); without the header every
 # model 400s ("messages.N.output_config: Extra inputs are not permitted").
 PER_MESSAGE_EFFORT_BETA = "mid-conversation-output-config-2026-07-01"
-PER_MESSAGE_EFFORT_MODELS = frozenset({"claude-fable-5-1", "claude-opus-5-5", "claude-opus-5"})
+PER_MESSAGE_EFFORT_MODELS = frozenset(
+    {
+        "claude-fable-5-1",
+        "claude-opus-5-5",
+        "claude-opus-5",
+        "claude-sonnet-5-5",
+        "claude-haiku-5-5",
+    }
+)
 
 # output_config.effort ladder in ascending order. Each model accepts only a
 # prefix of it (plus/minus "xhigh"), gated by supported_effort_levels below;
@@ -188,7 +238,9 @@ EFFORT_MODELS = frozenset(
         "claude-fable-5",
         "claude-opus-5-5",
         "claude-opus-5",
+        "claude-sonnet-5-5",
         "claude-sonnet-5",
+        "claude-haiku-5-5",
         "claude-opus-4-8",
         "claude-opus-4-7",
         "claude-opus-4-6",
@@ -205,7 +257,9 @@ XHIGH_EFFORT_MODELS = frozenset(
         "claude-fable-5",
         "claude-opus-5-5",
         "claude-opus-5",
+        "claude-sonnet-5-5",
         "claude-sonnet-5",
+        "claude-haiku-5-5",
         "claude-opus-4-8",
         "claude-opus-4-7",
     }
@@ -232,18 +286,20 @@ def supported_effort_levels(model: str) -> frozenset[str]:
 
 
 # Models that only support adaptive thinking (no budget_tokens mode).
-# claude-fable-5, claude-fable-5-1 and claude-opus-5-5 additionally reject an
-# explicit {"type": "disabled"} config (thinking is always on for them);
-# build_thinking_config never emits one (it omits the param instead), so the
-# existing adaptive path is safe for them. claude-opus-5 and claude-sonnet-5 are
-# adaptive-only too (manual extended thinking with budget_tokens returns a 400)
-# but do accept {"type": "disabled"}.
+# claude-fable-5, claude-fable-5-1, claude-opus-5-5 and claude-sonnet-5-5
+# additionally reject an explicit {"type": "disabled"} config (thinking is always
+# on for them); build_thinking_config never emits one (it omits the param
+# instead), so the existing adaptive path is safe for them. claude-opus-5,
+# claude-sonnet-5 and claude-haiku-5-5 are adaptive-only too (manual extended
+# thinking with budget_tokens returns a 400) but do accept {"type": "disabled"}.
 ADAPTIVE_ONLY_THINKING_MODELS = {
     "claude-fable-5-1",
     "claude-fable-5",
     "claude-opus-5-5",
     "claude-opus-5",
+    "claude-sonnet-5-5",
     "claude-sonnet-5",
+    "claude-haiku-5-5",
     "claude-opus-4-8",
     "claude-opus-4-7",
 }
@@ -256,7 +312,9 @@ COMPACTION_MODELS = {
     "claude-fable-5",
     "claude-opus-5-5",
     "claude-opus-5",
+    "claude-sonnet-5-5",
     "claude-sonnet-5",
+    "claude-haiku-5-5",
     "claude-opus-4-8",
     "claude-opus-4-7",
     "claude-opus-4-6",
@@ -264,24 +322,34 @@ COMPACTION_MODELS = {
 }
 
 # Server-side refusal fallback (beta). These models' safety classifiers can
-# decline a request (HTTP 200 with stop_reason "refusal") — Anthropic's
-# refusals page names Claude Fable 5 and Claude Opus 5, and the Fable 5.1
-# launch notes add Claude Fable 5.1 (its permitted fallback targets are Opus 4.8
-# and Opus 5). Claude Opus 5.5 also has the
-# classifiers and permits the same two targets. The target Opus 4.8 has no
-# classifier, which is what makes it a fallback. With the beta active the API
-# retries the same request on REFUSAL_FALLBACK_MODEL in one round trip. The
-# explicit-list form used here accepts up to three named fallback models; a
-# fallbacks="default" routing mode also exists under the
-# server-side-fallback-2026-07-01 header but has not been adopted.
+# decline a request (HTTP 200 with stop_reason "refusal") — Anthropic's refusals
+# page names Claude Fable 5 and Claude Opus 5, and the Fable 5.1, Opus 5.5 and
+# Sonnet 5.5 model pages add those models. With the beta active the API retries
+# the same request on the mapped fallback model in one round trip. Each model
+# accepts only the targets the API permits for it: Fable 5.1, Fable 5, Opus 5.5
+# and Opus 5 fall back to claude-opus-4-8, which has no classifier; Sonnet 5.5
+# accepts only claude-sonnet-5 (claude-opus-4-8 returns 400 "not a valid fallback
+# target"). claude-haiku-5-5 has classifiers but rejects the `fallbacks` parameter
+# with any value, so it is not listed. The explicit-list form used here accepts up
+# to three named fallback models; a fallbacks="default" routing mode also exists
+# under the server-side-fallback-2026-07-01 header but has not been adopted.
 REFUSAL_FALLBACK_BETA = "server-side-fallback-2026-06-01"
-REFUSAL_FALLBACK_MODELS = {"claude-fable-5-1", "claude-fable-5", "claude-opus-5-5", "claude-opus-5"}
-REFUSAL_FALLBACK_MODEL = "claude-opus-4-8"
+REFUSAL_FALLBACK_TARGETS: dict[str, str] = {
+    "claude-fable-5-1": "claude-opus-4-8",
+    "claude-fable-5": "claude-opus-4-8",
+    "claude-opus-5-5": "claude-opus-4-8",
+    "claude-opus-5": "claude-opus-4-8",
+    "claude-sonnet-5-5": "claude-sonnet-5",
+}
+REFUSAL_FALLBACK_MODELS = frozenset(REFUSAL_FALLBACK_TARGETS)
 
 # Context management thresholds
 CONTEXT_WARNING_THRESHOLD = 0.85  # Show warning embed at 85% of context window
 CONTEXT_COMPACTION_THRESHOLD = 0.75  # Trigger manual compaction at 75% (non-compaction models)
-COMPACTION_SUMMARY_MODEL = "claude-haiku-4-5"  # Cheap model for generating summaries
+# Model that writes the manual-compaction summary. Haiku 5.5 thinks by default, has
+# safety classifiers and rejects the `fallbacks` parameter, so compact_conversation
+# disables thinking on this call and sends no fallbacks.
+COMPACTION_SUMMARY_MODEL = "claude-haiku-5-5"
 
 
 def manual_compaction_trigger(context_window: int) -> float:
@@ -290,11 +358,13 @@ def manual_compaction_trigger(context_window: int) -> float:
     Manual compaction hands the *entire* message list to
     COMPACTION_SUMMARY_MODEL, so the trigger has to stay inside that
     summarizer's window rather than the chat model's. Today's manual-path
-    models (Opus 4.5, Sonnet 4.5, Haiku 4.5) all share the summarizer's 200k
-    window, so the bound is currently a no-op; it stays because a 1M-window
-    model on this path (claude-opus-5 was, before it joined COMPACTION_MODELS)
-    would otherwise fire at 750k and hand a 750k-token payload to a 200k-token
-    summarizer and 400.
+    models (Opus 4.5, Sonnet 4.5, Haiku 4.5) have 200k windows and the
+    summarizer (Haiku 5.5) has 1M, so the bound is currently a no-op; it stays
+    so a manual-path model with a larger window than the summarizer cannot
+    hand it a payload it rejects with a 400. The summarizer's tokenizer counts
+    about 30% more tokens than the manual-path models' for the same text, so
+    the 150k trigger of a 200k model is a summarizer prompt of about 200k
+    tokens.
     """
     summary_window = MODEL_CONTEXT_WINDOWS.get(COMPACTION_SUMMARY_MODEL, 200_000)
     return min(context_window, summary_window) * CONTEXT_COMPACTION_THRESHOLD
@@ -318,6 +388,16 @@ def available_embed_space(embeds: list[Embed], reserve: int = 0) -> int:
     return DISCORD_EMBED_TOTAL_LIMIT - used - reserve
 
 
+def long_context_applies(model: str, prompt_tokens: int) -> bool:
+    """True when one request's prompt reaches the model's long-context price tier.
+
+    `prompt_tokens` is that request's input + cache-read + cache-write tokens. Always
+    False for a model without a `long_context` block in pricing.yaml.
+    """
+    tier = LONG_CONTEXT_PRICING.get(model)
+    return tier is not None and prompt_tokens >= tier.threshold_tokens
+
+
 def calculate_cost(
     model: str,
     input_tokens: int,
@@ -325,16 +405,32 @@ def calculate_cost(
     cache_creation_tokens: int = 0,
     cache_read_tokens: int = 0,
     web_search_requests: int = 0,
+    *,
+    long_context: bool = False,
 ) -> float:
     """Calculate the cost in dollars for a given model and token usage.
 
     Cache write tokens cost 2x base input price (1h TTL); cache read tokens cost 0.1x
     unless pricing.yaml declares a `cache_read_per_million` for the model (Fable 5.1
-    reads at 0.025x, Opus 5.5 at 0.05x). Web search requests cost $0.01 each ($10 per
-    1,000 searches).
+    reads at 0.025x, Opus 5.5 and Sonnet 5.5 at 0.05x). Web search requests cost $0.01
+    each ($10 per 1,000 searches).
+
+    `long_context=True` bills the tokens at the model's long-context tier, with the
+    same cache rules applied to the tier's input price; it has no effect for a model
+    without a tier. The tier is chosen per request (long_context_applies), so the
+    caller passes only the tokens of requests that reached it.
     """
-    input_price, output_price = MODEL_PRICING.get(model, UNKNOWN_MODEL_PRICING)
-    cache_read_price = CACHE_READ_PRICING.get(model, input_price * 0.10)
+    tier = LONG_CONTEXT_PRICING.get(model) if long_context else None
+    if tier is not None:
+        input_price, output_price = tier.input_per_million, tier.output_per_million
+        cache_read_price = (
+            tier.cache_read_per_million
+            if tier.cache_read_per_million is not None
+            else input_price * 0.10
+        )
+    else:
+        input_price, output_price = MODEL_PRICING.get(model, UNKNOWN_MODEL_PRICING)
+        cache_read_price = CACHE_READ_PRICING.get(model, input_price * 0.10)
     return (
         (input_tokens / 1_000_000) * input_price
         + (output_tokens / 1_000_000) * output_price
@@ -362,6 +458,56 @@ def get_default_advisor_model(executor_model: str) -> str | None:
     if not compatible_models:
         return None
     return compatible_models[0]
+
+
+SAFETY_IDENTIFIER_KEY_LABEL = b"safety-identifier-v1"
+
+
+def derive_safety_identifier_key(secret: str | None, bot_token: str | None) -> bytes | None:
+    """Return the HMAC key for safety identifiers, or None when no key source is set.
+
+    ``SAFETY_IDENTIFIER_SECRET`` is the key when set; otherwise the key is derived
+    from ``BOT_TOKEN``, which Anthropic never receives. The Anthropic API key is never
+    used: Anthropic holds it and could rebuild the mapping by hashing known Discord
+    user IDs.
+    """
+    if secret:
+        return secret.encode("utf-8")
+    if bot_token:
+        return hmac.new(
+            bot_token.encode("utf-8"), SAFETY_IDENTIFIER_KEY_LABEL, hashlib.sha256
+        ).digest()
+    return None
+
+
+SAFETY_IDENTIFIER_KEY: bytes | None = derive_safety_identifier_key(
+    SAFETY_IDENTIFIER_SECRET, BOT_TOKEN
+)
+
+
+def build_safety_identifier(user_id: int) -> str | None:
+    """Return a keyed pseudonym of a Discord user ID for Anthropic's abuse detection.
+
+    The value is HMAC-SHA256 over ``str(user_id)``: 64 lowercase hex characters,
+    stable per user and key. Without the key, Anthropic cannot map it back to a
+    Discord ID. Returns None when no key is available, so no identifier is sent.
+    """
+    key = SAFETY_IDENTIFIER_KEY
+    if key is None:
+        return None
+    return hmac.new(key, str(user_id).encode("utf-8"), hashlib.sha256).hexdigest()
+
+
+def request_metadata(user_id: int) -> dict[str, str] | None:
+    """Return the Messages API ``metadata`` for a request made for ``user_id``.
+
+    ``metadata.user_id`` carries the keyed identifier from build_safety_identifier,
+    never the Discord ID. Returns None when no key is available.
+    """
+    identifier = build_safety_identifier(user_id)
+    if identifier is None:
+        return None
+    return {"user_id": identifier}
 
 
 @dataclass
@@ -409,17 +555,28 @@ class UsageTotals:
     advisor_cache_creation_tokens: int = 0
     advisor_cache_read_tokens: int = 0
     context_compacted: bool = False
-    # The token counts above, grouped by the model whose rates apply. The None key
-    # is the request model: top-level usage, compaction entries and entries that
-    # name no model.
+    # Set when a manual compaction was due but the summarizer returned no summary,
+    # so the history was kept in full.
+    compaction_failed: bool = False
+    # The model the requests were sent to. Usage that names no model bills at its
+    # rates; it is needed here to choose that usage's price tier.
+    request_model: str | None = None
+    # The token counts above, grouped by the model whose rates apply, for requests
+    # billed at the model's standard prices. The None key is the request model:
+    # top-level usage, compaction entries and entries that name no model.
     tokens_by_model: dict[str | None, ModelTokenUsage] = field(default_factory=dict)
+    # The same grouping for requests whose own prompt reached the model's
+    # long-context tier (long_context_applies). Each request is priced on its own,
+    # so one turn can hold tokens in both dicts.
+    long_context_tokens_by_model: dict[str | None, ModelTokenUsage] = field(default_factory=dict)
     # Full prompt size of the most recent response (uncached + cache-read +
     # cache-write input tokens): the measure for the context warning and the manual
     # compaction trigger.
     prompt_tokens: int = 0
 
     def _accumulate_executor_usage(self, usage: Any, model: str | None = None) -> None:
-        """Add usage billed at `model`'s rates (None: the request model's)."""
+        """Add one request's usage, billed at `model`'s rates (None: the request
+        model's) and at the price tier its own prompt size falls in."""
         input_tokens = getattr(usage, "input_tokens", 0) or 0
         output_tokens = getattr(usage, "output_tokens", 0) or 0
         cache_creation_tokens = getattr(usage, "cache_creation_input_tokens", 0) or 0
@@ -428,7 +585,14 @@ class UsageTotals:
         self.output_tokens += output_tokens
         self.cache_creation_tokens += cache_creation_tokens
         self.cache_read_tokens += cache_read_tokens
-        bucket = self.tokens_by_model.setdefault(model, ModelTokenUsage())
+        pricing_model = priced_model(model, self.request_model) if self.request_model else model
+        by_model = (
+            self.long_context_tokens_by_model
+            if pricing_model is not None
+            and long_context_applies(pricing_model, _prompt_tokens(usage))
+            else self.tokens_by_model
+        )
+        bucket = by_model.setdefault(model, ModelTokenUsage())
         bucket.input_tokens += input_tokens
         bucket.output_tokens += output_tokens
         bucket.cache_creation_tokens += cache_creation_tokens
@@ -470,7 +634,8 @@ class UsageTotals:
                     # Each attempt bills at the rates of the model named on its
                     # entry: in a refusal-fallback turn the declined model's
                     # "message" entry and the fallback model's "fallback_message"
-                    # entry name different models.
+                    # entry name different models. Each entry is a separate
+                    # sampling request, so its price tier comes from its own prompt.
                     self._accumulate_executor_usage(iteration, _usage_model(iteration))
                     # The last sampling entry gives the context size; a compaction
                     # entry reports only the summarisation call.
@@ -496,7 +661,8 @@ class UsageTotals:
 
     def accumulate_compaction_summary(self, usage: Any) -> None:
         """Add a manual compaction's summarizer call, billed at COMPACTION_SUMMARY_MODEL's
-        rates. The call does not continue the conversation, so prompt_tokens is kept."""
+        rates and at the price tier its own prompt falls in. The call does not continue
+        the conversation, so prompt_tokens is kept."""
         if usage is not None:
             self._accumulate_executor_usage(usage, COMPACTION_SUMMARY_MODEL)
             self._accumulate_thinking_tokens(usage)
@@ -519,7 +685,11 @@ class UsageTotals:
         parsed.tokens_by_model = {
             model: replace(tokens) for model, tokens in self.tokens_by_model.items()
         }
+        parsed.long_context_tokens_by_model = {
+            model: replace(tokens) for model, tokens in self.long_context_tokens_by_model.items()
+        }
         parsed.context_compacted = self.context_compacted
+        parsed.compaction_failed = self.compaction_failed
         parsed.context_warning = self.prompt_tokens > context_window * CONTEXT_WARNING_THRESHOLD
 
 

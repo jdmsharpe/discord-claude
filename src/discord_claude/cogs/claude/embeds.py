@@ -204,6 +204,21 @@ def append_compaction_embed(embeds: list[Embed]) -> None:
     )
 
 
+def append_compaction_failed_embed(embeds: list[Embed]) -> None:
+    """Append a warning embed when a due compaction did not happen."""
+    embeds.append(
+        Embed(
+            title="Context Not Compacted",
+            description=(
+                "This conversation is near the model's context window, but its history "
+                "could not be summarized, so it was kept in full. Consider starting a "
+                "new conversation soon."
+            ),
+            color=Colour.yellow(),
+        )
+    )
+
+
 def append_pricing_embed(
     embeds: list[Embed],
     parsed: ParsedResponse,
@@ -237,6 +252,7 @@ def append_pricing_embed(
 __all__ = [
     "append_citations_embed",
     "append_compaction_embed",
+    "append_compaction_failed_embed",
     "append_context_warning_embed",
     "append_fallback_embed",
     "append_pricing_embed",

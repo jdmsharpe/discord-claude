@@ -5,25 +5,105 @@ import pytest
 
 from discord_claude.cogs.claude.state import _copy_messages_without_advisor_blocks
 
+SUMMARY_JSON = '{"task": "t", "key_context": "k", "current_state": "c", "next_steps": "n"}'
+
+
+def _summary_response(text=SUMMARY_JSON, stop_reason="end_turn", usage=None):
+    """A summarizer response holding one text block (none when ``text`` is None)."""
+    response = MagicMock()
+    response.content = [] if text is None else [MagicMock(type="text", text=text)]
+    response.stop_reason = stop_reason
+    response.usage = usage
+    return response
+
+
+def _usage(input_tokens, output_tokens=0, cache_read_input_tokens=0):
+    return MagicMock(
+        input_tokens=input_tokens,
+        output_tokens=output_tokens,
+        cache_creation_input_tokens=0,
+        cache_read_input_tokens=cache_read_input_tokens,
+        output_tokens_details=None,
+    )
+
 
 class TestCompactConversation:
-    async def test_uses_text_fallback_when_structured_summary_missing(self):
-        from discord_claude.cogs.claude.state import compact_conversation
-
-        response = MagicMock()
-        response.parsed_output = None
-        response.content = [MagicMock(text="Fallback continuation summary.")]
-
+    @staticmethod
+    def _cog(response):
         cog = MagicMock()
-        cog.client.messages.parse = AsyncMock(return_value=response)
+        cog.client.messages.create = AsyncMock(return_value=response)
         cog.logger = MagicMock()
+        return cog
 
+    async def test_replaces_history_with_the_structured_summary(self):
+        from discord_claude.cogs.claude.state import ConversationSummary, compact_conversation
+
+        cog = self._cog(_summary_response())
         messages = [{"role": "user", "content": "Earlier request"}]
 
         summary = await compact_conversation(cog, messages)
 
-        assert summary == "<summary>\nFallback continuation summary.\n</summary>"
+        assert summary == ConversationSummary.model_validate_json(SUMMARY_JSON).to_message_text()
         assert messages == [{"role": "user", "content": summary}]
+
+    @pytest.mark.parametrize(
+        ("stop_reason", "text"),
+        [
+            ("refusal", None),
+            ("refusal", ""),
+            ("refusal", "I can't help summarize this."),
+            ("refusal", '{"task": "Plan a tr'),
+            ("max_tokens", '{"task": "t", "key_context": "k", "current_st'),
+            ("end_turn", None),
+        ],
+    )
+    async def test_keeps_history_and_bills_when_no_valid_summary(self, stop_reason, text):
+        """A response whose text is not a valid ConversationSummary (a refusal with no
+        text, empty text, prose or partial JSON, JSON cut off at max_tokens, an empty
+        response) keeps the history, and its usage is billed."""
+        from discord_claude.cogs.claude.state import compact_conversation
+        from discord_claude.util import COMPACTION_SUMMARY_MODEL, ModelTokenUsage, UsageTotals
+
+        cog = self._cog(_summary_response(text, stop_reason, _usage(2_000, 30)))
+        messages = [
+            {"role": "user", "content": "Earlier request"},
+            {"role": "assistant", "content": "Earlier answer"},
+        ]
+        original = [dict(message) for message in messages]
+        totals = UsageTotals(request_model="claude-haiku-4-5")
+
+        summary = await compact_conversation(cog, messages, usage_totals=totals)
+
+        assert summary is None
+        assert messages == original
+        assert totals.tokens_by_model == {
+            COMPACTION_SUMMARY_MODEL: ModelTokenUsage(input_tokens=2_000, output_tokens=30)
+        }
+        cog.logger.warning.assert_called_once()
+
+    async def test_keeps_history_when_the_summarizer_call_raises(self):
+        """An APIError (the call itself failed) keeps the history and bills nothing,
+        because no response came back."""
+        from anthropic import APIConnectionError
+
+        from discord_claude.cogs.claude.state import compact_conversation
+        from discord_claude.util import UsageTotals
+
+        cog = MagicMock()
+        cog.client.messages.create = AsyncMock(side_effect=APIConnectionError(request=MagicMock()))
+        cog.logger = MagicMock()
+        messages = [
+            {"role": "user", "content": "Earlier request"},
+            {"role": "assistant", "content": "Earlier answer"},
+        ]
+        original = [dict(message) for message in messages]
+        totals = UsageTotals()
+
+        summary = await compact_conversation(cog, messages, usage_totals=totals)
+
+        assert summary is None
+        assert messages == original
+        assert totals.tokens_by_model == {}
         cog.logger.warning.assert_called_once()
 
 
@@ -32,18 +112,10 @@ class TestCompactionSummaryUsage:
         from discord_claude.cogs.claude.state import compact_conversation
         from discord_claude.util import COMPACTION_SUMMARY_MODEL, ModelTokenUsage, UsageTotals
 
-        response = MagicMock()
-        response.parsed_output = None
-        response.content = [MagicMock(text="Summary.")]
-        response.usage = MagicMock(
-            input_tokens=40_000,
-            output_tokens=900,
-            cache_creation_input_tokens=0,
-            cache_read_input_tokens=0,
-            output_tokens_details=None,
-        )
         cog = MagicMock()
-        cog.client.messages.parse = AsyncMock(return_value=response)
+        cog.client.messages.create = AsyncMock(
+            return_value=_summary_response(usage=_usage(40_000, 900))
+        )
         totals = UsageTotals()
 
         await compact_conversation(cog, [{"role": "user", "content": "x"}], usage_totals=totals)
@@ -51,6 +123,139 @@ class TestCompactionSummaryUsage:
         assert totals.tokens_by_model == {
             COMPACTION_SUMMARY_MODEL: ModelTokenUsage(40_000, 900, 0, 0)
         }
+
+    async def test_summarizer_call_disables_thinking_without_fallbacks_or_effort(self):
+        """Haiku 5.5 thinks by default and its thinking tokens count against max_tokens,
+        so the call disables thinking. It rejects `fallbacks`, and disabled thinking is
+        accepted only at effort high or below, so neither is sent. The schema goes in
+        output_config.format, the form messages.parse(output_format=...) sends."""
+        from anthropic import transform_schema
+
+        from discord_claude.cogs.claude.state import ConversationSummary, compact_conversation
+        from discord_claude.util import COMPACTION_SUMMARY_MODEL
+
+        cog = MagicMock()
+        cog.client.messages.create = AsyncMock(return_value=_summary_response())
+
+        await compact_conversation(cog, [{"role": "user", "content": "x"}], system="Be brief.")
+
+        kwargs = cog.client.messages.create.call_args.kwargs
+        assert COMPACTION_SUMMARY_MODEL == "claude-haiku-5-5"
+        assert kwargs["model"] == COMPACTION_SUMMARY_MODEL
+        assert kwargs["max_tokens"] == 4096
+        assert kwargs["output_config"] == {
+            "format": {"type": "json_schema", "schema": transform_schema(ConversationSummary)}
+        }
+        assert kwargs["thinking"] == {"type": "disabled"}
+        assert kwargs["system"] == "Be brief."
+        assert "fallbacks" not in kwargs
+        assert "effort" not in kwargs["output_config"]
+        assert "tools" not in kwargs
+        assert "betas" not in kwargs
+
+    async def test_summarizer_refusal_keeps_history_and_is_billed(self):
+        """A summarizer refusal written as prose keeps the history. Its usage is still
+        billed: the bot bills every declined attempt because the API does not report
+        which refusal categories are billed."""
+        from discord_claude.cogs.claude.state import compact_conversation
+        from discord_claude.util import COMPACTION_SUMMARY_MODEL, ModelTokenUsage, UsageTotals
+
+        cog = MagicMock()
+        cog.client.messages.create = AsyncMock(
+            return_value=_summary_response(
+                "I can't help summarize this.", "refusal", _usage(2_000, 12)
+            )
+        )
+        messages = [
+            {"role": "user", "content": "Earlier request"},
+            {"role": "assistant", "content": "Earlier answer"},
+        ]
+        original = [dict(message) for message in messages]
+        totals = UsageTotals(request_model="claude-haiku-4-5")
+
+        summary = await compact_conversation(cog, messages, usage_totals=totals)
+
+        assert summary is None
+        assert messages == original
+        assert totals.tokens_by_model == {
+            COMPACTION_SUMMARY_MODEL: ModelTokenUsage(input_tokens=2_000, output_tokens=12)
+        }
+
+    async def test_summarizer_receives_thinking_blocks_unchanged(self):
+        """Thinking and redacted_thinking blocks of earlier turns stay in the copy
+        sent to the summarizer. Only the advisor blocks are removed."""
+        from discord_claude.cogs.claude.state import compact_conversation
+
+        thinking = {"type": "thinking", "thinking": "391 = 17 x 23.", "signature": "sig"}
+        redacted = {"type": "redacted_thinking", "data": "opaque"}
+        advisor_call = {"type": "server_tool_use", "id": "srvtoolu_01", "name": "advisor"}
+        answer = {"type": "text", "text": "No, 391 is 17 x 23."}
+        cog = MagicMock()
+        cog.client.messages.create = AsyncMock(return_value=_summary_response())
+
+        await compact_conversation(
+            cog,
+            [
+                {"role": "user", "content": "Is 391 prime?"},
+                {"role": "assistant", "content": [thinking, redacted, advisor_call, answer]},
+                {"role": "user", "content": "And 397?"},
+            ],
+        )
+
+        sent = cog.client.messages.create.call_args.kwargs["messages"]
+        assert sent[1]["content"] == [thinking, redacted, answer]
+
+    @pytest.mark.parametrize(
+        ("prompt_tokens", "long_context", "input_price", "output_price"),
+        [
+            # A conversation at the 150k manual trigger: over 100,000 summarizer tokens.
+            (150_000, True, 0.50, 2.50),
+            (20_000, False, 0.10, 0.50),
+        ],
+    )
+    async def test_summarizer_call_bills_at_the_price_tier_of_its_prompt(
+        self, prompt_tokens, long_context, input_price, output_price
+    ):
+        """The summary call is one request, priced by its own prompt size: Haiku 5.5's
+        long-context tier over 100,000 tokens, its standard prices below."""
+        from discord_claude.cogs.claude.responses import ParsedResponse
+        from discord_claude.cogs.claude.state import compact_conversation, track_daily_cost
+        from discord_claude.util import COMPACTION_SUMMARY_MODEL, ModelTokenUsage, UsageTotals
+
+        # Half of the prompt is a cache read: the tier counts the full prompt.
+        response = _summary_response(
+            usage=_usage(
+                prompt_tokens // 2,
+                output_tokens=1_000,
+                cache_read_input_tokens=prompt_tokens // 2,
+            )
+        )
+        cog = MagicMock()
+        cog.daily_costs = {}
+        cog.client.messages.create = AsyncMock(return_value=response)
+        totals = UsageTotals(request_model="claude-opus-4-5")
+
+        await compact_conversation(cog, [{"role": "user", "content": "x"}], usage_totals=totals)
+        parsed = ParsedResponse()
+        totals.apply_to(parsed, context_window=200_000)
+        cost, _ = track_daily_cost(cog, 1, "claude-opus-4-5", parsed)
+
+        tokens = ModelTokenUsage(prompt_tokens // 2, 1_000, 0, prompt_tokens // 2)
+        expected_groups = {COMPACTION_SUMMARY_MODEL: tokens}
+        if long_context:
+            assert parsed.long_context_tokens_by_model == expected_groups
+            assert parsed.tokens_by_model == {}
+        else:
+            assert parsed.tokens_by_model == expected_groups
+            assert parsed.long_context_tokens_by_model == {}
+        assert cost == pytest.approx(
+            (
+                prompt_tokens // 2 * input_price
+                + prompt_tokens // 2 * input_price * 0.10
+                + 1_000 * output_price
+            )
+            / 1e6
+        )
 
 
 class TestTrackDailyCost:
@@ -98,6 +303,41 @@ class TestTrackDailyCost:
         cost, _ = track_daily_cost(self._cog(), 1, "claude-opus-5-5", parsed)
 
         assert cost == pytest.approx(4.0)
+
+    def test_long_context_group_bills_at_the_tier_prices(self):
+        """Haiku 5.5: one request under the threshold at $0.10 input, one over it at $0.50
+        input and $2.50 output."""
+        from discord_claude.cogs.claude.responses import ParsedResponse
+        from discord_claude.cogs.claude.state import track_daily_cost
+        from discord_claude.util import ModelTokenUsage
+
+        parsed = ParsedResponse(
+            input_tokens=2_000_000,
+            output_tokens=1_000_000,
+            tokens_by_model={None: ModelTokenUsage(input_tokens=1_000_000)},
+            long_context_tokens_by_model={
+                None: ModelTokenUsage(input_tokens=1_000_000, output_tokens=1_000_000)
+            },
+        )
+
+        cost, _ = track_daily_cost(self._cog(), 1, "claude-haiku-5-5", parsed)
+
+        assert cost == pytest.approx(0.10 + 0.50 + 2.50)
+
+    def test_a_turn_entirely_in_the_long_context_tier_is_billed_once(self):
+        """An empty standard group must not fall back to billing the totals as well."""
+        from discord_claude.cogs.claude.responses import ParsedResponse
+        from discord_claude.cogs.claude.state import track_daily_cost
+        from discord_claude.util import ModelTokenUsage
+
+        parsed = ParsedResponse(
+            input_tokens=1_000_000,
+            long_context_tokens_by_model={None: ModelTokenUsage(input_tokens=1_000_000)},
+        )
+
+        cost, _ = track_daily_cost(self._cog(), 1, "claude-haiku-5-5", parsed)
+
+        assert cost == pytest.approx(0.50)
 
     def test_totals_without_a_breakdown_bill_at_the_served_model(self):
         from discord_claude.cogs.claude.responses import ParsedResponse

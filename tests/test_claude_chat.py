@@ -16,6 +16,48 @@ def _make_usage(**kwargs):
     return MagicMock(**defaults)
 
 
+def _summary_response(usage, text=None, stop_reason="end_turn"):
+    """A summarizer response holding one text block; by default a valid summary."""
+    if text is None:
+        text = (
+            '{"task": "long chat", "key_context": "facts so far", '
+            '"current_state": "answered the latest question", '
+            '"next_steps": "answer the next question"}'
+        )
+    response = MagicMock()
+    block = MagicMock()
+    block.type = "text"
+    block.text = text
+    response.content = [block]
+    response.stop_reason = stop_reason
+    response.usage = usage
+    return response
+
+
+def _is_summarizer_call(call) -> bool:
+    return "format" in (call.kwargs.get("output_config") or {})
+
+
+def _route_summarizer(chat_responses, summary):
+    """A messages.create side effect: the summarizer call (output_config.format set)
+    gets ``summary`` (a response, or an exception to raise); every other call takes
+    the next of ``chat_responses``."""
+    remaining = iter(chat_responses)
+
+    async def create(**kwargs):
+        if "format" in (kwargs.get("output_config") or {}):
+            if isinstance(summary, BaseException):
+                raise summary
+            return summary
+        return next(remaining)
+
+    return create
+
+
+def _summarizer_calls(create_mock):
+    return [call for call in create_mock.call_args_list if _is_summarizer_call(call)]
+
+
 class TestCallApiWithToolLoop:
     """Tests for the call_api_with_tool_loop behavior via the cog wrapper."""
 
@@ -362,7 +404,16 @@ class TestCallApiWithToolLoop:
             "output_config": {"effort": "low"},
         }
 
-    @pytest.mark.parametrize("model", ["claude-opus-5-5", "claude-opus-5", "claude-fable-5-1"])
+    @pytest.mark.parametrize(
+        "model",
+        [
+            "claude-opus-5-5",
+            "claude-opus-5",
+            "claude-fable-5-1",
+            "claude-sonnet-5-5",
+            "claude-haiku-5-5",
+        ],
+    )
     async def test_per_message_effort_models_send_the_beta_from_the_first_request(self, cog, model):
         """Probed 2026-09-03 (Discord + API): sending the header only once an override
         exists re-renders the prompt and rewrites the whole cached prefix on that turn
@@ -435,10 +486,19 @@ class TestCallApiWithToolLoop:
         assert call_kwargs["cache_control"] == {"type": "ephemeral", "ttl": "1h"}
 
     @pytest.mark.parametrize(
-        "model", ["claude-fable-5-1", "claude-fable-5", "claude-opus-5-5", "claude-opus-5"]
+        ("model", "target"),
+        [
+            ("claude-fable-5-1", "claude-opus-4-8"),
+            ("claude-fable-5", "claude-opus-4-8"),
+            ("claude-opus-5-5", "claude-opus-4-8"),
+            ("claude-opus-5", "claude-opus-4-8"),
+            # The API rejects Opus 4.8 as a fallback target for Sonnet 5.5.
+            ("claude-sonnet-5-5", "claude-sonnet-5"),
+        ],
     )
-    async def test_refusal_fallback_models_send_the_opus_4_8_fallback(self, cog, model):
-        """Every classifier model carries the refusal-fallback beta and the explicit Opus 4.8 target."""
+    async def test_refusal_fallback_models_send_their_fallback_target(self, cog, model, target):
+        """Every classifier model that accepts `fallbacks` carries the refusal-fallback beta
+        and the one explicit target the API permits for it."""
         mock_response = MagicMock()
         text_block = MagicMock()
         text_block.type = "text"
@@ -457,10 +517,13 @@ class TestCallApiWithToolLoop:
 
         call_kwargs = cog.client.beta.messages.create.call_args[1]
         assert "server-side-fallback-2026-06-01" in call_kwargs["betas"]
-        assert call_kwargs["fallbacks"] == [{"model": "claude-opus-4-8"}]
+        assert call_kwargs["fallbacks"] == [{"model": target}]
 
-    async def test_model_without_classifier_sends_no_fallback(self, cog):
-        """Sonnet 5 has no safety classifier, so no fallback beta or target is attached."""
+    @pytest.mark.parametrize("model", ["claude-sonnet-5", "claude-haiku-5-5"])
+    async def test_model_without_fallback_support_sends_no_fallback(self, cog, model):
+        """Sonnet 5 has no safety classifier, and Haiku 5.5 has classifiers but rejects the
+        `fallbacks` parameter with any value, so neither gets the fallback beta or a
+        target."""
         mock_response = MagicMock()
         text_block = MagicMock()
         text_block.type = "text"
@@ -472,7 +535,7 @@ class TestCallApiWithToolLoop:
         cog.client.beta.messages.create = AsyncMock(return_value=mock_response)
 
         await cog._call_api_with_tool_loop(
-            api_params={"model": "claude-sonnet-5", "max_tokens": 1024},
+            api_params={"model": model, "max_tokens": 1024},
             messages=[{"role": "user", "content": "Hi"}],
             user_id=123,
         )
@@ -600,6 +663,95 @@ class TestRunChatCommand:
         for call in mock_discord_context.send_followup.await_args_list:
             assert "embeds" in call.kwargs
             assert not str(call.kwargs.get("content", "")).startswith("**Response:**")
+
+    async def test_chat_reports_a_compaction_that_did_not_happen(self, cog, mock_discord_context):
+        """When the summarizer returns no summary, the reply carries a "Context Not
+        Compacted" embed instead of "Context Compacted"."""
+        mock_discord_context.send_followup = AsyncMock(return_value=MagicMock(id=123))
+        mock_response = MagicMock()
+        text_block = MagicMock()
+        text_block.type = "text"
+        text_block.text = "Answer."
+        text_block.citations = None
+        mock_response.content = [text_block]
+        mock_response.stop_reason = "end_turn"
+        mock_response.usage = _make_usage(input_tokens=160_000, output_tokens=100)
+        truncated_summary = _summary_response(
+            _make_usage(input_tokens=160_100, output_tokens=4_096),
+            text='{"task": "long chat", "key_context": "fac',
+            stop_reason="max_tokens",
+        )
+        cog.client.messages.create = AsyncMock(
+            side_effect=_route_summarizer([mock_response], truncated_summary)
+        )
+
+        with patch("discord_claude.cogs.claude.chat.keep_typing", AsyncMock()):
+            await cog.chat.callback(
+                cog,
+                ctx=mock_discord_context,
+                prompt="Hello",
+                model="claude-haiku-4-5",
+            )
+
+        titles = []
+        for call in mock_discord_context.send_followup.await_args_list:
+            embeds = call.kwargs.get("embeds") or [call.kwargs.get("embed")]
+            titles.extend(embed.title for embed in embeds if embed is not None)
+        assert "Context Not Compacted" in titles
+        assert "Context Compacted" not in titles
+        assert len(_summarizer_calls(cog.client.messages.create)) == 1
+
+    async def test_follow_up_message_reports_a_compaction_that_did_not_happen(
+        self, cog, mock_discord_message
+    ):
+        """In a follow-up message, a summarizer call that raises keeps the conversation:
+        the reply carries the "Context Not Compacted" embed and the history is unchanged
+        apart from the new turn."""
+        from anthropic import APIConnectionError
+
+        from discord_claude.util import ChatCompletionParameters, Conversation
+
+        mock_response = MagicMock()
+        text_block = MagicMock()
+        text_block.type = "text"
+        text_block.text = "Answer."
+        text_block.citations = None
+        mock_response.content = [text_block]
+        mock_response.stop_reason = "end_turn"
+        mock_response.usage = _make_usage(input_tokens=160_000, output_tokens=100)
+        cog.client.messages.create = AsyncMock(
+            side_effect=_route_summarizer([mock_response], APIConnectionError(request=MagicMock()))
+        )
+        mock_discord_message.reply = AsyncMock(return_value=MagicMock(id=456))
+
+        params = ChatCompletionParameters(
+            model="claude-haiku-4-5",
+            conversation_starter=mock_discord_message.author,
+            channel_id=mock_discord_message.channel.id,
+            conversation_id=123,
+        )
+        history = [
+            {"role": "user", "content": "First question"},
+            {"role": "assistant", "content": "First answer"},
+        ]
+        conversation = Conversation(params=params, messages=list(history))
+        conv_key = (mock_discord_message.author.id, mock_discord_message.channel.id)
+        cog.conversations[conv_key] = conversation
+
+        with patch("discord_claude.cogs.claude.chat.keep_typing", AsyncMock()):
+            await cog.handle_new_message_in_conversation(mock_discord_message, conversation)
+
+        titles = []
+        for call in mock_discord_message.reply.await_args_list:
+            embeds = call.kwargs.get("embeds") or [call.kwargs.get("embed")]
+            titles.extend(embed.title for embed in embeds if embed is not None)
+        assert "Context Not Compacted" in titles
+        assert "Context Compacted" not in titles
+        assert "Error" not in titles
+        assert cog.conversations[conv_key] is conversation
+        assert conversation.messages[:2] == history
+        assert len(conversation.messages) == 4  # the new user turn and the reply
+        assert len(_summarizer_calls(cog.client.messages.create)) == 1
 
     async def test_context_editing_with_tools(self, cog):
         """Models with tools get context editing via beta API."""
@@ -955,8 +1107,6 @@ class TestRunChatCommand:
 
     async def test_manual_compaction_triggers_at_75_percent(self, cog):
         """Non-compaction models trigger manual compaction when tokens exceed 75%."""
-        from discord_claude.cogs.claude.state import ConversationSummary
-
         pause_response = MagicMock()
         pause_text = MagicMock()
         pause_text.type = "text"
@@ -975,17 +1125,11 @@ class TestRunChatCommand:
         final_response.stop_reason = "end_turn"
         final_response.usage = _make_usage(input_tokens=2_000, output_tokens=100)
 
-        parse_response = MagicMock()
-        parse_response.parsed_output = ConversationSummary(
-            task="continue chat",
-            key_context="user greeted, assistant replied",
-            current_state="awaiting follow-up",
-            next_steps="respond to next user question",
-        )
-        parse_response.usage = _make_usage(input_tokens=155_500, output_tokens=800)
+        summary = _summary_response(_make_usage(input_tokens=155_500, output_tokens=800))
 
-        cog.client.messages.create = AsyncMock(side_effect=[pause_response, final_response])
-        cog.client.messages.parse = AsyncMock(return_value=parse_response)
+        cog.client.messages.create = AsyncMock(
+            side_effect=_route_summarizer([pause_response, final_response], summary)
+        )
 
         messages = [
             {"role": "user", "content": "Hi"},
@@ -1000,8 +1144,8 @@ class TestRunChatCommand:
 
         assert parsed.context_compacted is True
         assert parsed.text == "Done!"
-        assert cog.client.messages.create.call_count == 2
-        cog.client.messages.parse.assert_called_once()
+        assert cog.client.messages.create.call_count == 3
+        assert len(_summarizer_calls(cog.client.messages.create)) == 1
 
     @staticmethod
     def _text_response(text: str, stop_reason: str, usage):
@@ -1015,20 +1159,6 @@ class TestRunChatCommand:
         response.usage = usage
         return response
 
-    @staticmethod
-    def _summary_response(usage):
-        from discord_claude.cogs.claude.state import ConversationSummary
-
-        response = MagicMock()
-        response.parsed_output = ConversationSummary(
-            task="long chat",
-            key_context="facts so far",
-            current_state="answered the latest question",
-            next_steps="answer the next question",
-        )
-        response.usage = usage
-        return response
-
     async def test_manual_compaction_counts_cached_prompt_tokens(self, cog):
         """A plain chat turn whose prompt is mostly cache reads still compacts.
 
@@ -1039,19 +1169,21 @@ class TestRunChatCommand:
         user turn starts from the summary.
         """
         cog.client.messages.create = AsyncMock(
-            return_value=self._text_response(
-                "Answer.",
-                "end_turn",
-                _make_usage(
-                    input_tokens=3_000,
-                    output_tokens=400,
-                    cache_creation_input_tokens=1_000,
-                    cache_read_input_tokens=150_000,
-                ),
+            side_effect=_route_summarizer(
+                [
+                    self._text_response(
+                        "Answer.",
+                        "end_turn",
+                        _make_usage(
+                            input_tokens=3_000,
+                            output_tokens=400,
+                            cache_creation_input_tokens=1_000,
+                            cache_read_input_tokens=150_000,
+                        ),
+                    )
+                ],
+                _summary_response(_make_usage(input_tokens=154_400)),
             )
-        )
-        cog.client.messages.parse = AsyncMock(
-            return_value=self._summary_response(_make_usage(input_tokens=154_400))
         )
 
         messages = [
@@ -1069,8 +1201,9 @@ class TestRunChatCommand:
         assert parsed.context_compacted is True
         # The history was replaced, so no warning about the old prompt size.
         assert parsed.context_warning is False
-        cog.client.messages.parse.assert_called_once()
-        summarized = cog.client.messages.parse.call_args.kwargs["messages"]
+        summarizer_calls = _summarizer_calls(cog.client.messages.create)
+        assert len(summarizer_calls) == 1
+        summarized = summarizer_calls[0].kwargs["messages"]
         assert summarized[-2]["role"] == "assistant"  # the reply is part of the summary
         assert len(messages) == 1
         assert messages[0]["role"] == "user"
@@ -1086,7 +1219,6 @@ class TestRunChatCommand:
             self._text_response("Done!", "end_turn", _make_usage(input_tokens=60_000)),
         ]
         cog.client.messages.create = AsyncMock(side_effect=responses)
-        cog.client.messages.parse = AsyncMock()
 
         messages = [{"role": "user", "content": "Hi"}]
         parsed = await cog._call_api_with_tool_loop(
@@ -1097,23 +1229,27 @@ class TestRunChatCommand:
 
         assert parsed.input_tokens == 240_000
         assert parsed.context_compacted is False
-        cog.client.messages.parse.assert_not_called()
+        assert _summarizer_calls(cog.client.messages.create) == []
 
     async def test_manual_compaction_bills_the_summarizer_call(self, cog):
         """The summarizer call's tokens are added to the turn and billed at
-        COMPACTION_SUMMARY_MODEL's rates, not the chat model's."""
+        COMPACTION_SUMMARY_MODEL's rates, not the chat model's. A summary of a
+        conversation past the 150k trigger is a prompt over 100,000 tokens, so it bills
+        at Haiku 5.5's long-context tier ($0.50 input / $2.50 output)."""
         from discord_claude.util import COMPACTION_SUMMARY_MODEL, calculate_cost
 
         cog.client.messages.create = AsyncMock(
-            return_value=self._text_response(
-                "Answer.",
-                "end_turn",
-                _make_usage(input_tokens=2_000, output_tokens=500, cache_read_input_tokens=160_000),
-            )
-        )
-        cog.client.messages.parse = AsyncMock(
-            return_value=self._summary_response(
-                _make_usage(input_tokens=162_500, output_tokens=1_200)
+            side_effect=_route_summarizer(
+                [
+                    self._text_response(
+                        "Answer.",
+                        "end_turn",
+                        _make_usage(
+                            input_tokens=2_000, output_tokens=500, cache_read_input_tokens=160_000
+                        ),
+                    )
+                ],
+                _summary_response(_make_usage(input_tokens=162_500, output_tokens=1_200)),
             )
         )
 
@@ -1131,9 +1267,11 @@ class TestRunChatCommand:
         assert parsed.input_tokens == 2_000 + 162_500
         assert parsed.output_tokens == 500 + 1_200
         request_cost, _ = cog._track_daily_cost(123, "claude-opus-4-5", parsed)
-        expected = calculate_cost(
-            "claude-opus-4-5", 2_000, 500, cache_read_tokens=160_000
-        ) + calculate_cost(COMPACTION_SUMMARY_MODEL, 162_500, 1_200)
+        summary_cost = calculate_cost(COMPACTION_SUMMARY_MODEL, 162_500, 1_200, long_context=True)
+        assert summary_cost == pytest.approx((162_500 * 0.50 + 1_200 * 2.50) / 1e6)
+        expected = (
+            calculate_cost("claude-opus-4-5", 2_000, 500, cache_read_tokens=160_000) + summary_cost
+        )
         assert request_cost == pytest.approx(expected)
 
     async def test_refusal_fallback_turn_bills_each_attempt_at_its_models_rates(self, cog):
@@ -1183,6 +1321,152 @@ class TestRunChatCommand:
         )
         assert request_cost == pytest.approx(expected)
         assert request_cost != pytest.approx(calculate_cost("claude-opus-4-8", 4_000, 1_200))
+
+    async def test_sonnet_5_5_fallback_bills_the_sonnet_5_answer_at_sonnet_5_rates(self, cog):
+        """Sonnet 5.5 falls back to Sonnet 5. Both list $2 / $10, but Sonnet 5.5 reads the
+        cache at $0.10 and Sonnet 5 at $0.20, so each attempt's cache reads must bill at
+        its own model's rate."""
+        from discord_claude.util import calculate_cost
+
+        response = self._text_response(
+            "Answer.",
+            "end_turn",
+            MagicMock(
+                iterations=[
+                    MagicMock(
+                        type="message",
+                        model="claude-sonnet-5-5",
+                        input_tokens=1_000,
+                        output_tokens=0,
+                        cache_creation_input_tokens=0,
+                        cache_read_input_tokens=50_000,
+                    ),
+                    MagicMock(
+                        type="fallback_message",
+                        model="claude-sonnet-5",
+                        input_tokens=1_000,
+                        output_tokens=700,
+                        cache_creation_input_tokens=0,
+                        cache_read_input_tokens=50_000,
+                    ),
+                ],
+                server_tool_use=None,
+            ),
+        )
+        response.model = "claude-sonnet-5"
+        response.stop_details = None
+        cog.client.beta.messages.create = AsyncMock(return_value=response)
+
+        parsed = await cog._call_api_with_tool_loop(
+            api_params={"model": "claude-sonnet-5-5", "max_tokens": 1024},
+            messages=[{"role": "user", "content": "Hi"}],
+            user_id=123,
+        )
+
+        assert parsed.served_model == "claude-sonnet-5"
+        assert cog.client.beta.messages.create.call_args.kwargs["fallbacks"] == [
+            {"model": "claude-sonnet-5"}
+        ]
+        request_cost, _ = cog._track_daily_cost(123, "claude-sonnet-5-5", parsed)
+        expected = calculate_cost(
+            "claude-sonnet-5-5", 1_000, 0, cache_read_tokens=50_000
+        ) + calculate_cost("claude-sonnet-5", 1_000, 700, cache_read_tokens=50_000)
+        assert request_cost == pytest.approx(expected)
+        # $0.10 / MTok for the declined attempt's reads, $0.20 / MTok for the answer's.
+        assert expected == pytest.approx(
+            (1_000 * 2 + 50_000 * 0.10) / 1e6 + (1_000 * 2 + 700 * 10 + 50_000 * 0.20) / 1e6
+        )
+
+    async def test_haiku_5_5_price_tier_is_chosen_per_request(self, cog):
+        """Haiku 5.5 bills a request at $0.50 / $2.50 when its own prompt (input + cache
+        reads + cache writes) is over 100,000 tokens. The tool loop sends several
+        requests per turn: two 60,000-token prompts add up past the threshold but each
+        bills at $0.10 / $0.50; only the third, 101,000 tokens with cache reads included,
+        bills at the higher prices."""
+        from discord_claude.util import calculate_cost
+
+        responses = [
+            self._text_response("Working...", "pause_turn", _make_usage(input_tokens=60_000)),
+            self._text_response("Working...", "pause_turn", _make_usage(input_tokens=60_000)),
+            self._text_response(
+                "Done!",
+                "end_turn",
+                _make_usage(
+                    input_tokens=1_000,
+                    output_tokens=2_000,
+                    cache_read_input_tokens=95_000,
+                    cache_creation_input_tokens=5_000,
+                ),
+            ),
+        ]
+        cog.client.beta.messages.create = AsyncMock(side_effect=responses)
+
+        parsed = await cog._call_api_with_tool_loop(
+            api_params={"model": "claude-haiku-5-5", "max_tokens": 1024},
+            messages=[{"role": "user", "content": "Hi"}],
+            user_id=123,
+        )
+
+        request_cost, _ = cog._track_daily_cost(123, "claude-haiku-5-5", parsed)
+        standard = calculate_cost("claude-haiku-5-5", 120_000, 30)
+        long_context = calculate_cost(
+            "claude-haiku-5-5",
+            1_000,
+            2_000,
+            cache_creation_tokens=5_000,
+            cache_read_tokens=95_000,
+            long_context=True,
+        )
+        assert request_cost == pytest.approx(standard + long_context)
+        assert standard == pytest.approx((120_000 * 0.10 + 30 * 0.50) / 1e6)
+        assert long_context == pytest.approx(
+            (1_000 * 0.50 + 2_000 * 2.50 + 5_000 * 1.00 + 95_000 * 0.05) / 1e6
+        )
+
+    async def test_manual_compaction_without_a_summary_keeps_the_history(self, cog):
+        """When the summarizer returns no structured summary (here a refusal written as
+        prose), the history is kept, the reply reports that compaction did not happen,
+        and the summarizer is not called again in the same turn."""
+        from discord_claude.util import COMPACTION_SUMMARY_MODEL, ModelTokenUsage
+
+        responses = [
+            self._text_response("Working...", "pause_turn", _make_usage(input_tokens=155_000)),
+            self._text_response("Done!", "end_turn", _make_usage(input_tokens=156_000)),
+        ]
+        refusal = _summary_response(
+            _make_usage(input_tokens=155_500, output_tokens=0),
+            text="I can't help summarize this.",
+            stop_reason="refusal",
+        )
+        cog.client.messages.create = AsyncMock(side_effect=_route_summarizer(responses, refusal))
+
+        messages = [
+            {"role": "user", "content": "Hi"},
+            {"role": "assistant", "content": "Hello!"},
+            {"role": "user", "content": "Continue"},
+        ]
+        parsed = await cog._call_api_with_tool_loop(
+            api_params={"model": "claude-haiku-4-5", "max_tokens": 1024},
+            messages=messages,
+            user_id=123,
+        )
+
+        assert parsed.text == "Done!"
+        assert parsed.context_compacted is False
+        assert parsed.compaction_failed is True
+        assert len(_summarizer_calls(cog.client.messages.create)) == 1
+        # The declined summarizer call is billed like every declined attempt, at the
+        # summarizer's long-context tier (its prompt is over 100,000 tokens).
+        assert parsed.input_tokens == 155_000 + 156_000 + 155_500
+        assert parsed.long_context_tokens_by_model == {
+            COMPACTION_SUMMARY_MODEL: ModelTokenUsage(input_tokens=155_500)
+        }
+        assert messages[:3] == [
+            {"role": "user", "content": "Hi"},
+            {"role": "assistant", "content": "Hello!"},
+            {"role": "user", "content": "Continue"},
+        ]
+        assert len(messages) == 5  # both assistant replies appended, nothing removed
 
     async def test_compaction_model_skips_manual_compaction(self, cog):
         """Compaction models (server-side) never trigger manual compaction."""
@@ -1249,7 +1533,7 @@ class TestRunChatCommand:
         assert parsed.text == "Done!"
         assert parsed.context_compacted is False
         assert cog.client.beta.messages.create.call_count == 2
-        cog.client.messages.parse.assert_not_called()
+        assert _summarizer_calls(cog.client.messages.create) == []
         for call in cog.client.beta.messages.create.call_args_list:
             assert "compact-2026-01-12" in call.kwargs["betas"]
             assert {"type": "compact_20260112"} in call.kwargs["context_management"]["edits"]

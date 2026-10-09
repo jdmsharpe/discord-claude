@@ -6,12 +6,14 @@ CHAT_MODEL_CHOICES = [
     OptionChoice(name="Claude Opus 5.5", value="claude-opus-5-5"),
     OptionChoice(name="Claude Opus 5", value="claude-opus-5"),
     OptionChoice(name="Claude Opus 4.8", value="claude-opus-4-8"),
+    OptionChoice(name="Claude Sonnet 5.5", value="claude-sonnet-5-5"),
     OptionChoice(name="Claude Sonnet 5", value="claude-sonnet-5"),
     OptionChoice(name="Claude Opus 4.7", value="claude-opus-4-7"),
     OptionChoice(name="Claude Opus 4.6", value="claude-opus-4-6"),
     OptionChoice(name="Claude Sonnet 4.6", value="claude-sonnet-4-6"),
     OptionChoice(name="Claude Opus 4.5", value="claude-opus-4-5"),
     OptionChoice(name="Claude Sonnet 4.5", value="claude-sonnet-4-5"),
+    OptionChoice(name="Claude Haiku 5.5", value="claude-haiku-5-5"),
     OptionChoice(name="Claude Haiku 4.5", value="claude-haiku-4-5"),
 ]
 
@@ -31,7 +33,7 @@ TOOL_CHOICE_CHOICES = [
 THINKING_DISPLAY_CHOICES = [
     OptionChoice(name="Summarized", value="summarized"),
     OptionChoice(
-        name="Progress updates (Fable 5 / 5.1, Opus 5.5: live status lines between tool calls, reasoning hidden)",
+        name="Progress updates (Fable 5/5.1, Opus/Sonnet 5.5: status lines between tool calls, reasoning hidden)",
         value="updates",
     ),
 ]

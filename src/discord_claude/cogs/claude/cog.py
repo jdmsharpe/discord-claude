@@ -120,8 +120,9 @@ class ClaudeCog(commands.Cog):
         self,
         messages: list[dict[str, Any]],
         system: str | None = None,
-    ) -> str:
-        return await compact_conversation(self, messages, system=system)
+        user_id: int | None = None,
+    ) -> str | None:
+        return await compact_conversation(self, messages, system=system, user_id=user_id)
 
     async def _strip_previous_view(self, user) -> None:
         await strip_previous_view(self, user)
@@ -306,7 +307,7 @@ class ClaudeCog(commands.Cog):
     )
     @option(
         "thinking_display",
-        description="Summarized reasoning, or progress lines between tool calls (Fable, Opus 5.5). (default: summarized)",
+        description="Summarized reasoning, or tool-call progress lines (Fable, Opus/Sonnet 5.5). (default: summarized)",
         required=False,
         choices=THINKING_DISPLAY_CHOICES,
         type=str,

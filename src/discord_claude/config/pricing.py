@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
-from typing import Any, TypedDict
+from typing import Any, NamedTuple, TypedDict
 
 import yaml
 
@@ -17,6 +17,20 @@ import yaml
 class _UnknownFallback(TypedDict):
     input_per_million: float
     output_per_million: float
+
+
+class LongContextPricing(NamedTuple):
+    """Prices for requests whose prompt reaches `threshold_tokens`.
+
+    The prompt counts input, cache-read and cache-write tokens. A request at or over
+    the threshold bills all of its tokens at these prices.
+    """
+
+    threshold_tokens: int
+    input_per_million: float
+    output_per_million: float
+    # None: 0.1x input_per_million, as for the standard prices.
+    cache_read_per_million: float | None
 
 
 def _resolve_pricing_path() -> Path:
@@ -62,6 +76,20 @@ CACHE_READ_PRICING: dict[str, float] = {
     if "cache_read_per_million" in cfg
 }
 
+# Prompt-length price tiers; models absent here have one set of prices.
+LONG_CONTEXT_PRICING: dict[str, LongContextPricing] = {
+    model_id: LongContextPricing(
+        threshold_tokens=int(tier["threshold_tokens"]),
+        input_per_million=float(tier["input_per_million"]),
+        output_per_million=float(tier["output_per_million"]),
+        cache_read_per_million=(
+            float(tier["cache_read_per_million"]) if "cache_read_per_million" in tier else None
+        ),
+    )
+    for model_id, cfg in _MODELS.items()
+    if isinstance(tier := cfg.get("long_context"), dict)
+}
+
 UNKNOWN_MODEL_PRICING: tuple[float, float] = (
     float(_FALLBACK["input_per_million"]),
     float(_FALLBACK["output_per_million"]),
@@ -71,8 +99,10 @@ WEB_SEARCH_COST_PER_REQUEST: float = float(_TOOLS.get("web_search", {}).get("per
 
 __all__ = [
     "CACHE_READ_PRICING",
+    "LONG_CONTEXT_PRICING",
     "MODEL_CONTEXT_WINDOWS",
     "MODEL_PRICING",
     "UNKNOWN_MODEL_PRICING",
     "WEB_SEARCH_COST_PER_REQUEST",
+    "LongContextPricing",
 ]

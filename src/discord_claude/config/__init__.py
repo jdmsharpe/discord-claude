@@ -1,4 +1,10 @@
-from .auth import ANTHROPIC_API_KEY, BOT_TOKEN, GUILD_IDS, SHOW_COST_EMBEDS
+from .auth import (
+    ANTHROPIC_API_KEY,
+    BOT_TOKEN,
+    GUILD_IDS,
+    SAFETY_IDENTIFIER_SECRET,
+    SHOW_COST_EMBEDS,
+)
 from .mcp import ANTHROPIC_MCP_PRESETS
 
 __all__ = [
@@ -6,5 +12,6 @@ __all__ = [
     "ANTHROPIC_MCP_PRESETS",
     "BOT_TOKEN",
     "GUILD_IDS",
+    "SAFETY_IDENTIFIER_SECRET",
     "SHOW_COST_EMBEDS",
 ]

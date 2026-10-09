@@ -1,7 +1,16 @@
+import hashlib
+import hmac
+import importlib
+import sys
+from contextlib import contextmanager
 from unittest.mock import MagicMock
 
 import pytest
 
+import discord_claude
+import discord_claude.config
+import discord_claude.config.auth
+import discord_claude.util
 from discord_claude.util import (
     ADAPTIVE_ONLY_THINKING_MODELS,
     ADAPTIVE_THINKING_MODELS,
@@ -18,8 +27,9 @@ from discord_claude.util import (
     PER_MESSAGE_EFFORT_MODELS,
     PROGRAMMATIC_TOOL_CALLING_UNSUPPORTED_MODELS,
     REFUSAL_FALLBACK_BETA,
-    REFUSAL_FALLBACK_MODEL,
     REFUSAL_FALLBACK_MODELS,
+    REFUSAL_FALLBACK_TARGETS,
+    SAFETY_IDENTIFIER_KEY_LABEL,
     SAMPLING_LOCKED_MODELS,
     THINKING_DISPLAY_UPDATES_MODELS,
     XHIGH_EFFORT_MODELS,
@@ -28,11 +38,15 @@ from discord_claude.util import (
     ModelTokenUsage,
     UsageTotals,
     available_embed_space,
+    build_safety_identifier,
     calculate_cost,
     chunk_text,
+    derive_safety_identifier_key,
     format_anthropic_error,
     get_default_advisor_model,
+    long_context_applies,
     priced_model,
+    request_metadata,
     supported_effort_levels,
     truncate_text,
 )
@@ -311,6 +325,52 @@ class TestCalculateCost:
         cost = calculate_cost("unknown-model", 1_000_000, 0)
         assert cost == 15.0  # Default input price
 
+    def test_sonnet_5_5_pricing(self):
+        """Sonnet 5.5: $2 / $10, cache reads $0.10 (0.05x), 1h cache writes $4 (2x)."""
+        assert calculate_cost("claude-sonnet-5-5", 1_000_000, 0) == pytest.approx(2.0)
+        assert calculate_cost("claude-sonnet-5-5", 0, 1_000_000) == pytest.approx(10.0)
+        read = calculate_cost("claude-sonnet-5-5", 0, 0, cache_read_tokens=1_000_000)
+        assert read == pytest.approx(0.10)
+        write = calculate_cost("claude-sonnet-5-5", 0, 0, cache_creation_tokens=1_000_000)
+        assert write == pytest.approx(4.0)
+        # Sonnet 5 lists the same $2 / $10 but reads at the default 0.1x.
+        sonnet_5_read = calculate_cost("claude-sonnet-5", 0, 0, cache_read_tokens=1_000_000)
+        assert sonnet_5_read == pytest.approx(0.20)
+
+    def test_haiku_5_5_pricing_tiers(self):
+        """Haiku 5.5, prompts up to 100,000 tokens: $0.10 / $0.50, cache reads $0.01, 1h
+        cache writes $0.20. Prompts over 100,000 tokens: $0.50 / $2.50, $0.05, $1.00."""
+        model = "claude-haiku-5-5"
+        for long_context, expected in (
+            (False, (0.10, 0.50, 0.01, 0.20)),
+            (True, (0.50, 2.50, 0.05, 1.00)),
+        ):
+            assert calculate_cost(model, 1_000_000, 0, long_context=long_context) == pytest.approx(
+                expected[0]
+            )
+            assert calculate_cost(model, 0, 1_000_000, long_context=long_context) == pytest.approx(
+                expected[1]
+            )
+            assert calculate_cost(
+                model, 0, 0, cache_read_tokens=1_000_000, long_context=long_context
+            ) == pytest.approx(expected[2])
+            assert calculate_cost(
+                model, 0, 0, cache_creation_tokens=1_000_000, long_context=long_context
+            ) == pytest.approx(expected[3])
+
+    def test_long_context_flag_has_no_effect_without_a_tier(self):
+        assert calculate_cost(
+            "claude-opus-5-5", 1_000_000, 1_000_000, long_context=True
+        ) == pytest.approx(calculate_cost("claude-opus-5-5", 1_000_000, 1_000_000))
+
+    def test_long_context_applies_above_100_000_prompt_tokens(self):
+        """The higher prices apply to prompts OVER 100,000 tokens."""
+        assert long_context_applies("claude-haiku-5-5", 100_000) is False
+        assert long_context_applies("claude-haiku-5-5", 100_001) is True
+        assert long_context_applies("claude-haiku-5-5", 900_000) is True
+        assert long_context_applies("claude-opus-5-5", 900_000) is False
+        assert long_context_applies("unknown-model", 900_000) is False
+
     def test_priced_model_resolves_ids_without_a_pricing_row_to_the_request_model(self):
         """Usage entries bill at the named model's row when it has one; None and ids
         without a row (such as a dated snapshot id) use the request model's row
@@ -332,13 +392,13 @@ class TestModelCapabilitySets:
     """Guards for the per-model capability sets consumed by build_api_params."""
 
     def test_manual_compaction_trigger_bounded_by_summarizer(self):
-        """A 1M-window model on the manual path must not out-scale the summarizer.
+        """A manual-path model must not out-scale the summarizer.
 
         compact_conversation hands the whole message list to
-        COMPACTION_SUMMARY_MODEL, so an unbounded 75% trigger on a 1M-window
-        model would send it ~750k tokens and 400. No selectable manual-path
-        model has a 1M window today (claude-opus-5 moved to COMPACTION_MODELS),
-        so this pins the guard rather than a live bound.
+        COMPACTION_SUMMARY_MODEL, so an unbounded 75% trigger on a model with a
+        larger window than the summarizer's would send it a prompt it rejects. No
+        selectable manual-path model has a window larger than the summarizer's
+        (Haiku 5.5, 1M), so this pins the guard rather than a live bound.
 
         Resolved with .get() and the same 200_000 default the production code
         uses: the pricing-override tests replace MODEL_CONTEXT_WINDOWS globally,
@@ -352,13 +412,37 @@ class TestModelCapabilitySets:
 
         summary_window = MODEL_CONTEXT_WINDOWS.get(COMPACTION_SUMMARY_MODEL, 200_000)
 
-        # The 1M case is the regression: bounded by the summarizer, not the model.
-        assert manual_compaction_trigger(1_000_000) == summary_window * 0.75
-        assert manual_compaction_trigger(1_000_000) < summary_window
+        # A window larger than the summarizer's is bounded by the summarizer.
+        assert manual_compaction_trigger(summary_window * 2) == summary_window * 0.75
+        assert manual_compaction_trigger(summary_window * 2) < summary_window
 
         # A window at or below the summarizer's is unaffected.
         assert manual_compaction_trigger(200_000) == 200_000 * 0.75
         assert manual_compaction_trigger(100_000) == 100_000 * 0.75
+
+    def test_compaction_summary_model_is_haiku_5_5(self):
+        """The summarizer is Haiku 5.5: priced with its long-context tier and never sent
+        `fallbacks` (it rejects the parameter). Haiku 4.5 stays a chat model."""
+        from pathlib import Path
+
+        import yaml
+
+        from discord_claude.cogs.claude.command_options import CHAT_MODEL_CHOICES
+        from discord_claude.util import COMPACTION_SUMMARY_MODEL, REFUSAL_FALLBACK_MODELS
+
+        # Read the bundled YAML directly: the CLAUDE_PRICING_PATH override tests
+        # re-import the pricing module.
+        bundled = yaml.safe_load(
+            (
+                Path(__file__).parent.parent / "src" / "discord_claude" / "config" / "pricing.yaml"
+            ).read_text()
+        )
+        assert COMPACTION_SUMMARY_MODEL == "claude-haiku-5-5"
+        assert COMPACTION_SUMMARY_MODEL not in REFUSAL_FALLBACK_MODELS
+        assert bundled["models"][COMPACTION_SUMMARY_MODEL]["long_context"]["threshold_tokens"] == (
+            100_001
+        )
+        assert "claude-haiku-4-5" in {choice.value for choice in CHAT_MODEL_CHOICES}
 
     def test_opus_5_takes_the_server_side_compaction_path(self):
         """Opus 5 is 1M-window and server-side compacted, so the bound above never applies to it.
@@ -392,18 +476,19 @@ class TestModelCapabilitySets:
             assert bundled["models"][model_id]["context_window"] <= summary_window, model_id
 
     def test_advisor_model_compatibility_matches_accepted_pairs(self):
-        """Pins the executor -> advisor pairs the API accepts: the advisor-tool docs table
-        (verified 2026-09-03) plus claude-opus-5-5, which the table does not list but the
-        API accepted for every executor, and as an executor with Opus 5.5 / Opus 5 /
-        Fable 5 / Fable 5.1 advisors (count_tokens checks, 2026-09-22).
+        """Pins the executor -> advisor pairs the API accepts. The advisor-tool docs table
+        lists exactly these pairs, and beta.messages.count_tokens with the bot's advisor
+        tool accepted every one of them and rejected every other pair of selectable
+        models (see .claude/CLAUDE.md, Advisor pairs).
 
         Tuple order matters: get_default_advisor_model takes the first entry, so
         claude-opus-4-8 leads wherever it is allowed (plaintext advice), the Opus 5 /
         Fable 5 executors default to claude-opus-5 (encrypted advisor_redacted_result),
-        and the Opus 5.5 executor defaults to claude-opus-5-5. Adding claude-opus-5-5
-        changed no tuple's first entry. claude-mythos-5 / claude-mythos-5-1 are in the
-        docs table but not publicly callable; claude-sonnet-4-5 and claude-opus-4-5 are
-        not executors.
+        the Opus 5.5 executor to claude-opus-5-5 and the Sonnet 5.5 executor to
+        claude-sonnet-5-5. New advisors are appended, so adding claude-sonnet-5-5 and
+        claude-haiku-5-5 changed no tuple's first entry. claude-mythos-5 /
+        claude-mythos-5-1 are in the docs table but not publicly callable;
+        claude-sonnet-4-5 and claude-opus-4-5 are not executors.
         """
         assert ADVISOR_MODEL_COMPATIBILITY == {
             "claude-haiku-4-5": (
@@ -416,6 +501,19 @@ class TestModelCapabilitySets:
                 "claude-fable-5-1",
                 "claude-sonnet-5",
                 "claude-sonnet-4-6",
+                "claude-sonnet-5-5",
+                "claude-haiku-5-5",
+            ),
+            "claude-haiku-5-5": (
+                "claude-opus-4-8",
+                "claude-opus-4-7",
+                "claude-opus-5",
+                "claude-opus-5-5",
+                "claude-fable-5",
+                "claude-fable-5-1",
+                "claude-sonnet-5",
+                "claude-sonnet-5-5",
+                "claude-haiku-5-5",
             ),
             "claude-sonnet-4-6": (
                 "claude-opus-4-8",
@@ -427,6 +525,8 @@ class TestModelCapabilitySets:
                 "claude-fable-5-1",
                 "claude-sonnet-5",
                 "claude-sonnet-4-6",
+                "claude-sonnet-5-5",
+                "claude-haiku-5-5",
             ),
             "claude-sonnet-5": (
                 "claude-opus-4-8",
@@ -436,6 +536,15 @@ class TestModelCapabilitySets:
                 "claude-fable-5",
                 "claude-fable-5-1",
                 "claude-sonnet-5",
+                "claude-sonnet-5-5",
+                "claude-haiku-5-5",
+            ),
+            "claude-sonnet-5-5": (
+                "claude-sonnet-5-5",
+                "claude-opus-5-5",
+                "claude-opus-5",
+                "claude-fable-5",
+                "claude-fable-5-1",
             ),
             "claude-opus-4-6": (
                 "claude-opus-4-8",
@@ -446,6 +555,8 @@ class TestModelCapabilitySets:
                 "claude-fable-5",
                 "claude-fable-5-1",
                 "claude-sonnet-5",
+                "claude-sonnet-5-5",
+                "claude-haiku-5-5",
             ),
             "claude-opus-4-7": (
                 "claude-opus-4-8",
@@ -454,6 +565,7 @@ class TestModelCapabilitySets:
                 "claude-opus-5-5",
                 "claude-fable-5",
                 "claude-fable-5-1",
+                "claude-sonnet-5-5",
             ),
             "claude-opus-4-8": (
                 "claude-opus-4-8",
@@ -462,6 +574,7 @@ class TestModelCapabilitySets:
                 "claude-opus-5-5",
                 "claude-fable-5",
                 "claude-fable-5-1",
+                "claude-sonnet-5-5",
             ),
             "claude-opus-5-5": (
                 "claude-opus-5-5",
@@ -487,18 +600,27 @@ class TestModelCapabilitySets:
             assert mythos not in ADVISOR_MODEL_COMPATIBILITY
             for advisors in ADVISOR_MODEL_COMPATIBILITY.values():
                 assert mythos not in advisors
-        # The API rejects Opus 4.8 as the advisor of an Opus 5.5 executor.
+        # The API rejects Opus 4.8 as the advisor of an Opus 5.5 or Sonnet 5.5 executor,
+        # and Haiku 5.5 as the advisor of an Opus 4.7 / 4.8 executor.
         assert "claude-opus-4-8" not in ADVISOR_MODEL_COMPATIBILITY["claude-opus-5-5"]
+        assert "claude-opus-4-8" not in ADVISOR_MODEL_COMPATIBILITY["claude-sonnet-5-5"]
+        for executor in ("claude-opus-4-7", "claude-opus-4-8"):
+            assert "claude-haiku-5-5" not in ADVISOR_MODEL_COMPATIBILITY[executor], executor
+        # Haiku 4.5 is never an advisor.
+        for advisors in ADVISOR_MODEL_COMPATIBILITY.values():
+            assert "claude-haiku-4-5" not in advisors
 
     def test_default_advisor_model_prefers_plaintext_opus_4_8(self):
         """The auto-picked advisor is Opus 4.8 wherever the API allows it.
 
-        Only Opus 5 / Fable 5 executors fall through to claude-opus-5 and the Opus 5.5
-        executor to claude-opus-5-5; models outside the table (Sonnet 4.5, Opus 4.5) get
+        Only Opus 5 / Fable 5 executors fall through to claude-opus-5, the Opus 5.5
+        executor to claude-opus-5-5 and the Sonnet 5.5 executor to claude-sonnet-5-5;
+        models outside the table (Sonnet 4.5, Opus 4.5) get
         no advisor at all.
         """
         for executor in (
             "claude-haiku-4-5",
+            "claude-haiku-5-5",
             "claude-sonnet-4-6",
             "claude-sonnet-5",
             "claude-opus-4-6",
@@ -509,6 +631,7 @@ class TestModelCapabilitySets:
         for executor in ("claude-opus-5", "claude-fable-5"):
             assert get_default_advisor_model(executor) == "claude-opus-5", executor
         assert get_default_advisor_model("claude-opus-5-5") == "claude-opus-5-5"
+        assert get_default_advisor_model("claude-sonnet-5-5") == "claude-sonnet-5-5"
         assert get_default_advisor_model("claude-fable-5-1") == "claude-fable-5-1"
         for executor in ("claude-sonnet-4-5", "claude-opus-4-5"):
             assert get_default_advisor_model(executor) is None, executor
@@ -568,7 +691,44 @@ class TestModelCapabilitySets:
                 assert model in advisors, executor
         assert get_default_advisor_model(model) == model
         assert supported_effort_levels(model) == {"low", "medium", "high", "xhigh", "max"}
-        assert {"claude-fable-5-1", "claude-opus-5-5"} == FORCED_TOOL_CHOICE_UNSUPPORTED_MODELS
+        assert {
+            "claude-fable-5-1",
+            "claude-opus-5-5",
+            "claude-sonnet-5-5",
+        } == FORCED_TOOL_CHOICE_UNSUPPORTED_MODELS
+
+    @pytest.mark.parametrize("model", ["claude-sonnet-5-5", "claude-haiku-5-5"])
+    def test_5_5_models_capability_membership(self, model):
+        """Sonnet 5.5 and Haiku 5.5: adaptive thinking only (budget_tokens 400s),
+        sampling-locked, all five effort levels, per-message effort, server-side
+        compaction and programmatic tool calling with the default allowed_callers.
+        Both must be in ADAPTIVE_THINKING_MODELS: otherwise no thinking config is sent
+        and their default display "omitted" hides the reasoning."""
+        for member_of in (
+            ADAPTIVE_THINKING_MODELS,
+            ADAPTIVE_ONLY_THINKING_MODELS,
+            SAMPLING_LOCKED_MODELS,
+            PER_MESSAGE_EFFORT_MODELS,
+            EFFORT_MODELS,
+            XHIGH_EFFORT_MODELS,
+            MAX_EFFORT_MODELS,
+            COMPACTION_MODELS,
+        ):
+            assert model in member_of
+        assert model not in EXTENDED_THINKING_MODELS
+        assert model not in PROGRAMMATIC_TOOL_CALLING_UNSUPPORTED_MODELS
+        assert supported_effort_levels(model) == {"low", "medium", "high", "xhigh", "max"}
+
+    def test_sonnet_5_5_only_capabilities(self):
+        """Sonnet 5.5 writes progress updates between tool calls, 400s on forced tool use
+        and falls back to Sonnet 5 on a refusal. Haiku 5.5 does none of these: it writes
+        no progress updates, accepts forced tool use and rejects `fallbacks`."""
+        assert "claude-sonnet-5-5" in THINKING_DISPLAY_UPDATES_MODELS
+        assert "claude-sonnet-5-5" in FORCED_TOOL_CHOICE_UNSUPPORTED_MODELS
+        assert REFUSAL_FALLBACK_TARGETS["claude-sonnet-5-5"] == "claude-sonnet-5"
+        assert "claude-haiku-5-5" not in THINKING_DISPLAY_UPDATES_MODELS
+        assert "claude-haiku-5-5" not in FORCED_TOOL_CHOICE_UNSUPPORTED_MODELS
+        assert "claude-haiku-5-5" not in REFUSAL_FALLBACK_MODELS
 
     def test_retired_opus_4_1_absent_from_capability_sets(self):
         """Opus 4.1 shut down 2026-08-05; its thinking config is dead once unselectable."""
@@ -576,17 +736,22 @@ class TestModelCapabilitySets:
 
     def test_refusal_fallback_models_are_the_classifier_models(self):
         """Anthropic's refusals page names Fable 5 and Opus 5 as the models with safety
-        classifiers (verified 2026-08-28), the Fable 5.1 launch notes add Fable 5.1
-        (2026-09-01) and Opus 5.5 has them too (2026-09-22); the Opus 4.8 target carries
-        none, which is what makes it a fallback rather than another refusal."""
-        assert {
-            "claude-fable-5-1",
-            "claude-fable-5",
-            "claude-opus-5-5",
-            "claude-opus-5",
-        } == REFUSAL_FALLBACK_MODELS
-        assert REFUSAL_FALLBACK_MODEL == "claude-opus-4-8"
-        assert REFUSAL_FALLBACK_MODEL not in REFUSAL_FALLBACK_MODELS
+        classifiers, and the Fable 5.1, Opus 5.5 and Sonnet 5.5 model pages add those
+        models. Each maps to a target the API permits for it: Opus 4.8 (no classifier)
+        for the Fable / Opus models, Sonnet 5 for Sonnet 5.5, which rejects Opus 4.8.
+        Haiku 5.5 has classifiers but rejects the `fallbacks` parameter, so it is not
+        listed."""
+        assert REFUSAL_FALLBACK_TARGETS == {
+            "claude-fable-5-1": "claude-opus-4-8",
+            "claude-fable-5": "claude-opus-4-8",
+            "claude-opus-5-5": "claude-opus-4-8",
+            "claude-opus-5": "claude-opus-4-8",
+            "claude-sonnet-5-5": "claude-sonnet-5",
+        }
+        assert frozenset(REFUSAL_FALLBACK_TARGETS) == REFUSAL_FALLBACK_MODELS
+        for target in REFUSAL_FALLBACK_TARGETS.values():
+            assert target not in REFUSAL_FALLBACK_MODELS, target
+        assert "claude-haiku-5-5" not in REFUSAL_FALLBACK_MODELS
         assert REFUSAL_FALLBACK_BETA == "server-side-fallback-2026-06-01"
 
     def test_effort_model_sets_membership(self):
@@ -600,7 +765,9 @@ class TestModelCapabilitySets:
             "claude-fable-5",
             "claude-opus-5-5",
             "claude-opus-5",
+            "claude-sonnet-5-5",
             "claude-sonnet-5",
+            "claude-haiku-5-5",
             "claude-opus-4-8",
             "claude-opus-4-7",
             "claude-opus-4-6",
@@ -612,7 +779,9 @@ class TestModelCapabilitySets:
             "claude-fable-5",
             "claude-opus-5-5",
             "claude-opus-5",
+            "claude-sonnet-5-5",
             "claude-sonnet-5",
+            "claude-haiku-5-5",
             "claude-opus-4-8",
             "claude-opus-4-7",
         } == XHIGH_EFFORT_MODELS
@@ -635,12 +804,14 @@ class TestModelCapabilitySets:
             "claude-opus-5-5": {"low", "medium", "high", "xhigh", "max"},
             "claude-opus-5": {"low", "medium", "high", "xhigh", "max"},
             "claude-opus-4-8": {"low", "medium", "high", "xhigh", "max"},
+            "claude-sonnet-5-5": {"low", "medium", "high", "xhigh", "max"},
             "claude-sonnet-5": {"low", "medium", "high", "xhigh", "max"},
             "claude-opus-4-7": {"low", "medium", "high", "xhigh", "max"},
             "claude-opus-4-6": {"low", "medium", "high", "max"},
             "claude-sonnet-4-6": {"low", "medium", "high", "max"},
             "claude-opus-4-5": {"low", "medium", "high"},
             "claude-sonnet-4-5": set(),
+            "claude-haiku-5-5": {"low", "medium", "high", "xhigh", "max"},
             "claude-haiku-4-5": set(),
         }
         choice_ids = {choice.value for choice in CHAT_MODEL_CHOICES}
@@ -899,6 +1070,94 @@ class TestUsageTotals:
 
         assert totals.tokens_by_model == {None: ModelTokenUsage(1_130, 255, 10, 20)}
 
+    def test_price_tier_is_chosen_per_entry_from_its_own_prompt(self):
+        """Each sampling entry is a separate request: two 60,000-token Haiku 5.5 prompts
+        stay at the standard prices although they add up past 100,000, while a
+        compaction entry whose own prompt is over 100,000 tokens (cache reads included)
+        goes to the long-context group. Entries that name no model resolve through
+        request_model."""
+        totals = UsageTotals(request_model="claude-haiku-5-5")
+        totals.accumulate(
+            MagicMock(
+                iterations=[
+                    MagicMock(
+                        type="message",
+                        model="claude-haiku-5-5",
+                        input_tokens=60_000,
+                        output_tokens=100,
+                        cache_creation_input_tokens=0,
+                        cache_read_input_tokens=0,
+                    ),
+                    MagicMock(
+                        type="compaction",
+                        input_tokens=1_000,
+                        output_tokens=300,
+                        cache_creation_input_tokens=0,
+                        cache_read_input_tokens=100_000,
+                    ),
+                    MagicMock(
+                        type="message",
+                        model="claude-haiku-5-5",
+                        input_tokens=60_000,
+                        output_tokens=200,
+                        cache_creation_input_tokens=0,
+                        cache_read_input_tokens=0,
+                    ),
+                ],
+                server_tool_use=None,
+            )
+        )
+
+        assert totals.tokens_by_model == {"claude-haiku-5-5": ModelTokenUsage(120_000, 300, 0, 0)}
+        assert totals.long_context_tokens_by_model == {
+            None: ModelTokenUsage(1_000, 300, 0, 100_000)
+        }
+        assert totals.input_tokens == 121_000
+
+    def test_price_tier_boundary_is_inclusive_of_100_001(self):
+        """A prompt of exactly 100,000 tokens bills at the standard prices; 100,001 does
+        not. Without request_model, usage that names no model cannot be tiered."""
+        at_threshold = MagicMock(
+            input_tokens=100_000,
+            output_tokens=0,
+            cache_creation_input_tokens=0,
+            cache_read_input_tokens=0,
+            server_tool_use=None,
+        )
+        over_threshold = MagicMock(
+            input_tokens=99_000,
+            output_tokens=0,
+            cache_creation_input_tokens=1,
+            cache_read_input_tokens=1_000,
+            server_tool_use=None,
+        )
+        totals = UsageTotals(request_model="claude-haiku-5-5")
+        totals.accumulate(at_threshold)
+        totals.accumulate(over_threshold)
+        assert totals.tokens_by_model == {None: ModelTokenUsage(100_000, 0, 0, 0)}
+        assert totals.long_context_tokens_by_model == {None: ModelTokenUsage(99_000, 0, 1, 1_000)}
+
+        untiered = UsageTotals()
+        untiered.accumulate(over_threshold)
+        assert untiered.long_context_tokens_by_model == {}
+
+    def test_apply_to_stamps_the_long_context_group_and_compaction_failure(self):
+        from discord_claude.cogs.claude.responses import ParsedResponse
+
+        totals = UsageTotals(
+            compaction_failed=True,
+            long_context_tokens_by_model={None: ModelTokenUsage(200_000, 10, 0, 0)},
+        )
+        parsed = ParsedResponse()
+        totals.apply_to(parsed, 1_000_000)
+
+        assert parsed.compaction_failed is True
+        assert parsed.long_context_tokens_by_model == {None: ModelTokenUsage(200_000, 10, 0, 0)}
+        assert (
+            parsed.long_context_tokens_by_model[None]
+            is not totals.long_context_tokens_by_model[None]
+        )
+
     def test_prompt_tokens_is_the_full_prompt_of_the_latest_response(self):
         """prompt_tokens counts uncached, cache-read and cache-write input tokens of the
         most recent response only (not a running sum), and a compaction entry, which
@@ -940,7 +1199,8 @@ class TestUsageTotals:
 
     def test_accumulate_compaction_summary_bills_at_the_summary_model(self):
         """A manual compaction's summarizer call is grouped under COMPACTION_SUMMARY_MODEL
-        and leaves prompt_tokens unchanged."""
+        and leaves prompt_tokens unchanged. Its 158k-token prompt is over Haiku 5.5's
+        100,000-token threshold, so it goes in the long-context group."""
         totals = UsageTotals(prompt_tokens=160_000)
         totals.accumulate_compaction_summary(
             MagicMock(
@@ -953,7 +1213,8 @@ class TestUsageTotals:
         )
         totals.accumulate_compaction_summary(None)
 
-        assert totals.tokens_by_model == {
+        assert totals.tokens_by_model == {}
+        assert totals.long_context_tokens_by_model == {
             COMPACTION_SUMMARY_MODEL: ModelTokenUsage(158_000, 1_500, 0, 0)
         }
         assert totals.input_tokens == 158_000
@@ -1047,3 +1308,153 @@ class TestAvailableEmbedSpace:
         embed.title = "Title"
         space = available_embed_space([embed])
         assert space == DISCORD_EMBED_TOTAL_LIMIT - 1005
+
+
+class TestSafetyIdentifier:
+    USER_ID = 1234567890123456789
+    SECRET_KEY = b"operator-secret"
+
+    def _identifier(self, monkeypatch, user_id: int, key: bytes | None) -> str | None:
+        monkeypatch.setattr("discord_claude.util.SAFETY_IDENTIFIER_KEY", key)
+        return build_safety_identifier(user_id)
+
+    def test_is_64_lowercase_hex_chars(self, monkeypatch):
+        result = self._identifier(monkeypatch, self.USER_ID, self.SECRET_KEY)
+        assert result is not None
+        assert len(result) == 64
+        assert all(c in "0123456789abcdef" for c in result) is True
+
+    def test_is_hmac_sha256_of_the_decimal_user_id(self, monkeypatch):
+        expected = hmac.new(self.SECRET_KEY, str(self.USER_ID).encode(), hashlib.sha256).hexdigest()
+        assert self._identifier(monkeypatch, self.USER_ID, self.SECRET_KEY) == expected
+
+    def test_deterministic_per_user_and_key(self, monkeypatch):
+        first = self._identifier(monkeypatch, self.USER_ID, self.SECRET_KEY)
+        second = self._identifier(monkeypatch, self.USER_ID, self.SECRET_KEY)
+        assert first == second
+
+    def test_differs_across_users(self, monkeypatch):
+        first = self._identifier(monkeypatch, 1, self.SECRET_KEY)
+        second = self._identifier(monkeypatch, 2, self.SECRET_KEY)
+        assert first != second
+
+    def test_differs_across_keys(self, monkeypatch):
+        first = self._identifier(monkeypatch, self.USER_ID, b"secret-a")
+        second = self._identifier(monkeypatch, self.USER_ID, b"secret-b")
+        assert first != second
+
+    def test_does_not_expose_the_raw_or_unkeyed_id(self, monkeypatch):
+        result = self._identifier(monkeypatch, self.USER_ID, self.SECRET_KEY)
+        assert result is not None
+        unkeyed = hashlib.sha256(str(self.USER_ID).encode()).hexdigest()
+        assert result != str(self.USER_ID)
+        assert result != format(self.USER_ID, "x")
+        assert result != unkeyed
+        assert not unkeyed.startswith(result[:16])
+        assert str(self.USER_ID) not in result
+        assert format(self.USER_ID, "x") not in result
+
+    def test_no_identifier_without_a_key(self, monkeypatch):
+        assert self._identifier(monkeypatch, self.USER_ID, None) is None
+
+    def test_request_metadata_carries_the_identifier_as_user_id(self, monkeypatch):
+        monkeypatch.setattr("discord_claude.util.SAFETY_IDENTIFIER_KEY", self.SECRET_KEY)
+        expected = hmac.new(self.SECRET_KEY, str(self.USER_ID).encode(), hashlib.sha256).hexdigest()
+        assert request_metadata(self.USER_ID) == {"user_id": expected}
+
+    def test_request_metadata_is_none_without_a_key(self, monkeypatch):
+        monkeypatch.setattr("discord_claude.util.SAFETY_IDENTIFIER_KEY", None)
+        assert request_metadata(self.USER_ID) is None
+
+
+class TestDeriveSafetyIdentifierKey:
+    def test_secret_overrides_bot_token(self):
+        key = derive_safety_identifier_key("operator-secret", "discord-token")
+        assert key == b"operator-secret"
+
+    def test_secret_is_utf8_encoded(self):
+        assert derive_safety_identifier_key("s\u00e9cret", None) == "s\u00e9cret".encode()
+
+    def test_falls_back_to_a_key_derived_from_the_bot_token(self):
+        expected = hmac.new(b"discord-token", b"safety-identifier-v1", hashlib.sha256).digest()
+        assert SAFETY_IDENTIFIER_KEY_LABEL == b"safety-identifier-v1"
+        assert derive_safety_identifier_key(None, "discord-token") == expected
+        assert derive_safety_identifier_key("", "discord-token") == expected
+
+    def test_bot_token_fallback_is_not_the_raw_token(self):
+        assert derive_safety_identifier_key(None, "discord-token") != b"discord-token"
+
+    def test_different_bot_tokens_give_different_keys(self):
+        assert derive_safety_identifier_key(None, "token-a") != derive_safety_identifier_key(
+            None, "token-b"
+        )
+
+    def test_no_key_without_secret_or_bot_token(self):
+        assert derive_safety_identifier_key(None, None) is None
+        assert derive_safety_identifier_key("", "") is None
+
+    @pytest.mark.parametrize(
+        ("secret", "bot_token", "expected"),
+        [
+            pytest.param(
+                None,
+                "tok",
+                "e4c4e9a56e63186621396e88847c96bf5ebd4caae31c5b1097c7933eb939c85e",
+                id="bot-token-fallback",
+            ),
+            pytest.param(
+                "shared-secret",
+                "tok",
+                "1f4ae57d70d012644d5b186e086ba1651888e8dbb7cc311b6f9fefee5dc8862f",
+                id="secret-set",
+            ),
+        ],
+    )
+    def test_fixed_vectors_shared_with_sibling_bots(self, monkeypatch, secret, bot_token, expected):
+        """The same literal values discord-openai, discord-openrouter and discord-grok
+        produce for user 111222333, so a change to how the key or the user ID is
+        encoded fails here instead of giving one user different values per bot."""
+        key = derive_safety_identifier_key(secret, bot_token)
+        monkeypatch.setattr("discord_claude.util.SAFETY_IDENTIFIER_KEY", key)
+        assert build_safety_identifier(111222333) == expected
+        assert build_safety_identifier("111222333") == expected
+
+    def test_module_key_uses_the_secret_from_the_environment(self, monkeypatch):
+        monkeypatch.setenv("SAFETY_IDENTIFIER_SECRET", "env-secret")
+        with _fresh_util_module(monkeypatch) as util:
+            assert util.SAFETY_IDENTIFIER_KEY == b"env-secret"
+
+    def test_module_key_falls_back_to_bot_token_from_the_environment(self, monkeypatch):
+        monkeypatch.delenv("SAFETY_IDENTIFIER_SECRET", raising=False)
+        monkeypatch.setenv("BOT_TOKEN", "env-bot-token")
+        expected = derive_safety_identifier_key(None, "env-bot-token")
+        with _fresh_util_module(monkeypatch) as util:
+            assert expected == util.SAFETY_IDENTIFIER_KEY
+
+    def test_module_sends_no_identifier_without_either_env_var(self, monkeypatch):
+        monkeypatch.delenv("SAFETY_IDENTIFIER_SECRET", raising=False)
+        monkeypatch.delenv("BOT_TOKEN", raising=False)
+        with _fresh_util_module(monkeypatch) as util:
+            assert util.SAFETY_IDENTIFIER_KEY is None
+            assert util.build_safety_identifier(123) is None
+            assert util.request_metadata(123) is None
+
+
+@contextmanager
+def _fresh_util_module(monkeypatch):
+    """Import discord_claude.config.auth and discord_claude.util again from the env."""
+    monkeypatch.setattr("dotenv.load_dotenv", lambda *_, **__: None)
+    # Keep the package attributes pointing at the original modules after the test.
+    monkeypatch.setattr(discord_claude.config, "auth", discord_claude.config.auth)
+    monkeypatch.setattr(discord_claude, "util", discord_claude.util)
+    names = ("discord_claude.config.auth", "discord_claude.util")
+    saved = {name: sys.modules[name] for name in names if name in sys.modules}
+    for name in names:
+        sys.modules.pop(name, None)
+    try:
+        importlib.import_module("discord_claude.config.auth")
+        yield importlib.import_module("discord_claude.util")
+    finally:
+        for name in names:
+            sys.modules.pop(name, None)
+        sys.modules.update(saved)

@@ -376,3 +376,60 @@ class TestConfiguredMemoryPath:
         assert configured.exists()
         assert (configured / "999").exists()
         assert "No memory files found" in result
+
+
+class TestErrorMessagesOmitUserId:
+    """Memory tool results are sent to Anthropic, so error text must not name the
+    on-disk user directory, which contains the Discord user ID."""
+
+    USER_ID = 123456789012345678
+
+    def _run(self, tool_input):
+        return execute_memory_operation(user_id=self.USER_ID, tool_input=tool_input)
+
+    def test_create_under_a_file(self):
+        self._run({"command": "create", "path": "/memories/a.txt", "file_text": "x"})
+
+        result = self._run({"command": "create", "path": "/memories/a.txt/b.txt", "file_text": "y"})
+
+        assert result.startswith("Error: ")
+        assert "/memories/a.txt" in result
+        assert str(self.USER_ID) not in result
+
+    def test_rename_a_directory_into_itself(self):
+        self._run({"command": "create", "path": "/memories/d/f.txt", "file_text": "x"})
+
+        result = self._run(
+            {"command": "rename", "old_path": "/memories/d", "new_path": "/memories/d/sub"}
+        )
+
+        assert result.startswith("Error: ")
+        assert str(self.USER_ID) not in result
+
+    def test_file_name_too_long(self):
+        result = self._run(
+            {"command": "create", "path": "/memories/" + "x" * 300, "file_text": "x"}
+        )
+
+        assert result.startswith("Error: ")
+        assert str(self.USER_ID) not in result
+
+    def test_directory_listing_error(self, monkeypatch, tmp_path):
+        self._run({"command": "create", "path": "/memories/a.txt", "file_text": "x"})
+        user_dir = tmp_path / str(self.USER_ID)
+
+        def raise_permission_error(self, pattern):
+            raise PermissionError(13, "Permission denied", str(user_dir / "a.txt"))
+
+        monkeypatch.setattr(Path, "rglob", raise_permission_error)
+
+        result = self._run({"command": "view", "path": "/memories"})
+
+        assert result == "Error listing directory: [Errno 13] Permission denied: '/memories/a.txt'"
+
+    def test_message_still_naming_the_id_is_replaced(self):
+        from discord_claude.memory import _without_user_dir
+
+        message = f"[Errno 2] No such file or directory: '/elsewhere/{self.USER_ID}/a.txt'"
+
+        assert _without_user_dir(message, self.USER_ID) == "The memory operation failed."

@@ -2,8 +2,9 @@ import contextlib
 from datetime import UTC, date, datetime, timedelta
 from typing import Any
 
+from anthropic import APIError, transform_schema
 from discord import Member, User
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ValidationError
 
 from discord_claude.util import (
     ADVISOR_TOOL_NAME,
@@ -13,6 +14,7 @@ from discord_claude.util import (
     UsageTotals,
     calculate_cost,
     priced_model,
+    request_metadata,
 )
 
 from .responses import ParsedResponse
@@ -44,34 +46,28 @@ class ConversationSummary(BaseModel):
         )
 
 
-def _extract_text_blocks(response: Any) -> str:
-    content = getattr(response, "content", None) or []
-    parts: list[str] = []
-    for block in content:
-        text = block.get("text") if isinstance(block, dict) else getattr(block, "text", None)
-        if isinstance(text, str) and text.strip():
-            parts.append(text.strip())
-    return "\n\n".join(parts)
+# ConversationSummary as the structured-output format, in the form that
+# ``messages.parse(output_format=ConversationSummary)`` sends.
+SUMMARY_OUTPUT_CONFIG: dict[str, Any] = {
+    "format": {"type": "json_schema", "schema": transform_schema(ConversationSummary)}
+}
 
 
-def _render_compaction_summary(response: Any) -> str:
-    parsed_output = getattr(response, "parsed_output", None)
-    if isinstance(parsed_output, ConversationSummary):
-        return parsed_output.to_message_text()
-
-    if parsed_output is not None:
-        with contextlib.suppress(Exception):
-            return ConversationSummary.model_validate(parsed_output).to_message_text()
-
-    fallback_text = _extract_text_blocks(response).strip()
-    if not fallback_text:
-        fallback_text = (
-            "The prior conversation was compacted, but the structured summary could not "
-            "be parsed. Continue from the available context as best as possible."
-        )
-    if fallback_text.startswith("<summary"):
-        return fallback_text
-    return f"<summary>\n{fallback_text}\n</summary>"
+def _render_compaction_summary(response: Any) -> str | None:
+    """The summary as a user-message body, or None when the response text is not a
+    valid ConversationSummary (a refusal, an empty response, or JSON cut off at
+    max_tokens)."""
+    text = "".join(
+        getattr(block, "text", "")
+        for block in getattr(response, "content", None) or []
+        if getattr(block, "type", None) == "text"
+    )
+    if not text:
+        return None
+    try:
+        return ConversationSummary.model_validate_json(text).to_message_text()
+    except ValidationError:
+        return None
 
 
 MAX_ACTIVE_CONVERSATIONS = 100
@@ -126,11 +122,24 @@ async def compact_conversation(
     messages: list[dict[str, Any]],
     system: str | None = None,
     usage_totals: UsageTotals | None = None,
-) -> str:
+    user_id: int | None = None,
+) -> str | None:
     """Compact conversation history into a structured summary for non-compaction models.
 
-    When ``usage_totals`` is given, the summarizer call's usage is added to it so the
-    turn's cost includes it at COMPACTION_SUMMARY_MODEL's rates.
+    Returns the summary text, or None when the summarizer returned no valid
+    ConversationSummary or the call failed; in that case ``messages`` is left
+    unchanged, so the history is kept. The call uses ``messages.create`` with the
+    schema in ``output_config`` and validates the text here, not ``messages.parse``:
+    ``messages.parse`` raises pydantic's ValidationError for text that is not valid
+    JSON for the schema (output cut off at max_tokens, a refusal written as prose)
+    and discards the response with its usage.
+
+    When ``usage_totals`` is given, the usage of every response, a refusal or an
+    invalid summary included, is added to it so the turn's cost includes it at
+    COMPACTION_SUMMARY_MODEL's rates.
+
+    When ``user_id`` is given, the call carries that user's keyed identifier as
+    ``metadata.user_id`` (see request_metadata), like the chat requests.
     """
     summary_prompt = (
         "Summarize this conversation so it can continue in a fresh context window. "
@@ -143,23 +152,43 @@ async def compact_conversation(
         *_copy_messages_without_advisor_blocks(messages),
         {"role": "user", "content": summary_prompt},
     ]
-    parse_kwargs: dict[str, Any] = {
+    # Thinking is disabled because the summarizer would otherwise think by default and
+    # its thinking tokens count against max_tokens. No effort is sent (disabled
+    # thinking is accepted only at effort high or below) and no fallbacks (the
+    # summarizer rejects the parameter).
+    request_kwargs: dict[str, Any] = {
         "model": COMPACTION_SUMMARY_MODEL,
         "max_tokens": 4096,
         "messages": summary_messages,
-        "output_format": ConversationSummary,
+        "output_config": SUMMARY_OUTPUT_CONFIG,
+        "thinking": {"type": "disabled"},
     }
     if system:
-        parse_kwargs["system"] = system
+        request_kwargs["system"] = system
+    metadata = request_metadata(user_id) if user_id is not None else None
+    if metadata is not None:
+        request_kwargs["metadata"] = metadata
 
-    summary_response = await cog.client.messages.parse(**parse_kwargs)
+    try:
+        summary_response = await cog.client.messages.create(**request_kwargs)
+    except APIError as error:
+        cog.logger.warning(
+            "Compaction skipped: the summarizer call failed (%s: %s); the conversation "
+            "history was kept",
+            type(error).__name__,
+            error,
+        )
+        return None
     if usage_totals is not None:
         usage_totals.accumulate_compaction_summary(getattr(summary_response, "usage", None))
     summary_text = _render_compaction_summary(summary_response)
-    if not isinstance(getattr(summary_response, "parsed_output", None), ConversationSummary):
+    if summary_text is None:
         cog.logger.warning(
-            "Compaction summary structured output was unavailable; used text fallback"
+            "Compaction skipped: the summarizer returned no structured summary "
+            "(stop_reason=%s); the conversation history was kept",
+            getattr(summary_response, "stop_reason", None),
         )
+        return None
 
     messages.clear()
     messages.append({"role": "user", "content": summary_text})
@@ -243,17 +272,20 @@ def track_daily_cost(
     """Add this request's cost to the user's daily total and return request and daily totals."""
     # Each group of tokens bills at the rates of the model that produced it: a
     # refusal-fallback turn holds the declined model's attempt and the fallback
-    # model's answer, and a manual compaction adds the summarizer's call. A
-    # ParsedResponse without that breakdown bills its totals at the served model's
-    # rates.
-    tokens_by_model = parsed.tokens_by_model or {
-        parsed.served_model: ModelTokenUsage(
-            parsed.input_tokens,
-            parsed.output_tokens,
-            parsed.cache_creation_tokens,
-            parsed.cache_read_tokens,
-        )
-    }
+    # model's answer, and a manual compaction adds the summarizer's call. Requests
+    # whose prompt reached the model's long-context tier are grouped separately and
+    # bill at the tier's prices. A ParsedResponse without that breakdown bills its
+    # totals at the served model's standard rates.
+    tokens_by_model = parsed.tokens_by_model
+    if not tokens_by_model and not parsed.long_context_tokens_by_model:
+        tokens_by_model = {
+            parsed.served_model: ModelTokenUsage(
+                parsed.input_tokens,
+                parsed.output_tokens,
+                parsed.cache_creation_tokens,
+                parsed.cache_read_tokens,
+            )
+        }
     cost = sum(
         calculate_cost(
             priced_model(tokens_model, model),
@@ -261,8 +293,13 @@ def track_daily_cost(
             tokens.output_tokens,
             tokens.cache_creation_tokens,
             tokens.cache_read_tokens,
+            long_context=long_context,
         )
-        for tokens_model, tokens in tokens_by_model.items()
+        for long_context, groups in (
+            (False, tokens_by_model),
+            (True, parsed.long_context_tokens_by_model),
+        )
+        for tokens_model, tokens in groups.items()
     )
     cost += calculate_cost(model, 0, 0, web_search_requests=parsed.web_search_requests)
     if advisor_model and parsed.advisor_calls:
@@ -336,6 +373,7 @@ __all__ = [
     "CONVERSATION_TTL",
     "DAILY_COST_RETENTION_DAYS",
     "MAX_ACTIVE_CONVERSATIONS",
+    "SUMMARY_OUTPUT_CONFIG",
     "ConversationSummary",
     "_copy_messages_without_advisor_blocks",
     "_render_compaction_summary",

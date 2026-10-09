@@ -26,8 +26,7 @@ from discord_claude.util import (
     PER_MESSAGE_EFFORT_MODELS,
     PROGRAMMATIC_TOOL_CALLING_UNSUPPORTED_MODELS,
     REFUSAL_FALLBACK_BETA,
-    REFUSAL_FALLBACK_MODEL,
-    REFUSAL_FALLBACK_MODELS,
+    REFUSAL_FALLBACK_TARGETS,
     SAMPLING_LOCKED_MODELS,
     THINKING_DISPLAY_SUMMARIZED,
     THINKING_DISPLAY_UPDATES,
@@ -41,6 +40,7 @@ from discord_claude.util import (
     format_anthropic_error,
     get_default_advisor_model,
     manual_compaction_trigger,
+    request_metadata,
     supported_effort_levels,
     truncate_text,
 )
@@ -50,6 +50,7 @@ from .embed_delivery import send_embed_batches
 from .embeds import (
     append_citations_embed,
     append_compaction_embed,
+    append_compaction_failed_embed,
     append_context_warning_embed,
     append_fallback_embed,
     append_pricing_embed,
@@ -456,11 +457,16 @@ async def call_api_with_tool_loop(
     if use_compaction:
         betas.append("compact-2026-01-12")
         edits.append({"type": "compact_20260112"})
-    if model in REFUSAL_FALLBACK_MODELS:
+    fallback_model = REFUSAL_FALLBACK_TARGETS.get(model)
+    if fallback_model is not None:
         betas.append(REFUSAL_FALLBACK_BETA)
-        api_params["fallbacks"] = [{"model": REFUSAL_FALLBACK_MODEL}]
+        api_params["fallbacks"] = [{"model": fallback_model}]
+    # Every request of the loop carries the user's keyed identifier, not the Discord ID.
+    metadata = request_metadata(user_id)
+    if metadata is not None:
+        api_params["metadata"] = metadata
 
-    totals = UsageTotals()
+    totals = UsageTotals(request_model=model)
     context_window = MODEL_CONTEXT_WINDOWS.get(model, 200_000)
     compaction_trigger = manual_compaction_trigger(context_window)
     parsed: ParsedResponse | None = None
@@ -472,18 +478,31 @@ async def call_api_with_tool_loop(
         tokens included, because the top-level cache_control reports most of a long
         history as cache reads rather than input_tokens. It runs before each
         follow-up request of the tool loop and once more after the final response,
-        so the next user turn starts from the summary.
+        so the next user turn starts from the summary. When the summarizer returns no
+        summary the history is kept, and no further attempt is made in this turn.
         """
-        if use_compaction or totals.prompt_tokens <= compaction_trigger or len(messages) <= 1:
+        if (
+            use_compaction
+            or totals.compaction_failed
+            or totals.prompt_tokens <= compaction_trigger
+            or len(messages) <= 1
+        ):
             return
         cog.logger.info(
             "Prompt tokens (%d) exceeded compaction trigger (%.0f), compacting...",
             totals.prompt_tokens,
             compaction_trigger,
         )
-        await compact_conversation(
-            cog, messages, system=api_params.get("system"), usage_totals=totals
+        summary = await compact_conversation(
+            cog,
+            messages,
+            system=api_params.get("system"),
+            usage_totals=totals,
+            user_id=user_id,
         )
+        if summary is None:
+            totals.compaction_failed = True
+            return
         totals.context_compacted = True
         # The history is now the summary alone; the next response measures it again.
         totals.prompt_tokens = 0
@@ -648,6 +667,8 @@ async def handle_new_message_in_conversation(cog, message, conversation: Convers
         append_fallback_embed(embeds, params.model, parsed.served_model)
         if parsed.context_compacted:
             append_compaction_embed(embeds)
+        elif parsed.compaction_failed:
+            append_compaction_failed_embed(embeds)
         if parsed.context_warning:
             append_context_warning_embed(embeds)
         append_citations_embed(embeds, parsed.citations)
@@ -1011,6 +1032,8 @@ async def run_chat_command(
         append_fallback_embed(embeds, model, parsed.served_model)
         if parsed.context_compacted:
             append_compaction_embed(embeds)
+        elif parsed.compaction_failed:
+            append_compaction_failed_embed(embeds)
         if parsed.context_warning:
             append_context_warning_embed(embeds)
         append_citations_embed(embeds, parsed.citations)

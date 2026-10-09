@@ -351,6 +351,15 @@ class TestContextEmbeds:
         assert embeds[0].title == "Context Compacted"
         assert "summarized" in embeds[0].description
 
+    def test_compaction_failed_embed(self):
+        from discord_claude.cogs.claude.embeds import append_compaction_failed_embed
+
+        embeds = []
+        append_compaction_failed_embed(embeds)
+        assert len(embeds) == 1
+        assert embeds[0].title == "Context Not Compacted"
+        assert "kept in full" in embeds[0].description
+
 
 class TestFallbackEmbed:
     """Tests for the append_fallback_embed helper."""

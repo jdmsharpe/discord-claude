@@ -81,10 +81,25 @@ def execute_memory_operation(user_id: int, tool_input: dict[str, Any]) -> str:
             return _handle_rename(user_id, tool_input)
         raise AssertionError(f"Unhandled command: {command}")
     except ValueError as e:
-        return f"Error: {e}"
+        return f"Error: {_without_user_dir(str(e), user_id)}"
     except Exception as e:
         logger.error(f"Memory operation error: {e}", exc_info=True)
-        return f"Error: {e}"
+        return f"Error: {_without_user_dir(str(e), user_id)}"
+
+
+def _without_user_dir(message: str, user_id: int) -> str:
+    """Replace the on-disk user directory in an error message with ``/memories``.
+
+    OSError messages name the absolute path, which contains the Discord user ID, and
+    the message is sent to Anthropic as a tool result. A message that still contains
+    the ID after the replacement is replaced with a fixed one.
+    """
+    user_dir = get_memories_base_dir() / str(user_id)
+    for prefix in sorted({str(user_dir.resolve()), str(user_dir)}, key=len, reverse=True):
+        message = message.replace(prefix, "/memories")
+    if str(user_id) in message:
+        return "The memory operation failed."
+    return message
 
 
 def _ensure_user_memory_dir(user_id: int) -> Path:
@@ -107,14 +122,14 @@ def _handle_view(user_id: int, tool_input: dict[str, Any]) -> str:
         return f"The path {file_path} does not exist. Please provide a valid path."
 
     if target.is_dir():
-        return _list_directory(target, file_path)
+        return _list_directory(user_id, target, file_path)
 
     # Read file with optional view_range
     view_range = tool_input.get("view_range")
     return _read_file(target, file_path, view_range)
 
 
-def _list_directory(target: Path, display_path: str) -> str:
+def _list_directory(user_id: int, target: Path, display_path: str) -> str:
     """List files and directories up to 2 levels deep."""
     items: list[str] = []
     try:
@@ -133,7 +148,7 @@ def _list_directory(target: Path, display_path: str) -> str:
             size = _human_readable_size(item.stat().st_size) if item.is_file() else "0"
             items.append(f"{size}\t/memories/{relative}")
     except OSError as e:
-        return f"Error listing directory: {e}"
+        return f"Error listing directory: {_without_user_dir(str(e), user_id)}"
 
     if not items:
         return "No memory files found."
