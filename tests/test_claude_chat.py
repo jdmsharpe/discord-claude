@@ -485,6 +485,32 @@ class TestCallApiWithToolLoop:
         assert {"type": "compact_20260112"} in call_kwargs["context_management"]["edits"]
         assert call_kwargs["cache_control"] == {"type": "ephemeral", "ttl": "1h"}
 
+    async def test_haiku_5_5_requests_send_the_compaction_beta(self, cog):
+        """Haiku 5.5 requests send the compact-2026-01-12 beta, which made the probe
+        responses carry usage.iterations, so the price tier is chosen per iterations
+        entry. Without iterations a server-tool request is tiered on its summed usage."""
+        mock_response = MagicMock()
+        text_block = MagicMock()
+        text_block.type = "text"
+        text_block.text = "Hello!"
+        text_block.citations = None
+        mock_response.content = [text_block]
+        mock_response.stop_reason = "end_turn"
+        mock_response.usage = None
+        cog.client.beta.messages.create = AsyncMock(return_value=mock_response)
+        cog.client.messages.create = AsyncMock(return_value=mock_response)
+
+        await cog._call_api_with_tool_loop(
+            api_params={"model": "claude-haiku-5-5", "max_tokens": 1024},
+            messages=[{"role": "user", "content": "Hi"}],
+            user_id=123,
+        )
+
+        cog.client.messages.create.assert_not_called()
+        call_kwargs = cog.client.beta.messages.create.call_args[1]
+        assert "compact-2026-01-12" in call_kwargs["betas"]
+        assert {"type": "compact_20260112"} in call_kwargs["context_management"]["edits"]
+
     @pytest.mark.parametrize(
         ("model", "target"),
         [
