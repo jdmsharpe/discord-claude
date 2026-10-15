@@ -19,7 +19,7 @@ A Discord bot built on Pycord 2.0 that wraps Anthropic's Claude API, providing a
 ## Features
 
 - **Multi-turn Conversations:** Start conversations with Claude that maintain context across multiple messages.
-- **Multiple Claude Models:** Choose from Claude Fable (5.1, 5), Opus (5.5, 5, 4.8, 4.7, 4.6, 4.5), Sonnet (5.5, 5, 4.6, 4.5), and Haiku (5.5, 4.5). Claude Sonnet 4.5 is deprecated and retires on 2026-11-30 (replacement: Claude Sonnet 5.5); it stays selectable until then.
+- **Multiple Claude Models:** Choose from Claude Fable (5.1, 5), Opus (5.5, 5, 4.8, 4.7, 4.6, 4.5), Sonnet (5.5, 5, 4.6, 4.5), and Haiku (5.5, 4.5).
 - **Refusal Fallback (Beta):** If the safety classifiers of Claude Fable 5.1, Claude Fable 5, Claude Opus 5.5, or Claude Opus 5 decline a request, the API retries it on Claude Opus 4.8 in the same round trip; for Claude Sonnet 5.5 the retry runs on Claude Sonnet 5, the only fallback model the API accepts for it. Claude Haiku 5.5 has safety classifiers but does not support a fallback. The response notes the fallback, and cost tracking bills each attempt at the rates of the model that ran it.
 - **Multimodal Input:** Attach images (JPEG, PNG, GIF, WEBP), PDFs, or text files (TXT, MD, CSV).
 - **Built-In Tools:** Enable web search, web fetch, code execution, and memory with `tool_choice` control (`auto` / `none`) and mid-conversation toggles. On Haiku 4.5, which lacks programmatic tool calling, the web tools are sent with `allowed_callers: ["direct"]` so they work instead of failing. Code execution uses `code_execution_20260521`, which can be enabled together with the web tools.
