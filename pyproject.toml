@@ -14,7 +14,7 @@ authors = [
 ]
 dependencies = [
   "aiohttp~=3.14",
-  "anthropic~=1.12",
+  "anthropic~=1.14",
   "pydantic~=2.13",
   "py-cord~=2.8",
   "python-dotenv~=1.2",
