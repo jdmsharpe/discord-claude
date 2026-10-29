@@ -27,7 +27,6 @@ from discord_claude.util import (
     PROGRAMMATIC_TOOL_CALLING_UNSUPPORTED_MODELS,
     REFUSAL_FALLBACK_BETA,
     REFUSAL_FALLBACK_TARGETS,
-    SAMPLING_LOCKED_MODELS,
     THINKING_DISPLAY_SUMMARIZED,
     THINKING_DISPLAY_UPDATES,
     THINKING_DISPLAY_UPDATES_BETA,
@@ -103,14 +102,11 @@ def build_thinking_config(params: ChatCompletionParameters) -> dict[str, Any] | 
 
 def validate_request_configuration(params: ChatCompletionParameters) -> str | None:
     """Validate request options before dispatching to Anthropic."""
+    if params.fast and params.model != "claude-opus-5-5":
+        return "Fast mode is available here only for `claude-opus-5-5` (2x token prices)."
     tool_choice = params.tool_choice
     has_thinking = build_thinking_config(params) is not None
     advisor_model = params.advisor_model
-    sampling_parameters = {
-        "temperature": params.temperature,
-        "top_p": params.top_p,
-        "top_k": params.top_k,
-    }
 
     if params.model in ADAPTIVE_ONLY_THINKING_MODELS and params.thinking_budget is not None:
         return (
@@ -128,17 +124,6 @@ def validate_request_configuration(params: ChatCompletionParameters) -> str | No
             f"thinking display `updates` is only available on {supported_models}. "
             "Use `summarized` for this model."
         )
-
-    if params.model in SAMPLING_LOCKED_MODELS:
-        overridden_parameters = [
-            name for name, value in sampling_parameters.items() if value is not None
-        ]
-        if overridden_parameters:
-            formatted_parameters = ", ".join(f"`{name}`" for name in overridden_parameters)
-            return (
-                f"`{params.model}` does not support custom sampling parameters. "
-                f"Leave {formatted_parameters} unset for this model."
-            )
 
     if params.effort is not None:
         supported_levels = supported_effort_levels(params.model)
@@ -222,6 +207,8 @@ def build_api_params(
         "max_tokens": params.max_tokens,
         "messages": messages,
     }
+    if params.fast:
+        api_params["speed"] = "fast"
     thinking_config = build_thinking_config(params)
     if thinking_config is not None:
         api_params["thinking"] = thinking_config
@@ -230,19 +217,6 @@ def build_api_params(
         output_config["effort"] = params.effort
     if params.system:
         api_params["system"] = params.system
-    # anthropic 1.x dropped temperature/top_p/top_k from the typed request
-    # signature; extra_body merges them flat into the JSON request body.
-    sampling_parameters = {
-        name: value
-        for name, value in (
-            ("temperature", params.temperature),
-            ("top_p", params.top_p),
-            ("top_k", params.top_k),
-        )
-        if value is not None
-    }
-    if sampling_parameters:
-        api_params["extra_body"] = sampling_parameters
     mcp_presets, mcp_error = resolve_mcp_presets(params.mcp_preset_names)
     if mcp_error:
         raise ValueError(mcp_error)
@@ -461,12 +435,16 @@ async def call_api_with_tool_loop(
     if fallback_model is not None:
         betas.append(REFUSAL_FALLBACK_BETA)
         api_params["fallbacks"] = [{"model": fallback_model}]
+        if api_params.get("speed") == "fast":
+            # Fast mode is enabled only for the requested Opus 5.5 model.
+            # Its fallback must not inherit a preview-only fast-mode request.
+            api_params["fallbacks"][0]["speed"] = "standard"
     # Every request of the loop carries the user's keyed identifier, not the Discord ID.
     metadata = request_metadata(user_id)
     if metadata is not None:
         api_params["metadata"] = metadata
 
-    totals = UsageTotals(request_model=model)
+    totals = UsageTotals(request_model=model, request_speed=api_params.get("speed"))
     context_window = MODEL_CONTEXT_WINDOWS.get(model, 200_000)
     compaction_trigger = manual_compaction_trigger(context_window)
     parsed: ParsedResponse | None = None
@@ -831,9 +809,7 @@ async def run_chat_command(
     system: str | None = None,
     attachment: Attachment | None = None,
     max_tokens: int = 16384,
-    temperature: float | None = None,
-    top_p: float | None = None,
-    top_k: int | None = None,
+    fast: bool = False,
     effort: str | None = None,
     thinking_budget: int | None = None,
     thinking_display: str = THINKING_DISPLAY_SUMMARIZED,
@@ -940,9 +916,7 @@ async def run_chat_command(
             model=model,
             system=system,
             max_tokens=max_tokens,
-            temperature=temperature,
-            top_p=top_p,
-            top_k=top_k,
+            fast=fast,
             effort=effort,
             thinking_budget=thinking_budget,
             thinking_display=thinking_display,
@@ -987,12 +961,8 @@ async def run_chat_command(
         if system:
             description += f"**System:** {truncate_text(system, 500)}\n"
         description += f"**Max Tokens:** {max_tokens}\n"
-        if temperature is not None:
-            description += f"**Temperature:** {temperature}\n"
-        if top_p is not None:
-            description += f"**Top P:** {top_p}\n"
-        if top_k is not None:
-            description += f"**Top K:** {top_k}\n"
+        if fast:
+            description += "**Speed:** Fast (2x token prices)\n"
         if effort is not None:
             description += f"**Effort:** {effort}\n"
         if thinking_budget is not None:

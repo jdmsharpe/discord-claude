@@ -254,20 +254,6 @@ class TestToolChoiceSupport:
         assert error is not None
         assert "only supports adaptive thinking" in error
 
-    def test_validate_request_configuration_rejects_sampling_overrides_for_opus_4_7(self):
-        from discord_claude.cogs.claude.cog import ClaudeCog
-        from discord_claude.util import ChatCompletionParameters
-
-        params = ChatCompletionParameters(
-            model="claude-opus-4-7",
-            temperature=0.7,
-        )
-
-        error = ClaudeCog._validate_request_configuration(params)
-
-        assert error is not None
-        assert "does not support custom sampling parameters" in error
-
     def test_validate_request_configuration_rejects_effort_for_haiku_4_5(self):
         from discord_claude.cogs.claude.cog import ClaudeCog
         from discord_claude.util import ChatCompletionParameters

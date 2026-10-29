@@ -25,15 +25,14 @@ class TestClaudeCogIntegration:
         call_kwargs = mock_anthropic_client.messages.create.call_args[1]
         assert call_kwargs["system"] == "You are a helpful assistant."
 
-    async def test_messages_create_with_temperature(self, mock_anthropic_client):
-        """Sampling parameters should reach the SDK through extra_body."""
+    async def test_messages_create_omits_removed_sampling_parameters(self, mock_anthropic_client):
+        """The new API version rejects sampling, including values in extra_body."""
         from discord_claude.cogs.claude.chat import build_api_params
         from discord_claude.util import ChatCompletionParameters
 
         params = ChatCompletionParameters(
             model="claude-opus-4-6",
             max_tokens=1024,
-            temperature=0.7,
         )
         api_params = build_api_params(params, [{"role": "user", "content": "Be creative!"}])
 
@@ -41,7 +40,9 @@ class TestClaudeCogIntegration:
 
         call_kwargs = mock_anthropic_client.messages.create.call_args[1]
         assert "temperature" not in call_kwargs
-        assert call_kwargs["extra_body"] == {"temperature": 0.7}
+        assert "top_p" not in call_kwargs
+        assert "top_k" not in call_kwargs
+        assert "extra_body" not in call_kwargs
 
     async def test_messages_create_multi_turn(self, mock_anthropic_client):
         """Test multi-turn conversation."""

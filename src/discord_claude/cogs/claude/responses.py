@@ -43,6 +43,7 @@ class ParsedResponse:
     # long-context tier.
     tokens_by_model: dict[str | None, ModelTokenUsage] = field(default_factory=dict)
     long_context_tokens_by_model: dict[str | None, ModelTokenUsage] = field(default_factory=dict)
+    fast_tokens_by_model: dict[str | None, ModelTokenUsage] = field(default_factory=dict)
 
 
 def extract_response_content(response) -> ParsedResponse:

@@ -30,7 +30,6 @@ from discord_claude.util import (
     REFUSAL_FALLBACK_MODELS,
     REFUSAL_FALLBACK_TARGETS,
     SAFETY_IDENTIFIER_KEY_LABEL,
-    SAMPLING_LOCKED_MODELS,
     THINKING_DISPLAY_UPDATES_MODELS,
     XHIGH_EFFORT_MODELS,
     ChatCompletionParameters,
@@ -158,7 +157,6 @@ class TestChatCompletionParameters:
         params = ChatCompletionParameters(model="claude-sonnet-4")
         assert params.model == "claude-sonnet-4"
         assert params.system is None
-        assert params.temperature is None
         assert params.effort is None
         assert params.max_tokens == 16384
         assert params.paused is False
@@ -644,7 +642,6 @@ class TestModelCapabilitySets:
         """
         assert "claude-opus-5" in ADAPTIVE_THINKING_MODELS
         assert "claude-opus-5" in ADAPTIVE_ONLY_THINKING_MODELS
-        assert "claude-opus-5" in SAMPLING_LOCKED_MODELS
         assert "claude-opus-5" not in EXTENDED_THINKING_MODELS
 
     def test_fable_5_1_capability_membership(self):
@@ -653,7 +650,6 @@ class TestModelCapabilitySets:
         on forced tool use (live-probed 2026-09-03)."""
         assert "claude-fable-5-1" in ADAPTIVE_THINKING_MODELS
         assert "claude-fable-5-1" in ADAPTIVE_ONLY_THINKING_MODELS
-        assert "claude-fable-5-1" in SAMPLING_LOCKED_MODELS
         assert "claude-fable-5-1" in COMPACTION_MODELS
         assert "claude-fable-5-1" in REFUSAL_FALLBACK_MODELS
         assert "claude-fable-5-1" not in EXTENDED_THINKING_MODELS
@@ -670,7 +666,6 @@ class TestModelCapabilitySets:
         for member_of in (
             ADAPTIVE_THINKING_MODELS,
             ADAPTIVE_ONLY_THINKING_MODELS,
-            SAMPLING_LOCKED_MODELS,
             FORCED_TOOL_CHOICE_UNSUPPORTED_MODELS,
             THINKING_DISPLAY_UPDATES_MODELS,
             PER_MESSAGE_EFFORT_MODELS,
@@ -707,7 +702,6 @@ class TestModelCapabilitySets:
         for member_of in (
             ADAPTIVE_THINKING_MODELS,
             ADAPTIVE_ONLY_THINKING_MODELS,
-            SAMPLING_LOCKED_MODELS,
             PER_MESSAGE_EFFORT_MODELS,
             EFFORT_MODELS,
             XHIGH_EFFORT_MODELS,

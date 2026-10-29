@@ -522,7 +522,10 @@ class TestCallApiWithToolLoop:
             ("claude-sonnet-5-5", "claude-sonnet-5"),
         ],
     )
-    async def test_refusal_fallback_models_send_their_fallback_target(self, cog, model, target):
+    @pytest.mark.parametrize("fast", [False, True])
+    async def test_refusal_fallback_models_send_their_fallback_target(
+        self, cog, model, target, fast
+    ):
         """Every classifier model that accepts `fallbacks` carries the refusal-fallback beta
         and the one explicit target the API permits for it."""
         mock_response = MagicMock()
@@ -536,14 +539,16 @@ class TestCallApiWithToolLoop:
         cog.client.beta.messages.create = AsyncMock(return_value=mock_response)
 
         await cog._call_api_with_tool_loop(
-            api_params={"model": model, "max_tokens": 1024},
+            api_params={"model": model, "max_tokens": 1024, **({"speed": "fast"} if fast else {})},
             messages=[{"role": "user", "content": "Hi"}],
             user_id=123,
         )
 
         call_kwargs = cog.client.beta.messages.create.call_args[1]
         assert "server-side-fallback-2026-06-01" in call_kwargs["betas"]
-        assert call_kwargs["fallbacks"] == [{"model": target}]
+        assert call_kwargs["fallbacks"] == [
+            {"model": target, **({"speed": "standard"} if fast else {})}
+        ]
 
     @pytest.mark.parametrize("model", ["claude-sonnet-5", "claude-haiku-5-5"])
     async def test_model_without_fallback_support_sends_no_fallback(self, cog, model):

@@ -151,24 +151,6 @@ ADAPTIVE_THINKING_MODELS = {
     "claude-sonnet-4-6",
 }
 
-# Models that reject explicit sampling parameter overrides.
-# claude-opus-5 and claude-sonnet-5 join the effort-parameter generation
-# (Fable 5 / 5.1, Opus 4.8/4.7). The anthropic 1.x SDK no longer exposes
-# temperature/top_p/top_k as typed request parameters, so build_api_params
-# sends them through extra_body; this set gates that path so these models
-# never receive the values and return a 400 from the API.
-SAMPLING_LOCKED_MODELS = {
-    "claude-fable-5-1",
-    "claude-fable-5",
-    "claude-opus-5-5",
-    "claude-opus-5",
-    "claude-sonnet-5-5",
-    "claude-sonnet-5",
-    "claude-haiku-5-5",
-    "claude-opus-4-8",
-    "claude-opus-4-7",
-}
-
 # Models that 400 on forced tool use — `tool_choice` type "any" or "tool"
 # ("tool_choice: type \"tool\" and \"any\" are not supported for this model"):
 # thinking is always on for them and a forced call
@@ -561,6 +543,7 @@ class UsageTotals:
     # The model the requests were sent to. Usage that names no model bills at its
     # rates; it is needed here to choose that usage's price tier.
     request_model: str | None = None
+    request_speed: str | None = None
     # The token counts above, grouped by the model whose rates apply, for requests
     # billed at the model's standard prices. The None key is the request model:
     # top-level usage, compaction entries and entries that name no model.
@@ -569,12 +552,16 @@ class UsageTotals:
     # long-context tier (long_context_applies). Each request is priced on its own,
     # so one turn can hold tokens in both dicts.
     long_context_tokens_by_model: dict[str | None, ModelTokenUsage] = field(default_factory=dict)
+    # Fast mode is opt-in on Opus 5.5 and bills token/cache usage at 2x.
+    fast_tokens_by_model: dict[str | None, ModelTokenUsage] = field(default_factory=dict)
     # Full prompt size of the most recent response (uncached + cache-read +
     # cache-write input tokens): the measure for the context warning and the manual
     # compaction trigger.
     prompt_tokens: int = 0
 
-    def _accumulate_executor_usage(self, usage: Any, model: str | None = None) -> None:
+    def _accumulate_executor_usage(
+        self, usage: Any, model: str | None = None, speed: str | None = None
+    ) -> None:
         """Add one request's usage, billed at `model`'s rates (None: the request
         model's) and at the price tier its own prompt size falls in."""
         input_tokens = getattr(usage, "input_tokens", 0) or 0
@@ -592,6 +579,9 @@ class UsageTotals:
             and long_context_applies(pricing_model, _prompt_tokens(usage))
             else self.tokens_by_model
         )
+        actual_speed = getattr(usage, "speed", None) or speed
+        if actual_speed == "fast" and pricing_model == "claude-opus-5-5":
+            by_model = self.fast_tokens_by_model
         bucket = by_model.setdefault(model, ModelTokenUsage())
         bucket.input_tokens += input_tokens
         bucket.output_tokens += output_tokens
@@ -626,6 +616,9 @@ class UsageTotals:
 
         iterations = getattr(usage, "iterations", None)
         if isinstance(iterations, (list, tuple)):
+            has_fallback = any(
+                getattr(entry, "type", None) == "fallback_message" for entry in iterations
+            )
             for iteration in iterations:
                 iteration_type = getattr(iteration, "type", None)
                 if iteration_type == "advisor_message":
@@ -636,7 +629,17 @@ class UsageTotals:
                     # "message" entry and the fallback model's "fallback_message"
                     # entry name different models. Each entry is a separate
                     # sampling request, so its price tier comes from its own prompt.
-                    self._accumulate_executor_usage(iteration, _usage_model(iteration))
+                    speed = getattr(usage, "speed", None)
+                    if (
+                        has_fallback
+                        and self.request_speed == "fast"
+                        and iteration_type == "message"
+                        and _usage_model(iteration) in {None, self.request_model}
+                    ):
+                        # The returned answer may be from a standard-speed fallback;
+                        # the original attempt still used the requested fast speed.
+                        speed = "fast"
+                    self._accumulate_executor_usage(iteration, _usage_model(iteration), speed)
                     # The last sampling entry gives the context size; a compaction
                     # entry reports only the summarisation call.
                     self.prompt_tokens = _prompt_tokens(iteration)
@@ -644,7 +647,7 @@ class UsageTotals:
                     # Server-side compaction (compact_20260112): the summarisation
                     # call bills at the request model's rates and is excluded from
                     # the top-level input/output counts, so it is added here.
-                    self._accumulate_executor_usage(iteration)
+                    self._accumulate_executor_usage(iteration, speed=getattr(usage, "speed", None))
                     self.context_compacted = True
         else:
             self._accumulate_executor_usage(usage)
@@ -688,6 +691,9 @@ class UsageTotals:
         parsed.long_context_tokens_by_model = {
             model: replace(tokens) for model, tokens in self.long_context_tokens_by_model.items()
         }
+        parsed.fast_tokens_by_model = {
+            model: replace(tokens) for model, tokens in self.fast_tokens_by_model.items()
+        }
         parsed.context_compacted = self.context_compacted
         parsed.compaction_failed = self.compaction_failed
         parsed.context_warning = self.prompt_tokens > context_window * CONTEXT_WARNING_THRESHOLD
@@ -727,9 +733,7 @@ class ChatCompletionParameters:
 
     model: str
     system: str | None = None
-    temperature: float | None = None
-    top_p: float | None = None
-    top_k: int | None = None
+    fast: bool = False
     max_tokens: int = 16384
     conversation_starter: Member | User | None = None
     conversation_id: int | None = None

@@ -49,7 +49,7 @@ Start a conversation with Claude.
 - **`thinking_budget`**: Token budget for legacy models that still support extended thinking budgets.
 - **`thinking_display`**: `summarized` (default) shows Claude's summarized reasoning in a spoiler after each reply. `updates` (Fable 5.1, Fable 5, Opus 5.5, and Sonnet 5.5 only) hides the reasoning and instead posts the short progress lines the model writes between tool calls while the tools run, instead of showing only the typing indicator until the reply is ready.
 - **`tool_choice`**: Tool behavior for enabled tools (`auto` or `none`; Fable 5.1, Opus 5.5, and Sonnet 5.5 reject forced tool use entirely).
-- **Advanced Tuning**: `temperature`, `top_p`, `top_k` (supported models only).
+- **Fast Mode**: set `fast=true` with Opus 5.5 for faster responses throughout the conversation at 2x token and cache prices; tool fees keep their normal rates.
 - **`mcp`**: Optional comma-separated MCP preset names (persists for the life of the conversation).
 
 ### `/claude effort`

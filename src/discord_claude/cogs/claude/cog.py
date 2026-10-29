@@ -275,29 +275,17 @@ class ClaudeCog(commands.Cog):
         type=int,
     )
     @option(
-        "temperature",
-        description="(Advanced) Controls the randomness of the model. 0.0 to 1.0. (default: not set)",
-        required=False,
-        type=float,
-    )
-    @option(
-        "top_p",
-        description="(Advanced) Nucleus sampling. 0.0 to 1.0. (default: not set)",
-        required=False,
-        type=float,
-    )
-    @option(
-        "top_k",
-        description="(Advanced) Limits sampling to top K tokens. (default: not set)",
-        required=False,
-        type=int,
-    )
-    @option(
         "effort",
         description="Control response effort: low, medium, high, xhigh, max (higher = more thorough). (default: not set)",
         required=False,
         choices=RESPONSE_EFFORT_CHOICES,
         type=str,
+    )
+    @option(
+        "fast",
+        description="Faster Opus 5.5 responses for this conversation; 2x token prices. (default: false)",
+        required=False,
+        type=bool,
     )
     @option(
         "thinking_budget",
@@ -363,9 +351,7 @@ class ClaudeCog(commands.Cog):
         system: str | None = None,
         attachment: Attachment | None = None,
         max_tokens: int = 16384,
-        temperature: float | None = None,
-        top_p: float | None = None,
-        top_k: int | None = None,
+        fast: bool = False,
         effort: str | None = None,
         thinking_budget: int | None = None,
         thinking_display: str = "summarized",
@@ -385,9 +371,7 @@ class ClaudeCog(commands.Cog):
             system=system,
             attachment=attachment,
             max_tokens=max_tokens,
-            temperature=temperature,
-            top_p=top_p,
-            top_k=top_k,
+            fast=fast,
             effort=effort,
             thinking_budget=thinking_budget,
             thinking_display=thinking_display,

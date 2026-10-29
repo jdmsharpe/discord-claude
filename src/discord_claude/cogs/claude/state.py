@@ -277,7 +277,11 @@ def track_daily_cost(
     # bill at the tier's prices. A ParsedResponse without that breakdown bills its
     # totals at the served model's standard rates.
     tokens_by_model = parsed.tokens_by_model
-    if not tokens_by_model and not parsed.long_context_tokens_by_model:
+    if (
+        not tokens_by_model
+        and not parsed.long_context_tokens_by_model
+        and not parsed.fast_tokens_by_model
+    ):
         tokens_by_model = {
             parsed.served_model: ModelTokenUsage(
                 parsed.input_tokens,
@@ -287,7 +291,8 @@ def track_daily_cost(
             )
         }
     cost = sum(
-        calculate_cost(
+        multiplier
+        * calculate_cost(
             priced_model(tokens_model, model),
             tokens.input_tokens,
             tokens.output_tokens,
@@ -295,9 +300,10 @@ def track_daily_cost(
             tokens.cache_read_tokens,
             long_context=long_context,
         )
-        for long_context, groups in (
-            (False, tokens_by_model),
-            (True, parsed.long_context_tokens_by_model),
+        for long_context, multiplier, groups in (
+            (False, 1, tokens_by_model),
+            (True, 1, parsed.long_context_tokens_by_model),
+            (False, 2, parsed.fast_tokens_by_model),
         )
         for tokens_model, tokens in groups.items()
     )

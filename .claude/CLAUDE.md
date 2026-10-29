@@ -1,5 +1,13 @@
 # Discord Claude Bot - Developer Reference
 
+## SDK sweep — 2026-10-28
+
+- `anthropic~=2.3` uses API version `2026-10-21`; `temperature`, `top_p`, and `top_k` were removed from the command, conversation parameters and request builder for every model, as required by https://platform.claude.com/docs/en/api/migration-2026-10-21.
+- `/claude chat fast:true` is opt-in for Opus 5.5 and persists for the conversation. Requests carry `speed="fast"` without a fast-mode beta header; refusal fallbacks explicitly use standard speed. Billing separates confirmed fast Opus 5.5 token/cache usage (2x) from ordinary usage, fallback models, advisor calls and flat tool fees; https://platform.claude.com/docs/en/build-with-claude/fast-mode.
+- Live checks on this SDK returned `usage.iterations` with `compact-2026-01-12` and confirmed Opus 5.5 `usage.speed="fast"`. The complete bot request with a standard-speed fallback was also accepted. Wire tests cover sampling omission on every selectable model.
+- Embed fallback uploads now reconstruct files from saved bytes, preserving filenames, spoiler flags and descriptions after the first send consumes or closes its stream; the helper stays byte-identical across all five AI bots.
+
+
 ## Quick Start
 
 ```bash
