@@ -8,6 +8,7 @@ from discord import ApplicationContext, Attachment, Colour, Embed
 
 from discord_claude.config.auth import SHOW_COST_EMBEDS
 from discord_claude.config.mcp import parse_mcp_preset_names, resolve_mcp_presets
+from discord_claude.stickers import text_with_stickers
 from discord_claude.util import (
     ADAPTIVE_ONLY_THINKING_MODELS,
     ADAPTIVE_THINKING_MODELS,
@@ -605,8 +606,9 @@ async def handle_new_message_in_conversation(cog, message, conversation: Convers
         typing_task = asyncio.create_task(keep_typing(cog, message.channel))
 
         user_content: list[dict[str, Any]] = []
-        if message.content:
-            user_content.append({"type": "text", "text": message.content})
+        text = text_with_stickers(message.content, message.stickers)
+        if text:
+            user_content.append({"type": "text", "text": text})
         if message.attachments:
             for attachment in message.attachments:
                 attachment_data = await fetch_attachment_bytes(cog, attachment)
@@ -618,6 +620,15 @@ async def handle_new_message_in_conversation(cog, message, conversation: Convers
                     )
                     if content_block:
                         user_content.append(content_block)
+
+        if not user_content:
+            # No text, no sticker and no attachment that yields a content block: an empty
+            # user turn is a 400, and the error path below would end the conversation.
+            cog.logger.debug(
+                "Ignoring follow-up with nothing to send in conversation %s.",
+                params.conversation_id,
+            )
+            return
 
         messages.append({"role": "user", "content": user_content})
         api_params = build_api_params(params, messages)

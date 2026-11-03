@@ -1,3 +1,4 @@
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -783,6 +784,87 @@ class TestRunChatCommand:
         assert conversation.messages[:2] == history
         assert len(conversation.messages) == 4  # the new user turn and the reply
         assert len(_summarizer_calls(cog.client.messages.create)) == 1
+
+    async def test_sticker_only_follow_up_sends_the_sticker_name(self, cog, mock_discord_message):
+        """A sticker-only message has no text and no attachments. It used to append an
+        empty user turn, which the API rejects (BadRequestError), and the error path then
+        removed the conversation; the sticker's name is now the turn's text."""
+        from discord_claude.util import ChatCompletionParameters, Conversation
+
+        mock_response = MagicMock()
+        text_block = MagicMock()
+        text_block.type = "text"
+        text_block.text = "Nice sticker."
+        text_block.citations = None
+        mock_response.content = [text_block]
+        mock_response.stop_reason = "end_turn"
+        mock_response.usage = _make_usage(input_tokens=100, output_tokens=10)
+        cog.client.messages.create = AsyncMock(return_value=mock_response)
+        mock_discord_message.reply = AsyncMock(return_value=MagicMock(id=456))
+        mock_discord_message.content = ""
+        mock_discord_message.attachments = []
+        mock_discord_message.stickers = [SimpleNamespace(name="EEYUP")]
+
+        params = ChatCompletionParameters(
+            model="claude-haiku-4-5",
+            conversation_starter=mock_discord_message.author,
+            channel_id=mock_discord_message.channel.id,
+            conversation_id=123,
+        )
+        history = [
+            {"role": "user", "content": "Hi"},
+            {"role": "assistant", "content": "Hi! What can I help you with?"},
+        ]
+        conversation = Conversation(params=params, messages=list(history))
+        conv_key = (mock_discord_message.author.id, mock_discord_message.channel.id)
+        cog.conversations[conv_key] = conversation
+
+        with patch("discord_claude.cogs.claude.chat.keep_typing", AsyncMock()):
+            await cog.handle_new_message_in_conversation(mock_discord_message, conversation)
+
+        cog.client.messages.create.assert_awaited_once()
+        assert conversation.messages[:2] == history
+        assert conversation.messages[2] == {
+            "role": "user",
+            "content": [{"type": "text", "text": "[Sticker: EEYUP]"}],
+        }
+        assert cog.conversations[conv_key] is conversation
+
+    async def test_follow_up_with_nothing_to_send_is_ignored_and_keeps_the_conversation(
+        self, cog, mock_discord_message
+    ):
+        """A message with no text, no sticker and no attachment would append an empty user
+        turn, which the API rejects; it is ignored with the history unchanged."""
+        from discord_claude.util import ChatCompletionParameters, Conversation
+
+        cog.client.messages.create = AsyncMock()
+        cog.client.beta.messages.create = AsyncMock()
+        mock_discord_message.content = ""
+        mock_discord_message.attachments = []
+        mock_discord_message.stickers = []
+
+        params = ChatCompletionParameters(
+            model="claude-opus-5-5",
+            conversation_starter=mock_discord_message.author,
+            channel_id=mock_discord_message.channel.id,
+            conversation_id=123,
+        )
+        history = [
+            {"role": "user", "content": "Hi"},
+            {"role": "assistant", "content": "Hi! What can I help you with?"},
+        ]
+        conversation = Conversation(params=params, messages=list(history))
+        conv_key = (mock_discord_message.author.id, mock_discord_message.channel.id)
+        cog.conversations[conv_key] = conversation
+
+        with patch("discord_claude.cogs.claude.chat.keep_typing", AsyncMock()):
+            await cog.handle_new_message_in_conversation(mock_discord_message, conversation)
+
+        cog.client.messages.create.assert_not_awaited()
+        cog.client.beta.messages.create.assert_not_awaited()
+        mock_discord_message.reply.assert_not_awaited()
+        assert cog.conversations[conv_key] is conversation
+        assert conversation.messages == history
 
     async def test_context_editing_with_tools(self, cog):
         """Models with tools get context editing via beta API."""
