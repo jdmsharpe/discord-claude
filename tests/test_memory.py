@@ -327,6 +327,122 @@ class TestMemoryRename:
         assert "Error" in result
 
 
+class TestMemoryRootGuard:
+    """delete and rename must not act on the memory root itself."""
+
+    USER_ID = 123456789012345678
+    ROOT_SPELLINGS = (
+        "/memories",
+        "/memories/",
+        "/memories/.",
+        "/memories/sub/..",
+        "/memories//",
+        "",
+    )
+
+    def _run(self, tool_input):
+        return execute_memory_operation(user_id=self.USER_ID, tool_input=tool_input)
+
+    def _seed(self, tmp_path):
+        user_dir = tmp_path / str(self.USER_ID)
+        (user_dir / "sub").mkdir(parents=True)
+        (user_dir / "a.txt").write_text("keep")
+        (user_dir / "sub" / "b.txt").write_text("keep")
+        return user_dir
+
+    def test_delete_root_refused_and_files_survive(self, tmp_path):
+        user_dir = self._seed(tmp_path)
+
+        result = self._run({"command": "delete", "path": "/memories"})
+
+        assert result == "Error: Cannot delete the /memories directory itself"
+        assert (user_dir / "a.txt").read_text() == "keep"
+        assert (user_dir / "sub" / "b.txt").read_text() == "keep"
+
+    @pytest.mark.parametrize("spelling", ROOT_SPELLINGS)
+    def test_delete_root_spellings_refused(self, tmp_path, spelling):
+        user_dir = self._seed(tmp_path)
+
+        result = self._run({"command": "delete", "path": spelling or "/"})
+
+        assert "Cannot delete the /memories directory itself" in result
+        assert (user_dir / "a.txt").exists()
+
+    @pytest.mark.parametrize("command", ["delete", "rename"])
+    def test_root_refused_with_a_relative_memories_dir(self, tmp_path, monkeypatch, command):
+        # A bare "/memories" resolves to the unresolved user directory, which is
+        # relative when MEMORIES_DIR is relative; the guard must still match it.
+        monkeypatch.chdir(tmp_path)
+        monkeypatch.setattr("discord_claude.memory.get_memories_base_dir", lambda: Path("rel"))
+        user_dir = tmp_path / "rel" / str(self.USER_ID)
+        user_dir.mkdir(parents=True)
+        (user_dir / "a.txt").write_text("keep")
+        tool_input = {"command": command, "path": "/memories"}
+        if command == "rename":
+            tool_input = {"command": "rename", "old_path": "/memories", "new_path": "/memories/x"}
+
+        result = self._run(tool_input)
+
+        assert "/memories directory itself" in result
+        assert (user_dir / "a.txt").read_text() == "keep"
+
+    def test_rename_root_refused(self, tmp_path):
+        user_dir = self._seed(tmp_path)
+
+        result = self._run(
+            {"command": "rename", "old_path": "/memories", "new_path": "/memories/moved"}
+        )
+
+        assert result == "Error: Cannot rename the /memories directory itself"
+        assert (user_dir / "a.txt").exists()
+        assert not (user_dir / "moved").exists()
+
+    @pytest.mark.parametrize("spelling", ROOT_SPELLINGS)
+    def test_rename_root_spellings_refused(self, tmp_path, spelling):
+        user_dir = self._seed(tmp_path)
+
+        result = self._run(
+            {"command": "rename", "old_path": spelling or "/", "new_path": "/memories/moved"}
+        )
+
+        assert "Cannot rename the /memories directory itself" in result
+        assert (user_dir / "a.txt").exists()
+
+    def test_rename_onto_root_refused(self, tmp_path):
+        user_dir = self._seed(tmp_path)
+
+        result = self._run(
+            {"command": "rename", "old_path": "/memories/a.txt", "new_path": "/memories/."}
+        )
+
+        assert result.startswith("Error: ")
+        assert (user_dir / "a.txt").read_text() == "keep"
+
+    def test_files_and_subdirectories_still_delete(self, tmp_path):
+        user_dir = self._seed(tmp_path)
+
+        assert "Successfully deleted" in self._run({"command": "delete", "path": "/memories/a.txt"})
+        assert "Successfully deleted" in self._run({"command": "delete", "path": "/memories/sub"})
+
+        assert not (user_dir / "a.txt").exists()
+        assert not (user_dir / "sub").exists()
+        assert user_dir.is_dir()
+
+    def test_refusals_omit_user_id_and_absolute_path(self, tmp_path):
+        self._seed(tmp_path)
+        results = [
+            self._run({"command": "delete", "path": "/memories"}),
+            self._run({"command": "rename", "old_path": "/memories", "new_path": "/memories/x"}),
+            self._run(
+                {"command": "rename", "old_path": "/memories/a.txt", "new_path": "/memories"}
+            ),
+        ]
+
+        for result in results:
+            assert str(self.USER_ID) not in result
+            assert str(tmp_path) not in result
+
+
 class TestInvalidCommand:
     """Tests for invalid commands."""
 

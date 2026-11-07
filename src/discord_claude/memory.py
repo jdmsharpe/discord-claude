@@ -284,6 +284,16 @@ def _handle_insert(user_id: int, tool_input: dict[str, Any]) -> str:
     return f"The file {file_path} has been edited."
 
 
+def _is_memory_root(user_id: int, target: Path) -> bool:
+    """Whether a resolved path is the user's memory root.
+
+    Both sides are resolved: `_resolve_safe_path` returns the unresolved user directory
+    for a bare "/memories", which is relative when MEMORIES_DIR is relative, while
+    "/memories/", "/memories/." and "/memories/sub/.." come back resolved.
+    """
+    return target.resolve() == (get_memories_base_dir() / str(user_id)).resolve()
+
+
 def _handle_delete(user_id: int, tool_input: dict[str, Any]) -> str:
     """Delete a file or directory."""
     file_path = tool_input.get("path", "")
@@ -292,6 +302,9 @@ def _handle_delete(user_id: int, tool_input: dict[str, Any]) -> str:
         return "Error: 'path' is required for delete command."
 
     target = _resolve_safe_path(user_id, file_path)
+
+    if _is_memory_root(user_id, target):
+        return "Error: Cannot delete the /memories directory itself"
 
     if not target.exists():
         return f"Error: The path {file_path} does not exist"
@@ -314,6 +327,12 @@ def _handle_rename(user_id: int, tool_input: dict[str, Any]) -> str:
 
     old_target = _resolve_safe_path(user_id, old_path)
     new_target = _resolve_safe_path(user_id, new_path)  # Also validates new path
+
+    if _is_memory_root(user_id, old_target):
+        return "Error: Cannot rename the /memories directory itself"
+
+    if _is_memory_root(user_id, new_target):
+        return "Error: Cannot rename onto the /memories directory itself"
 
     if not old_target.exists():
         return f"Error: The path {old_path} does not exist"
