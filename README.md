@@ -14,23 +14,20 @@
 
 ## Overview
 
-A Discord bot built on Pycord 2.0 that wraps Anthropic's Claude API, providing an easy-to-use interface for conversing with Claude models directly in Discord.
+A Discord bot for Anthropic's Claude API, built on Pycord 2.0. It provides multi-turn Claude conversations through slash commands.
 
 ## Features
 
-- **Multi-turn Conversations:** Start conversations with Claude that maintain context across multiple messages.
-- **Multiple Claude Models:** Choose from Claude Fable (5.1, 5), Opus (5.5, 5, 4.8, 4.7, 4.6, 4.5), Sonnet (5.5, 5, 4.6, 4.5), and Haiku (5.5, 4.5).
-- **Refusal Fallback (Beta):** If the safety classifiers of Claude Fable 5.1, Claude Fable 5, Claude Opus 5.5, or Claude Opus 5 decline a request, the API retries it on Claude Opus 4.8 in the same round trip; for Claude Sonnet 5.5 the retry runs on Claude Sonnet 5, the only fallback model the API accepts for it. Claude Haiku 5.5 has safety classifiers but does not support a fallback. The response notes the fallback, and cost tracking bills each attempt at the rates of the model that ran it.
-- **Multimodal Input:** Attach images (JPEG, PNG, GIF, WEBP), PDFs, or text files (TXT, MD, CSV).
-- **Built-In Tools:** Enable web search, web fetch, code execution, and memory with `tool_choice` control (`auto` / `none`) and mid-conversation toggles. On Haiku 4.5, which lacks programmatic tool calling, the web tools are sent with `allowed_callers: ["direct"]` so they work instead of failing. Code execution uses `code_execution_20260521`, which can be enabled together with the web tools.
-- **Advisor Mode (Beta):** Enable Anthropic's advisor tool so supported executor models can consult a second Claude model for planning during complex tasks: Opus 4.8 by default; Opus 5 for Opus 5 / Fable 5 executors; Fable 5.1 for Fable 5.1 executors. Opus 5.5 and Sonnet 5.5 executors do not accept Opus 4.8, so they use the cheapest advisor they accept, which is the same model as the executor (Opus 5.5 and Sonnet 5.5).
-- **Remote MCP Support:** Enable trusted remote MCP servers per conversation through named presets, featuring optional authorization, allow-lists, and deferred tool loading.
-- **Citations:** Web search and document citations are displayed as a separate Sources embed.
-- **Prompt Caching:** Automatic prompt caching reduces costs (cache reads at 10% of input price; 5% on Opus 5.5 and Sonnet 5.5, 2.5% on Fable 5.1) and latency on multi-turn conversations.
-- **Context Management:** Uses server-side compaction on Fable 5.1, Fable 5, Opus 5.5, Opus 5, Sonnet 5.5, Sonnet 5, Haiku 5.5, Opus 4.8 / 4.7 / 4.6, and Sonnet 4.6; Opus 4.5, Sonnet 4.5, and Haiku 4.5 fall back to local summarization by Claude Haiku 5.5 (thinking disabled) once a request's full prompt (cached tokens included) passes 75% of the smaller of the model window and the summarizer's 1M window, with warnings as conversations approach the context limit. If the summarizer returns no summary (for example, it refuses or its output is cut off), the history is kept in full and the reply shows a "Context Not Compacted" notice; that summarizer call is still billed. The tokens either kind of compaction consumes are included in the reply's cost embed; the local summarizer's tokens are billed at Haiku 5.5's rates, at its over-100,000-token prices when the summarized conversation is that long (which it is whenever the 75% trigger fires on a 200K model).
-- **Pricing Display:** A one-line embed after each response shows the request cost, input tokens (cache reads and writes included; the cache-read part in parentheses), output tokens (thinking included; the thinking part in parentheses), tool and advisor call counts, and your spend so far today, for example `$0.0871 · 12.5k in (12.5k cached) / 405 out (80 thinking) · 2 searches · $0.09 today` (configurable). Claude Haiku 5.5 has two price tiers: each sampling step whose prompt (cache reads and writes included) is over 100,000 tokens bills at $0.50 / $2.50 per million input / output tokens instead of $0.10 / $0.50 (a web search request can take several steps).
-- **Conversation Controls:** Pause, resume, regenerate responses, and end conversations with interactive buttons.
-- **Customization:** Fine-tune supported models with system prompts, sampling controls, effort, thinking budgets, and output limits.
+- **Chat:** Multi-turn conversations with Claude Fable 5.1 / 5, Opus 5.5 / 5 / 4.8 / 4.7 / 4.6 / 4.5, Sonnet 5.5 / 5 / 4.6 / 4.5 and Haiku 5.5 / 4.5. Messages you send in the channel continue the conversation.
+- **Attachments:** Images (JPEG, PNG, GIF, WEBP), PDFs, and text or code files.
+- **Reasoning:** Claude's summarized reasoning appears in a spoiler, or progress lines appear while tools run (`thinking_display`).
+- **Built-in tools:** Web search, web fetch, code execution and memory.
+- **Remote MCP:** Trusted servers enabled through named presets, with optional authorization, tool allow-lists and deferred tool loading.
+- **Citations:** Web search and document citations appear in a Sources embed.
+- **Refusal fallback (beta):** When the safety classifiers of Fable 5.1 / 5, Opus 5.5 / 5 or Sonnet 5.5 decline a request, the API retries it on a fallback model in the same request, and the reply says so.
+- **Advisor (beta):** The model can consult a second Claude model for planning. Advisor calls are billed at the advisor model's rates; the cost line counts them, but its token counts cover only the main model.
+- **Prompt caching and compaction:** Conversations are cached automatically. Long conversations are compacted server-side where the model supports it, and summarized by Claude Haiku 5.5 otherwise.
+- **Cost line:** Each reply ends with a line such as `$0.0871 · 12.5k in (12.5k cached) / 405 out (80 thinking) · 2 searches · $0.09 today`: request cost, input tokens (cache reads in parentheses), output tokens (thinking in parentheses), tool and advisor calls and your total for the day. Set `SHOW_COST_EMBEDS=false` to hide it.
 
 ## Commands
 
@@ -38,23 +35,23 @@ A Discord bot built on Pycord 2.0 that wraps Anthropic's Claude API, providing a
 
 Start a conversation with Claude.
 
-- **`prompt`** *(required)*: Your initial message to Claude.
-- **`model`**: Choose the Claude model (default: Claude Opus 5.5).
-- **`system`**: System prompt to set Claude's behavior.
-- **`attachment`**: Attach an image, PDF, or text file.
-- **`max_tokens`**: Maximum tokens in the response (default: 16384).
-- **`web_search` / `web_fetch` / `code_execution` / `memory`**: Toggle individual tools (default: false).
-- **`advisor`**: Enable Anthropic's advisor beta on supported executor models. The advisor model is picked per executor: Claude Opus 4.8 for Haiku 5.5, Haiku 4.5, Sonnet 4.6, Sonnet 5, Opus 4.6, Opus 4.7, and Opus 4.8 executors; Claude Opus 5.5 for Opus 5.5 executors and Claude Opus 5 for Opus 5 and Fable 5 executors, which only accept Opus 5.5 / Opus 5 / Fable 5 / Fable 5.1 advisors; Claude Sonnet 5.5 for Sonnet 5.5 executors, which accept the same four plus Sonnet 5.5; and Claude Fable 5.1 for Fable 5.1 executors, which accept only Fable 5.1 advisors. Those Opus 5.x / Sonnet 5.5 / Fable advisors return encrypted `advisor_redacted_result` blocks instead of plaintext advice. Opus 4.5 and Sonnet 4.5 cannot use the advisor.
-- **`effort`**: Control response effort — low (fast), medium (balanced), high (thorough), xhigh, or max. Per-model limits are enforced before the request is sent: Fable 5.1, Fable 5, Opus 5.5, Opus 5, Sonnet 5.5, Sonnet 5, Haiku 5.5, Opus 4.8, and Opus 4.7 accept all five; Opus 4.6 and Sonnet 4.6 accept everything except `xhigh`; Opus 4.5 stops at `high`; Sonnet 4.5 and Haiku 4.5 do not accept `effort` at all. When `effort` is not set, the model's own default applies (`medium` on Opus 5.5 and Haiku 5.5, `high` on Sonnet 5.5).
-- **`thinking_budget`**: Token budget for legacy models that still support extended thinking budgets.
-- **`thinking_display`**: `summarized` (default) shows Claude's summarized reasoning in a spoiler after each reply. `updates` (Fable 5.1, Fable 5, Opus 5.5, and Sonnet 5.5 only) hides the reasoning and instead posts the short progress lines the model writes between tool calls while the tools run, instead of showing only the typing indicator until the reply is ready.
-- **`tool_choice`**: Tool behavior for enabled tools (`auto` or `none`; Fable 5.1, Opus 5.5, and Sonnet 5.5 reject forced tool use entirely).
-- **Fast Mode**: set `fast=true` with Opus 5.5 for faster responses throughout the conversation at 2x token and cache prices; tool fees keep their normal rates.
-- **`mcp`**: Optional comma-separated MCP preset names (persists for the life of the conversation).
+- **`prompt` (required):** Your first message.
+- **`system`:** System prompt.
+- **`model`:** Claude model (default: Claude Opus 5.5).
+- **`attachment`:** An image, PDF, text or code file.
+- **`max_tokens`:** Maximum response length in tokens (default: 16384).
+- **`effort`:** `low`, `medium`, `high`, `xhigh` or `max`. Each model supports a subset, and an unsupported level is refused before the request is sent. When unset, the model's own default applies.
+- **`fast`:** Faster responses on Opus 5.5 at 2x token prices.
+- **`thinking_budget`:** Thinking token budget for older models that use one.
+- **`thinking_display`:** `summarized` (default) shows Claude's reasoning in a spoiler. `updates` (Fable 5.1 / 5, Opus 5.5, Sonnet 5.5) shows short progress lines while tools run instead.
+- **`web_search` / `web_fetch` / `code_execution` / `memory`:** Enable built-in tools (default: off).
+- **`advisor`:** Enable the advisor beta. The bot picks an advisor model the chosen model accepts; Opus 4.5 and Sonnet 4.5 can't use it.
+- **`mcp`:** Comma-separated MCP preset names, active for the whole conversation (see [MCP Setup](#mcp-setup)).
+- **`tool_choice`:** `auto` or `none` for enabled tools.
 
 ### `/claude effort`
 
-Change the effort level of your active conversation in this channel for the messages that follow (`low`, `medium`, `high`, `xhigh`, or `max`; the same per-model limits as `/claude chat` apply). On Claude Fable 5.1, Claude Opus 5.5, Claude Opus 5, Claude Sonnet 5.5, and Claude Haiku 5.5 the change is applied per message (Anthropic's per-message effort beta), so the cached prompt prefix stays valid; on every other model the top-level effort is changed, which changes the rendered prompt and invalidates the cache.
+Change the effort level of the active conversation in this channel for the messages that follow. The same per-model limits as `/claude chat` apply. On Fable 5.1, Opus 5.5 / 5, Sonnet 5.5 and Haiku 5.5 the prompt cache is kept; on other models the change invalidates it.
 
 ### `/claude check_permissions`
 
@@ -90,7 +87,7 @@ Check if the bot has the necessary permissions in the current channel.
    python -m pip install .
    ```
 
-4. Configure your environment variables:
+4. Copy the environment example file:
 
    ```bash
    cp .env.example .env
@@ -119,11 +116,18 @@ python -m pip install -e ".[dev]"
 | `LOG_FORMAT` | No | `text` (default) for human-readable logs, or `json` for structured JSON-lines output with per-request IDs |
 | `SAFETY_IDENTIFIER_SECRET` | No | Key for the per-user identifier sent to Anthropic for abuse detection; must not equal `ANTHROPIC_API_KEY` (Default: derived from `BOT_TOKEN`) |
 
-Every Messages API request the bot makes for a Discord user (each request of a chat turn, slash command or follow-up message, and the summary request of manual compaction) carries a per-user identifier in `metadata.user_id`, so Anthropic can attribute a policy violation to one Discord user instead of the whole bot. The identifier is HMAC-SHA256 of the Discord user ID, keyed with `SAFETY_IDENTIFIER_SECRET` or, when that is unset, with a key derived from `BOT_TOKEN`; Anthropic never receives the Discord user ID or the key. The bot refuses to start when `SAFETY_IDENTIFIER_SECRET` equals `ANTHROPIC_API_KEY`, because Anthropic holds that key. Memory tool errors name files by their `/memories/...` path, not by the on-disk path, which contains the Discord user ID. Changing the key (or the bot token, when no secret is set) gives every user a new identifier.
+#### User Identifier
+
+Every Messages API request the bot makes for a Discord user (chat turns, slash commands, follow-up messages and manual compaction summaries) carries a per-user identifier in `metadata.user_id` so Anthropic can attribute a policy violation to one Discord user instead of the whole bot.
+
+- The identifier is an HMAC-SHA256 of the Discord user ID, keyed with `SAFETY_IDENTIFIER_SECRET` or, when that is unset, a key derived from `BOT_TOKEN`. Anthropic never receives the user ID or the key, and the bot refuses to start when `SAFETY_IDENTIFIER_SECRET` equals `ANTHROPIC_API_KEY`.
+- Changing the key (or the bot token, when no secret is set) gives every user a new identifier. To keep identifiers stable across token changes, set the secret to a long random string, for example `python -c "import secrets; print(secrets.token_hex(32))"`.
+- discord-claude, discord-grok, discord-openai and discord-openrouter compute it the same way, so a user gets the same identifier from each bot that shares the key.
+- Memory tool errors name files by their `/memories/...` path, not by the on-disk path, which contains the Discord user ID.
 
 #### MCP Setup
 
-Configure named presets in `ANTHROPIC_MCP_PRESETS_JSON` or `ANTHROPIC_MCP_PRESETS_PATH`. Duplicate names across both sources are rejected. Example schema:
+Configure named presets in `ANTHROPIC_MCP_PRESETS_JSON` or `ANTHROPIC_MCP_PRESETS_PATH`. Example:
 
 ```json
 {
@@ -135,6 +139,10 @@ Configure named presets in `ANTHROPIC_MCP_PRESETS_JSON` or `ANTHROPIC_MCP_PRESET
   }
 }
 ```
+
+A preset name defined in both sources is rejected. The opening embed of a conversation that uses MCP shows a safety note, and the presets stay active until the conversation ends.
+
+Define presets only for servers you trust: the model can send conversation content to any server it calls.
 
 ### Running the Bot
 
@@ -152,8 +160,7 @@ python src/bot.py
 docker compose up -d --build
 ```
 
-### Using as a Cog
-
+**Using as a Cog:**
 To compose this repo into a larger bot, import the namespaced package:
 
 ```python
@@ -175,15 +182,13 @@ bot.add_cog(ClaudeCog(bot=bot))
 
 ## Usage
 
-1. Use `/claude chat` to start a conversation.
-2. Type messages in the same channel to continue the conversation seamlessly.
-3. Use the interactive controls below the message to:
+1. Run `/claude chat` to start a conversation.
+2. Send messages in the same channel to continue it.
+3. Use the controls under each reply:
    - 🔄 Regenerate the last response
-   - ⏯️ Pause/resume the conversation
+   - ⏯️ Pause or resume the conversation
    - ⏹️ End the conversation
-   - 🔧 Toggle built-in tools mid-conversation via the select menu.
-4. **Note on MCP:** If MCP presets are enabled, the bot adds an explicit MCP safety note to the opening embeds and keeps those presets active until the conversation ends.
-5. **Note on Advisor:** Advisor guidance is billed separately at the advisor model's rates, so request cost can rise even when the executor model stays the same. The cost line counts advisor calls, but its token counts cover only the executor model.
+   - **Tools** menu: turn tools on or off mid-conversation
 
 ## Development
 
