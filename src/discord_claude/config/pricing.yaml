@@ -20,6 +20,12 @@
 # YAML path — useful for pushing new pricing without a code release.
 
 models:
+  claude-fable-5-2:
+    context_window: 1_000_000
+    input_per_million: 8.0
+    output_per_million: 40.0
+    cache_read_per_million: 0.20
+
   # GA 2026-09-01. Same $10/$50 as Fable 5; cache reads are 0.025x ($0.25/MTok),
   # not the 0.1x the calculator assumes, so the rate is declared explicitly.
   claude-fable-5-1:

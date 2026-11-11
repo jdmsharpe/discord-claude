@@ -21,6 +21,7 @@ from discord_claude.config.pricing import (
 CHUNK_TEXT_SIZE = 3500  # Maximum number of characters in each text chunk.
 
 CACHE_TTL = "1h"  # 1-hour TTL for prompt caching (2x base input price for writes)
+FAST_MODELS = frozenset({"claude-opus-5-5", "claude-fable-5-2"})
 
 ADVISOR_BETA = "advisor-tool-2026-03-01"
 ADVISOR_TOOL_TYPE = "advisor_20260301"
@@ -32,15 +33,16 @@ ADVISOR_MAX_USES = 3
 # a bare toggle, so tuple order is the selection surface: claude-opus-4-8 leads
 # every tuple that allows it because it returns plaintext advice, whereas
 # claude-opus-5 / claude-opus-5-5 / claude-fable-5 / claude-fable-5-1 /
-# claude-sonnet-5-5 / claude-haiku-5-5 advisors return an encrypted
+# claude-fable-5-2 / claude-sonnet-5-5 / claude-haiku-5-5 advisors return an encrypted
 # advisor_redacted_result (harmless here: the bot skips advisor_tool_result blocks
 # by their outer type and replays them verbatim). Executors that do not accept
 # claude-opus-4-8 lead with the cheapest advisor they accept: claude-opus-5-5 for
 # an Opus 5.5 executor, claude-sonnet-5-5 for a Sonnet 5.5 executor. New advisors
 # are appended to the existing tuples so no default changes. claude-mythos-5 /
-# claude-mythos-5-1 are in the table but not publicly callable, so they are
+# claude-mythos-5-1 / claude-mythos-5-2 are access-gated, so they are
 # omitted; claude-sonnet-4-5 and claude-opus-4-5 are not executors.
 ADVISOR_MODEL_COMPATIBILITY: dict[str, tuple[str, ...]] = {
+    "claude-fable-5-2": ("claude-fable-5-2",),
     "claude-haiku-4-5": (
         "claude-opus-4-8",
         "claude-opus-4-7",
@@ -49,6 +51,7 @@ ADVISOR_MODEL_COMPATIBILITY: dict[str, tuple[str, ...]] = {
         "claude-opus-5-5",
         "claude-fable-5",
         "claude-fable-5-1",
+        "claude-fable-5-2",
         "claude-sonnet-5",
         "claude-sonnet-4-6",
         "claude-sonnet-5-5",
@@ -61,6 +64,7 @@ ADVISOR_MODEL_COMPATIBILITY: dict[str, tuple[str, ...]] = {
         "claude-opus-5-5",
         "claude-fable-5",
         "claude-fable-5-1",
+        "claude-fable-5-2",
         "claude-sonnet-5",
         "claude-sonnet-5-5",
         "claude-haiku-5-5",
@@ -73,6 +77,7 @@ ADVISOR_MODEL_COMPATIBILITY: dict[str, tuple[str, ...]] = {
         "claude-opus-5-5",
         "claude-fable-5",
         "claude-fable-5-1",
+        "claude-fable-5-2",
         "claude-sonnet-5",
         "claude-sonnet-4-6",
         "claude-sonnet-5-5",
@@ -85,6 +90,7 @@ ADVISOR_MODEL_COMPATIBILITY: dict[str, tuple[str, ...]] = {
         "claude-opus-5-5",
         "claude-fable-5",
         "claude-fable-5-1",
+        "claude-fable-5-2",
         "claude-sonnet-5",
         "claude-sonnet-5-5",
         "claude-haiku-5-5",
@@ -95,6 +101,7 @@ ADVISOR_MODEL_COMPATIBILITY: dict[str, tuple[str, ...]] = {
         "claude-opus-5",
         "claude-fable-5",
         "claude-fable-5-1",
+        "claude-fable-5-2",
     ),
     "claude-opus-4-6": (
         "claude-opus-4-8",
@@ -104,6 +111,7 @@ ADVISOR_MODEL_COMPATIBILITY: dict[str, tuple[str, ...]] = {
         "claude-opus-5-5",
         "claude-fable-5",
         "claude-fable-5-1",
+        "claude-fable-5-2",
         "claude-sonnet-5",
         "claude-sonnet-5-5",
         "claude-haiku-5-5",
@@ -115,6 +123,7 @@ ADVISOR_MODEL_COMPATIBILITY: dict[str, tuple[str, ...]] = {
         "claude-opus-5-5",
         "claude-fable-5",
         "claude-fable-5-1",
+        "claude-fable-5-2",
         "claude-sonnet-5-5",
     ),
     "claude-opus-4-8": (
@@ -124,13 +133,35 @@ ADVISOR_MODEL_COMPATIBILITY: dict[str, tuple[str, ...]] = {
         "claude-opus-5-5",
         "claude-fable-5",
         "claude-fable-5-1",
+        "claude-fable-5-2",
         "claude-sonnet-5-5",
     ),
-    "claude-opus-5-5": ("claude-opus-5-5", "claude-opus-5", "claude-fable-5", "claude-fable-5-1"),
-    "claude-opus-5": ("claude-opus-5", "claude-opus-5-5", "claude-fable-5", "claude-fable-5-1"),
-    "claude-fable-5": ("claude-opus-5", "claude-opus-5-5", "claude-fable-5", "claude-fable-5-1"),
-    # Fable 5.1 executors pair only with Fable 5.1 (and the non-public Mythos 5.1).
-    "claude-fable-5-1": ("claude-fable-5-1",),
+    "claude-opus-5-5": (
+        "claude-opus-5-5",
+        "claude-opus-5",
+        "claude-fable-5",
+        "claude-fable-5-1",
+        "claude-fable-5-2",
+    ),
+    "claude-opus-5": (
+        "claude-opus-5",
+        "claude-opus-5-5",
+        "claude-fable-5",
+        "claude-fable-5-1",
+        "claude-fable-5-2",
+    ),
+    "claude-fable-5": (
+        "claude-opus-5",
+        "claude-opus-5-5",
+        "claude-fable-5",
+        "claude-fable-5-1",
+        "claude-fable-5-2",
+    ),
+    # Fable 5.1 keeps its existing self-advisor default and also accepts Fable 5.2.
+    "claude-fable-5-1": (
+        "claude-fable-5-1",
+        "claude-fable-5-2",
+    ),
 }
 
 # Models that support adaptive thinking. build_thinking_config sends
@@ -138,6 +169,7 @@ ADVISOR_MODEL_COMPATIBILITY: dict[str, tuple[str, ...]] = {
 # by default (Sonnet 5.5, Haiku 5.5) then returns empty thinking blocks, because its
 # default display is "omitted".
 ADAPTIVE_THINKING_MODELS = {
+    "claude-fable-5-2",
     "claude-fable-5-1",
     "claude-fable-5",
     "claude-opus-5-5",
@@ -158,7 +190,7 @@ ADAPTIVE_THINKING_MODELS = {
 # forced tool use (the response starts with the tool call and has no thinking
 # block).
 FORCED_TOOL_CHOICE_UNSUPPORTED_MODELS = frozenset(
-    {"claude-fable-5-1", "claude-opus-5-5", "claude-sonnet-5-5"}
+    {"claude-fable-5-2", "claude-fable-5-1", "claude-opus-5-5", "claude-sonnet-5-5"}
 )
 
 # Models without programmatic tool calling. web_search_20260209 and
@@ -182,7 +214,13 @@ THINKING_DISPLAY_SUMMARIZED = "summarized"
 THINKING_DISPLAY_UPDATES = "updates"
 THINKING_DISPLAY_UPDATES_BETA = "thinking-display-updates-2026-08-18"
 THINKING_DISPLAY_UPDATES_MODELS = frozenset(
-    {"claude-fable-5-1", "claude-fable-5", "claude-opus-5-5", "claude-sonnet-5-5"}
+    {
+        "claude-fable-5-2",
+        "claude-fable-5-1",
+        "claude-fable-5",
+        "claude-opus-5-5",
+        "claude-sonnet-5-5",
+    }
 )
 
 # Per-message effort (beta header PER_MESSAGE_EFFORT_BETA): a `role: "system"`
@@ -198,6 +236,7 @@ THINKING_DISPLAY_UPDATES_MODELS = frozenset(
 PER_MESSAGE_EFFORT_BETA = "mid-conversation-output-config-2026-07-01"
 PER_MESSAGE_EFFORT_MODELS = frozenset(
     {
+        "claude-fable-5-2",
         "claude-fable-5-1",
         "claude-opus-5-5",
         "claude-opus-5",
@@ -216,6 +255,7 @@ EFFORT_LEVELS: tuple[str, ...] = ("low", "medium", "high", "xhigh", "max")
 # effort parameter"), so they stay out of this set.
 EFFORT_MODELS = frozenset(
     {
+        "claude-fable-5-2",
         "claude-fable-5-1",
         "claude-fable-5",
         "claude-opus-5-5",
@@ -235,6 +275,7 @@ EFFORT_MODELS = frozenset(
 # these takes the full low..max ladder.
 XHIGH_EFFORT_MODELS = frozenset(
     {
+        "claude-fable-5-2",
         "claude-fable-5-1",
         "claude-fable-5",
         "claude-opus-5-5",
@@ -275,6 +316,7 @@ def supported_effort_levels(model: str) -> frozenset[str]:
 # claude-sonnet-5 and claude-haiku-5-5 are adaptive-only too (manual extended
 # thinking with budget_tokens returns a 400) but do accept {"type": "disabled"}.
 ADAPTIVE_ONLY_THINKING_MODELS = {
+    "claude-fable-5-2",
     "claude-fable-5-1",
     "claude-fable-5",
     "claude-opus-5-5",
@@ -290,6 +332,7 @@ ADAPTIVE_ONLY_THINKING_MODELS = {
 # compact_20260112 edit). Every other selectable model (Opus 4.5, Sonnet 4.5,
 # Haiku 4.5) takes the manual path bounded by manual_compaction_trigger.
 COMPACTION_MODELS = {
+    "claude-fable-5-2",
     "claude-fable-5-1",
     "claude-fable-5",
     "claude-opus-5-5",
@@ -317,6 +360,7 @@ COMPACTION_MODELS = {
 # under the server-side-fallback-2026-07-01 header but has not been adopted.
 REFUSAL_FALLBACK_BETA = "server-side-fallback-2026-06-01"
 REFUSAL_FALLBACK_TARGETS: dict[str, str] = {
+    "claude-fable-5-2": "claude-opus-4-8",
     "claude-fable-5-1": "claude-opus-4-8",
     "claude-fable-5": "claude-opus-4-8",
     "claude-opus-5-5": "claude-opus-4-8",
@@ -580,7 +624,7 @@ class UsageTotals:
             else self.tokens_by_model
         )
         actual_speed = getattr(usage, "speed", None) or speed
-        if actual_speed == "fast" and pricing_model == "claude-opus-5-5":
+        if actual_speed == "fast" and pricing_model in FAST_MODELS:
             by_model = self.fast_tokens_by_model
         bucket = by_model.setdefault(model, ModelTokenUsage())
         bucket.input_tokens += input_tokens

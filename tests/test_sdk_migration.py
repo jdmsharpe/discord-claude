@@ -41,9 +41,10 @@ async def test_every_chat_model_omits_sampling_on_the_sdk_wire(model):
         await client.messages.create(**params)
 
 
-def test_fast_is_opt_in_and_gated_to_opus_55():
-    standard = ChatCompletionParameters(model="claude-opus-5-5")
-    fast = ChatCompletionParameters(model="claude-opus-5-5", fast=True)
+@pytest.mark.parametrize("model", ["claude-opus-5-5", "claude-fable-5-2"])
+def test_fast_is_opt_in_and_gated_to_supported_models(model):
+    standard = ChatCompletionParameters(model=model)
+    fast = ChatCompletionParameters(model=model, fast=True)
     assert "speed" not in build_api_params(standard, [])
     assert build_api_params(fast, [])["speed"] == "fast"
     assert validate_request_configuration(fast) is None
@@ -52,9 +53,10 @@ def test_fast_is_opt_in_and_gated_to_opus_55():
     )
 
 
+@pytest.mark.parametrize("model", ["claude-opus-5-5", "claude-fable-5-2"])
 @pytest.mark.parametrize("speed,multiplier", [("fast", 2), ("standard", 1), (None, 1)])
-def test_fast_billing_uses_served_speed_and_preserves_other_model_rates(speed, multiplier):
-    totals = UsageTotals(request_model="claude-opus-5-5")
+def test_fast_billing_uses_served_speed_and_preserves_other_model_rates(model, speed, multiplier):
+    totals = UsageTotals(request_model=model)
     counts = dict(
         input_tokens=1000,
         output_tokens=100,
@@ -65,7 +67,7 @@ def test_fast_billing_uses_served_speed_and_preserves_other_model_rates(speed, m
         SimpleNamespace(
             speed=speed,
             iterations=[
-                SimpleNamespace(type="message", model="claude-opus-5-5", **counts),
+                SimpleNamespace(type="message", model=model, **counts),
                 SimpleNamespace(type="fallback_message", model="claude-opus-4-8", **counts),
             ],
         )
@@ -73,8 +75,8 @@ def test_fast_billing_uses_served_speed_and_preserves_other_model_rates(speed, m
     parsed = ParsedResponse()
     totals.apply_to(parsed, 1_000_000)
     cog = SimpleNamespace(daily_costs={}, logger=MagicMock())
-    cost, daily = track_daily_cost(cog, 123, "claude-opus-5-5", parsed)
-    expected = multiplier * calculate_cost("claude-opus-5-5", 1000, 100, 200, 300)
+    cost, daily = track_daily_cost(cog, 123, model, parsed)
+    expected = multiplier * calculate_cost(model, 1000, 100, 200, 300)
     expected += calculate_cost("claude-opus-4-8", 1000, 100, 200, 300)
     assert cost == pytest.approx(expected)
     assert daily == pytest.approx(expected)

@@ -283,7 +283,7 @@ class ClaudeCog(commands.Cog):
     )
     @option(
         "fast",
-        description="Faster Opus 5.5 responses for this conversation; 2x token prices. (default: false)",
+        description="Faster Opus 5.5 or Fable 5.2 responses; 2x token prices. (default: false)",
         required=False,
         type=bool,
     )

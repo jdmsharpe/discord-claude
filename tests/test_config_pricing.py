@@ -5,6 +5,8 @@ import sys
 import textwrap
 from pathlib import Path
 
+import pytest
+
 
 def _reload_pricing():
     """Force a fresh import of the loader to re-read whatever file it resolves."""
@@ -32,15 +34,23 @@ class TestPricingLoader:
         assert pricing.MODEL_CONTEXT_WINDOWS["claude-haiku-4-5"] == 200_000
 
     def test_cache_read_rate_is_declared_only_where_it_departs_from_the_default(self):
-        """Only Fable 5.1 ($0.25/MTok = 0.025x), Opus 5.5 ($0.20/MTok = 0.05x) and Sonnet 5.5
+        """Fable 5.2/5.1 (0.025x), Opus 5.5 ($0.20/MTok = 0.05x) and Sonnet 5.5
         ($0.10/MTok = 0.05x) publish a non-0.1x cache-read rate. Haiku 5.5 reads at 0.1x of
         its tier's input price in both tiers ($0.01 / $0.05), so it declares none."""
         pricing = _reload_pricing()
         assert pricing.CACHE_READ_PRICING == {
+            "claude-fable-5-2": 0.20,
             "claude-fable-5-1": 0.25,
             "claude-opus-5-5": 0.20,
             "claude-sonnet-5-5": 0.10,
         }
+
+    def test_fable_52_prices_all_token_buckets(self):
+        from discord_claude.util import calculate_cost
+
+        assert calculate_cost(
+            "claude-fable-5-2", 1_000_000, 1_000_000, 1_000_000, 1_000_000
+        ) == pytest.approx(64.20)
 
     def test_bundled_yaml_new_5_5_models(self):
         """Sonnet 5.5 ($2 / $10) and Haiku 5.5 ($0.10 / $0.50 up to 100,000 prompt tokens,

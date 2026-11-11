@@ -1,6 +1,7 @@
 from discord.commands import OptionChoice
 
 CHAT_MODEL_CHOICES = [
+    OptionChoice(name="Claude Fable 5.2", value="claude-fable-5-2"),
     OptionChoice(name="Claude Fable 5.1", value="claude-fable-5-1"),
     OptionChoice(name="Claude Fable 5", value="claude-fable-5"),
     OptionChoice(name="Claude Opus 5.5", value="claude-opus-5-5"),

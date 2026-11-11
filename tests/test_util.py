@@ -489,6 +489,7 @@ class TestModelCapabilitySets:
         claude-sonnet-4-5 and claude-opus-4-5 are not executors.
         """
         assert ADVISOR_MODEL_COMPATIBILITY == {
+            "claude-fable-5-2": ("claude-fable-5-2",),
             "claude-haiku-4-5": (
                 "claude-opus-4-8",
                 "claude-opus-4-7",
@@ -497,6 +498,7 @@ class TestModelCapabilitySets:
                 "claude-opus-5-5",
                 "claude-fable-5",
                 "claude-fable-5-1",
+                "claude-fable-5-2",
                 "claude-sonnet-5",
                 "claude-sonnet-4-6",
                 "claude-sonnet-5-5",
@@ -509,6 +511,7 @@ class TestModelCapabilitySets:
                 "claude-opus-5-5",
                 "claude-fable-5",
                 "claude-fable-5-1",
+                "claude-fable-5-2",
                 "claude-sonnet-5",
                 "claude-sonnet-5-5",
                 "claude-haiku-5-5",
@@ -521,6 +524,7 @@ class TestModelCapabilitySets:
                 "claude-opus-5-5",
                 "claude-fable-5",
                 "claude-fable-5-1",
+                "claude-fable-5-2",
                 "claude-sonnet-5",
                 "claude-sonnet-4-6",
                 "claude-sonnet-5-5",
@@ -533,6 +537,7 @@ class TestModelCapabilitySets:
                 "claude-opus-5-5",
                 "claude-fable-5",
                 "claude-fable-5-1",
+                "claude-fable-5-2",
                 "claude-sonnet-5",
                 "claude-sonnet-5-5",
                 "claude-haiku-5-5",
@@ -543,6 +548,7 @@ class TestModelCapabilitySets:
                 "claude-opus-5",
                 "claude-fable-5",
                 "claude-fable-5-1",
+                "claude-fable-5-2",
             ),
             "claude-opus-4-6": (
                 "claude-opus-4-8",
@@ -552,6 +558,7 @@ class TestModelCapabilitySets:
                 "claude-opus-5-5",
                 "claude-fable-5",
                 "claude-fable-5-1",
+                "claude-fable-5-2",
                 "claude-sonnet-5",
                 "claude-sonnet-5-5",
                 "claude-haiku-5-5",
@@ -563,6 +570,7 @@ class TestModelCapabilitySets:
                 "claude-opus-5-5",
                 "claude-fable-5",
                 "claude-fable-5-1",
+                "claude-fable-5-2",
                 "claude-sonnet-5-5",
             ),
             "claude-opus-4-8": (
@@ -572,6 +580,7 @@ class TestModelCapabilitySets:
                 "claude-opus-5-5",
                 "claude-fable-5",
                 "claude-fable-5-1",
+                "claude-fable-5-2",
                 "claude-sonnet-5-5",
             ),
             "claude-opus-5-5": (
@@ -579,20 +588,26 @@ class TestModelCapabilitySets:
                 "claude-opus-5",
                 "claude-fable-5",
                 "claude-fable-5-1",
+                "claude-fable-5-2",
             ),
             "claude-opus-5": (
                 "claude-opus-5",
                 "claude-opus-5-5",
                 "claude-fable-5",
                 "claude-fable-5-1",
+                "claude-fable-5-2",
             ),
             "claude-fable-5": (
                 "claude-opus-5",
                 "claude-opus-5-5",
                 "claude-fable-5",
                 "claude-fable-5-1",
+                "claude-fable-5-2",
             ),
-            "claude-fable-5-1": ("claude-fable-5-1",),
+            "claude-fable-5-1": (
+                "claude-fable-5-1",
+                "claude-fable-5-2",
+            ),
         }
         for mythos in ("claude-mythos-5", "claude-mythos-5-1"):
             assert mythos not in ADVISOR_MODEL_COMPATIBILITY
@@ -679,7 +694,7 @@ class TestModelCapabilitySets:
         assert model not in EXTENDED_THINKING_MODELS
         assert model not in PROGRAMMATIC_TOOL_CALLING_UNSUPPORTED_MODELS
         for executor, advisors in ADVISOR_MODEL_COMPATIBILITY.items():
-            if executor == "claude-fable-5-1":
+            if executor in {"claude-fable-5-1", "claude-fable-5-2"}:
                 # The API rejects an Opus 5.5 advisor for a Fable 5.1 executor.
                 assert model not in advisors
             else:
@@ -688,6 +703,7 @@ class TestModelCapabilitySets:
         assert supported_effort_levels(model) == {"low", "medium", "high", "xhigh", "max"}
         assert {
             "claude-fable-5-1",
+            "claude-fable-5-2",
             "claude-opus-5-5",
             "claude-sonnet-5-5",
         } == FORCED_TOOL_CHOICE_UNSUPPORTED_MODELS
@@ -736,6 +752,7 @@ class TestModelCapabilitySets:
         Haiku 5.5 has classifiers but rejects the `fallbacks` parameter, so it is not
         listed."""
         assert REFUSAL_FALLBACK_TARGETS == {
+            "claude-fable-5-2": "claude-opus-4-8",
             "claude-fable-5-1": "claude-opus-4-8",
             "claude-fable-5": "claude-opus-4-8",
             "claude-opus-5-5": "claude-opus-4-8",
@@ -756,6 +773,7 @@ class TestModelCapabilitySets:
         """
         assert {
             "claude-fable-5-1",
+            "claude-fable-5-2",
             "claude-fable-5",
             "claude-opus-5-5",
             "claude-opus-5",
@@ -770,6 +788,7 @@ class TestModelCapabilitySets:
         } == EFFORT_MODELS
         assert {
             "claude-fable-5-1",
+            "claude-fable-5-2",
             "claude-fable-5",
             "claude-opus-5-5",
             "claude-opus-5",
@@ -793,6 +812,7 @@ class TestModelCapabilitySets:
         from discord_claude.cogs.claude.command_options import CHAT_MODEL_CHOICES
 
         expected = {
+            "claude-fable-5-2": {"low", "medium", "high", "xhigh", "max"},
             "claude-fable-5-1": {"low", "medium", "high", "xhigh", "max"},
             "claude-fable-5": {"low", "medium", "high", "xhigh", "max"},
             "claude-opus-5-5": {"low", "medium", "high", "xhigh", "max"},

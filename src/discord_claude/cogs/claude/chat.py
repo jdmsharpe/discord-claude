@@ -21,6 +21,7 @@ from discord_claude.util import (
     COMPACTION_MODELS,
     EFFORT_LEVELS,
     EXTENDED_THINKING_MODELS,
+    FAST_MODELS,
     FORCED_TOOL_CHOICE_UNSUPPORTED_MODELS,
     MODEL_CONTEXT_WINDOWS,
     PER_MESSAGE_EFFORT_BETA,
@@ -103,8 +104,8 @@ def build_thinking_config(params: ChatCompletionParameters) -> dict[str, Any] | 
 
 def validate_request_configuration(params: ChatCompletionParameters) -> str | None:
     """Validate request options before dispatching to Anthropic."""
-    if params.fast and params.model != "claude-opus-5-5":
-        return "Fast mode is available here only for `claude-opus-5-5` (2x token prices)."
+    if params.fast and params.model not in FAST_MODELS:
+        return "Fast mode is available for Opus 5.5 and Fable 5.2 (2x token prices)."
     tool_choice = params.tool_choice
     has_thinking = build_thinking_config(params) is not None
     advisor_model = params.advisor_model
@@ -437,8 +438,7 @@ async def call_api_with_tool_loop(
         betas.append(REFUSAL_FALLBACK_BETA)
         api_params["fallbacks"] = [{"model": fallback_model}]
         if api_params.get("speed") == "fast":
-            # Fast mode is enabled only for the requested Opus 5.5 model.
-            # Its fallback must not inherit a preview-only fast-mode request.
+            # Fallbacks use standard speed independently of the requested model.
             api_params["fallbacks"][0]["speed"] = "standard"
     # Every request of the loop carries the user's keyed identifier, not the Discord ID.
     metadata = request_metadata(user_id)
