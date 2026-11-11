@@ -18,13 +18,13 @@ A Discord bot for Anthropic's Claude API, built on Pycord 2.0. It provides multi
 
 ## Features
 
-- **Chat:** Multi-turn conversations with Claude Fable 5.1 / 5, Opus 5.5 / 5 / 4.8 / 4.7 / 4.6 / 4.5, Sonnet 5.5 / 5 / 4.6 / 4.5 and Haiku 5.5 / 4.5. Messages you send in the channel continue the conversation.
+- **Chat:** Multi-turn conversations with Claude Fable 5.2 / 5.1 / 5, Opus 5.5 / 5 / 4.8 / 4.7 / 4.6 / 4.5, Sonnet 5.5 / 5 / 4.6 / 4.5 and Haiku 5.5 / 4.5. Messages you send in the channel continue the conversation.
 - **Attachments:** Images (JPEG, PNG, GIF, WEBP), PDFs, and text or code files.
 - **Reasoning:** Claude's summarized reasoning appears in a spoiler, or progress lines appear while tools run (`thinking_display`).
 - **Built-in tools:** Web search, web fetch, code execution and memory.
 - **Remote MCP:** Trusted servers enabled through named presets, with optional authorization, tool allow-lists and deferred tool loading.
 - **Citations:** Web search and document citations appear in a Sources embed.
-- **Refusal fallback (beta):** When the safety classifiers of Fable 5.1 / 5, Opus 5.5 / 5 or Sonnet 5.5 decline a request, the API retries it on a fallback model in the same request, and the reply says so.
+- **Refusal fallback (beta):** When the safety classifiers of Fable 5.2 / 5.1 / 5, Opus 5.5 / 5 or Sonnet 5.5 decline a request, the API retries it on a fallback model in the same request, and the reply says so.
 - **Advisor (beta):** The model can consult a second Claude model for planning. Advisor calls are billed at the advisor model's rates; the cost line counts them, but its token counts cover only the main model.
 - **Prompt caching and compaction:** Conversations are cached automatically. Long conversations are compacted server-side where the model supports it, and summarized by Claude Haiku 5.5 otherwise.
 - **Cost line:** Each reply ends with a line such as `$0.0871 · 12.5k in (12.5k cached) / 405 out (80 thinking) · 2 searches · $0.09 today`: request cost, input tokens (cache reads in parentheses), output tokens (thinking in parentheses), tool and advisor calls and your total for the day. Set `SHOW_COST_EMBEDS=false` to hide it.
@@ -41,9 +41,9 @@ Start a conversation with Claude.
 - **`attachment`:** An image, PDF, text or code file.
 - **`max_tokens`:** Maximum response length in tokens (default: 16384).
 - **`effort`:** `low`, `medium`, `high`, `xhigh` or `max`. Each model supports a subset, and an unsupported level is refused before the request is sent. When unset, the model's own default applies.
-- **`fast`:** Faster responses on Opus 5.5 at 2x token prices.
+- **`fast`:** Faster responses on Opus 5.5 and Fable 5.2 at 2x token prices.
 - **`thinking_budget`:** Thinking token budget for older models that use one.
-- **`thinking_display`:** `summarized` (default) shows Claude's reasoning in a spoiler. `updates` (Fable 5.1 / 5, Opus 5.5, Sonnet 5.5) shows short progress lines while tools run instead.
+- **`thinking_display`:** `summarized` (default) shows Claude's reasoning in a spoiler. `updates` (Fable 5.2 / 5.1 / 5, Opus 5.5, Sonnet 5.5) shows short progress lines while tools run instead.
 - **`web_search` / `web_fetch` / `code_execution` / `memory`:** Enable built-in tools (default: off).
 - **`advisor`:** Enable the advisor beta. The bot picks an advisor model the chosen model accepts; Opus 4.5 and Sonnet 4.5 can't use it.
 - **`mcp`:** Comma-separated MCP preset names, active for the whole conversation (see [MCP Setup](#mcp-setup)).
@@ -51,7 +51,7 @@ Start a conversation with Claude.
 
 ### `/claude effort`
 
-Change the effort level of the active conversation in this channel for the messages that follow. The same per-model limits as `/claude chat` apply. On Fable 5.1, Opus 5.5 / 5, Sonnet 5.5 and Haiku 5.5 the prompt cache is kept; on other models the change invalidates it.
+Change the effort level of the active conversation in this channel for the messages that follow. The same per-model limits as `/claude chat` apply. On Fable 5.2 / 5.1, Opus 5.5 / 5, Sonnet 5.5 and Haiku 5.5 the prompt cache is kept; on other models the change invalidates it.
 
 ### `/claude check_permissions`
 

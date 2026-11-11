@@ -6,6 +6,12 @@ When a change needs new evidence, add it here under the matching heading (or a n
 
 ## SDK sweep log
 
+### 2026-11-10
+
+- Updated anthropic 2.6.0 → 2.8.0; 2.7 adds Fable/Mythos 5.2 model literals and structured-output/error-copy fixes, while 2.8 changes cloud/admin surfaces. No called signature was removed.
+- Added optional Fable 5.2 with its capability and pricing rules; Opus 5.5 remains the default. Mythos 5.2 stays excluded because its API access is gated.
+- Rechecked Sonnet 4.5 shutdown (2026-11-30); retained it until the scheduled removal.
+
 ### 2026-11-06
 
 - `anthropic` 2.3 -> 2.6.0: the signatures, `Model` literal and usage types the bot uses are unchanged. `OverloadedError` and `ServiceUnavailableError` now subclass `InternalServerError`; the bot catches neither, so only the error class name shown for some statuses changes (504 is now `GatewayTimeoutError`).
@@ -85,3 +91,11 @@ When a change needs new evidence, add it here under the matching heading (or a n
 ### Stickers are sent as text
 
 - **Stickers are sent as text (v1.15.1).** A Discord sticker arrives with empty `content` and no `attachments`; `handle_new_message_in_conversation` (`chat.py`) sends each sticker in `message.stickers` as a `[Sticker: <name>]` line after the message text, built by `text_with_stickers` in `stickers.py`, which is byte-identical in the five AI bots (change all five together). The sticker image is not sent. A follow-up with nothing to send (no text, no sticker, no attachment that yields content) is ignored and the conversation stays open. Before, discord-openai, discord-gemini and discord-claude sent an empty turn, got a 400, and the error path removed the conversation; discord-grok and discord-openrouter dropped a sticker-only message without a reply. Pinned by `tests/test_stickers.py` and the sticker follow-up tests in `tests/test_claude_chat.py`.
+
+### Claude Fable 5.2
+
+2026-11-10: [official model guide](https://platform.claude.com/docs/en/models/fable-5-2/whats-new-fable-5-2) and [advisor compatibility](https://platform.claude.com/docs/en/agents-and-tools/tool-use/advisor-tool) establish the rates, prefix enforcement and supported pairs. Capped calls through the bot request builder accepted low/medium/high/xhigh/max, self-advisor declaration, compaction/fallback headers and a second turn; fast mode plus an appended per-message effort override also succeeded. A further arithmetic probe produced both thinking and text blocks at fast/high (75 input / 55 output); replaying that prefix with an appended low-effort override succeeded (150 input / 4 output). The self-advisor probe declared the tool without invoking it. Stored sanitized results: `~/.cache/sweep-notes-2026-11-10/claude-*-probe.json`.
+
+### SDK
+
+2026-11-10, anthropic 2.8.0: real signatures still omit temperature/top_p/top_k; `messages.tool_runner` remains absent and its beta form remains available. `BetaMessageIterationUsage` still lacks refusal categories and stop reasons, so the existing conservative fallback billing remains necessary.
