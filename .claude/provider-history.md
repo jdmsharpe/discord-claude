@@ -6,6 +6,12 @@ When a change needs new evidence, add it here under the matching heading (or a n
 
 ## SDK sweep log
 
+### 2026-11-13
+
+- discord-claude only. `anthropic` 2.8.0 is still the latest release, so the pin and the SDK lock entry are unchanged; no new models; the deprecations page is unchanged (Sonnet 4.5 retires 2026-11-30, every other menu id Active).
+- Fixed the follow-up after a Tools dropdown change on Fable 5.2 (see Tool changes drop earlier thinking). Released as v1.16.1.
+- Lock refresh, dev tools only: coverage 7.17.3, pytest-asyncio 1.5.0, ruff 0.17.5.
+
 ### 2026-11-10
 
 - Updated anthropic 2.6.0 → 2.8.0; 2.7 adds Fable/Mythos 5.2 model literals and structured-output/error-copy fixes, while 2.8 changes cloud/admin surfaces. No called signature was removed.
@@ -95,6 +101,16 @@ When a change needs new evidence, add it here under the matching heading (or a n
 ### Claude Fable 5.2
 
 2026-11-10: [official model guide](https://platform.claude.com/docs/en/models/fable-5-2/whats-new-fable-5-2) and [advisor compatibility](https://platform.claude.com/docs/en/agents-and-tools/tool-use/advisor-tool) establish the rates, prefix enforcement and supported pairs. Capped calls through the bot request builder accepted low/medium/high/xhigh/max, self-advisor declaration, compaction/fallback headers and a second turn; fast mode plus an appended per-message effort override also succeeded. A further arithmetic probe produced both thinking and text blocks at fast/high (75 input / 55 output); replaying that prefix with an appended low-effort override succeeded (150 input / 4 output). The self-advisor probe declared the tool without invoking it. Stored sanitized results: `~/.cache/sweep-notes-2026-11-10/claude-*-probe.json`.
+
+### Tool changes drop earlier thinking
+
+2026-11-13 (v1.16.1). The bot host's logs for 2026-11-12 held three failed follow-ups with the same sequence, all on `claude-fable-5-2`: a chat started without tools and the reply carried a thinking block; Web Search or Code Execution was enabled in the Tools dropdown; the next request sent the new `tools` array with the old thinking block and got a 400 ending "The tools list differs from the one this block was created with."; the error path then ended the conversation. The dropdown has edited `tools` since commit e869ea7 (2026-02-24) and `views.py` is identical in v1.15.0 and v1.16.0; v1.16.0 added Fable 5.2, the first selectable model that applies the prefix check to every account. Fable 5.1, Opus 5.5, Sonnet 5.5 and Haiku 5.5 apply it by default only to accounts created on or after 2026-08-31, which is how the same sequence kept working on them for an older account.
+
+Sources: [Change tools or instructions without failing the prefix check](https://platform.claude.com/docs/en/build-with-claude/preserved-thinking/change-tools-or-instructions) ("Keep `tools` the same on every request. Adding, changing, or removing a tool there, other than a deferred one, makes the thinking already in the conversation invalid"; "Leave out the oldest blocks, the newest, or all of them, but none in between"; "Once a block is out, keep it out") and [Fix a thinking block bound to a different conversation](https://platform.claude.com/docs/en/build-with-claude/preserved-thinking/fix-bound-to-a-different-conversation) (match only on "The block is bound to a different conversation"; with `role: "system"` messages in the history, remove every `thinking` and `redacted_thinking` block, because the position the error names can be lower than the array index). The bot's effort overrides are such messages, so the recovery path removes all thinking instead of the named block and the ones after it.
+
+Considered and not adopted: keeping `tools` fixed and sending `tool_addition` / `tool_removal` blocks in a `role: "system"` message (beta `inline-tools-2026-09-15`), which keeps both the earlier thinking and the prompt cache. It needs a beta header, is not available on Sonnet 5 or the 4.x models other than Opus 4.8, must be placed after the next user message, and its interaction with the web tools' server-added `code_execution` tool and with `compact_20260112` is undocumented. Removing the thinking costs the reasoning from before the change (the request already keeps only the last two thinking turns through `clear_thinking_20251015`) and one prompt-cache rewrite, which a `tools` edit has always caused on every model.
+
+Verification: `tests/test_claude_tool_changes.py` runs the chat command, the dropdown callback and the follow-up through the real SDK client against a fake API that rejects thinking replayed under a different tool list, and a live run on `claude-fable-5-2` through the bot's request builder and tool loop (2026-11-13, effort `low`, six arms, 6,511 output tokens) confirmed each case. Replaying the first reply's thinking block after adding `web_search` returned the 400 above, whose full text ends "The `tools` list differs from the one this block was created with." With the fix, enabling `web_search`, enabling `code_execution` and deselecting every tool each returned 200 with no retry, and the thinking block produced after the change was accepted on the following turn. Skipping the tool-list comparison produced one 400 followed by a successful resend. With unchanged tools all three thinking blocks were replayed and accepted. Script and results: `~/.cache/sweep-notes-2026-11-13/probes/`.
 
 ### SDK
 
