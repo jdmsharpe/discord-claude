@@ -804,6 +804,9 @@ class Conversation:
     messages: list[dict[str, Any]]
     created_at: datetime = field(default_factory=lambda: datetime.now(UTC))
     updated_at: datetime = field(default_factory=lambda: datetime.now(UTC))
+    # Canonical form of the `tools` array the latest request sent (see
+    # `tools_fingerprint` in chat.py); None until a request has recorded it.
+    request_tools: list[str] | None = None
 
     def touch(self) -> None:
         self.updated_at = datetime.now(UTC)

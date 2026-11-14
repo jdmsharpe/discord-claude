@@ -1,9 +1,11 @@
 import asyncio
 import contextlib
+import json
 from collections.abc import Awaitable, Callable
 from typing import Any
 
 import aiohttp
+import anthropic
 from discord import ApplicationContext, Attachment, Colour, Embed
 
 from discord_claude.config.auth import SHOW_COST_EMBEDS
@@ -347,6 +349,74 @@ def apply_effort_change(conversation: Conversation, level: str) -> str | None:
     return None
 
 
+THINKING_BLOCK_TYPES = frozenset({"thinking", "redacted_thinking"})
+# The fixed part of the 400 the API returns when a replayed thinking block no longer
+# matches the `system`, `tools` or messages sent before it. The rest of the message varies.
+THINKING_PREFIX_MISMATCH_TEXT = "The block is bound to a different conversation"
+
+
+def tools_fingerprint(tools: list[dict[str, Any]] | None) -> list[str]:
+    """Order-independent form of a request's `tools` array, for comparing two requests."""
+    return sorted(json.dumps(tool, sort_keys=True) for tool in tools or [])
+
+
+def strip_thinking_blocks(messages: list[dict[str, Any]]) -> int:
+    """Remove every thinking block from the history in place; return how many were removed.
+
+    The API accepts a history with all of its thinking blocks left out, but not one with
+    a gap between kept blocks, so this never removes only some of them. An assistant
+    message that held nothing else is removed as well, because empty content is a 400.
+    """
+    removed = 0
+    kept_messages: list[dict[str, Any]] = []
+    for message in messages:
+        content = message.get("content")
+        if message.get("role") != "assistant" or not isinstance(content, list):
+            kept_messages.append(message)
+            continue
+        kept_blocks = [
+            block
+            for block in content
+            if (block.get("type") if isinstance(block, dict) else getattr(block, "type", None))
+            not in THINKING_BLOCK_TYPES
+        ]
+        if len(kept_blocks) == len(content):
+            kept_messages.append(message)
+            continue
+        removed += len(content) - len(kept_blocks)
+        if kept_blocks:
+            message["content"] = kept_blocks
+            kept_messages.append(message)
+    messages[:] = kept_messages
+    return removed
+
+
+def drop_thinking_on_tool_change(
+    cog, conversation: Conversation, api_params: dict[str, Any]
+) -> None:
+    """Remove earlier thinking from the history when this request's tools differ from the last.
+
+    A thinking block records the `tools` array that was sent before it, and models with
+    preserved thinking (Fable 5.2 on every account) answer 400 when the block comes back
+    after that array changed. The Tools dropdown changes it between turns, so the
+    following request is sent without the earlier thinking blocks; the model keeps the
+    visible conversation and loses only its earlier reasoning. Selecting the previous
+    tools again before the next message changes nothing and removes nothing.
+    """
+    fingerprint = tools_fingerprint(api_params.get("tools"))
+    previous = conversation.request_tools
+    conversation.request_tools = fingerprint
+    if previous is None or previous == fingerprint:
+        return
+    removed = strip_thinking_blocks(conversation.messages)
+    if removed:
+        cog.logger.info(
+            "Tools changed in conversation %s; removed %d earlier thinking block(s).",
+            conversation.params.conversation_id,
+            removed,
+        )
+
+
 def _progress_lines(response: Any) -> list[str]:
     """Readable progress text in a tool_use response: text blocks plus any thinking
     block that came back non-empty (under `display: "updates"` those are the
@@ -492,22 +562,39 @@ async def call_api_with_tool_loop(
         totals.apply_to(result, context_window)
         return result
 
-    for iteration in range(max_iterations):
-        await compact_if_over_trigger()
-
-        api_params["messages"] = messages
+    async def send_request() -> Any:
         if betas:
-            response = await cog.client.beta.messages.create(  # type: ignore[call-overload]
+            return await cog.client.beta.messages.create(  # type: ignore[call-overload]
                 **api_params,
                 betas=betas,
                 context_management={"edits": edits} if edits else None,  # type: ignore[arg-type]
                 cache_control={"type": "ephemeral", "ttl": CACHE_TTL},
             )
-        else:
-            response = await cog.client.messages.create(
-                **api_params,
-                cache_control={"type": "ephemeral", "ttl": CACHE_TTL},
+        return await cog.client.messages.create(
+            **api_params,
+            cache_control={"type": "ephemeral", "ttl": CACHE_TTL},
+        )
+
+    for iteration in range(max_iterations):
+        await compact_if_over_trigger()
+
+        api_params["messages"] = messages
+        try:
+            response = await send_request()
+        except anthropic.BadRequestError as error:
+            # `drop_thinking_on_tool_change` covers the tool changes the bot makes. Other
+            # changes produce the same 400 (an MCP server that now lists different tools,
+            # for example), so the request is sent once more without the thinking blocks.
+            if THINKING_PREFIX_MISMATCH_TEXT not in str(error) or not strip_thinking_blocks(
+                messages
+            ):
+                raise
+            cog.logger.warning(
+                "Thinking blocks no longer match the conversation before them; "
+                "removed them and sent the request again: %s",
+                error,
             )
+            response = await send_request()
 
         parsed = extract_response_content(response)
         parsed.stop_reason = response.stop_reason
@@ -632,6 +719,7 @@ async def handle_new_message_in_conversation(cog, message, conversation: Convers
 
         messages.append({"role": "user", "content": user_content})
         api_params = build_api_params(params, messages)
+        drop_thinking_on_tool_change(cog, conversation, api_params)
         parsed = await call_api_with_tool_loop(
             cog,
             api_params=api_params,
@@ -1051,7 +1139,11 @@ async def run_chat_command(
         )
         cog.last_view_messages[ctx.author] = message
 
-        conversation = Conversation(params=params, messages=conversation_messages)
+        conversation = Conversation(
+            params=params,
+            messages=conversation_messages,
+            request_tools=tools_fingerprint(api_params.get("tools")),
+        )
         cog.conversations[conv_key] = conversation
 
     except Exception as error:
