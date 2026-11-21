@@ -1,5 +1,6 @@
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import call as mock_call
 
 import pytest
 
@@ -538,6 +539,8 @@ class TestCallApiWithToolLoop:
         mock_response.stop_reason = "end_turn"
         mock_response.usage = None
         cog.client.beta.messages.create = AsyncMock(return_value=mock_response)
+        # A fast request is sent through `client.with_options(max_retries=0)`.
+        cog.client.with_options = MagicMock(return_value=cog.client)
 
         await cog._call_api_with_tool_loop(
             api_params={"model": model, "max_tokens": 1024, **({"speed": "fast"} if fast else {})},
@@ -550,6 +553,9 @@ class TestCallApiWithToolLoop:
         assert call_kwargs["fallbacks"] == [
             {"model": target, **({"speed": "standard"} if fast else {})}
         ]
+        assert cog.client.with_options.call_args_list == (
+            [mock_call(max_retries=0)] if fast else []
+        )
 
     @pytest.mark.parametrize("model", ["claude-sonnet-5", "claude-haiku-5-5"])
     async def test_model_without_fallback_support_sends_no_fallback(self, cog, model):
@@ -624,7 +630,8 @@ class TestCallApiWithToolLoop:
 
         assert parsed.text == "Hello from MCP."
         call_kwargs = cog.client.beta.messages.create.call_args[1]
-        assert "mcp-client-2025-11-20" in call_kwargs["betas"]
+        assert "mcp-client-2026-09-15" in call_kwargs["betas"]
+        assert "mcp-client-2025-11-20" not in call_kwargs["betas"]
 
 
 class TestRunChatCommand:

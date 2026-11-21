@@ -36,6 +36,9 @@ class ParsedResponse:
     # different model than the one requested (e.g. claude-fable-5 declined
     # and claude-opus-4-8 answered).
     served_model: str | None = None
+    # Set when a fast-mode request got a 429 or 529 and the reply was produced by the
+    # same request sent again at standard speed.
+    fast_mode_unavailable: bool = False
     # The token counts above grouped by the model whose rates apply (None: the
     # requested model); stamped by UsageTotals.apply_to and billed per model by
     # track_daily_cost. tokens_by_model holds requests billed at the standard
@@ -111,6 +114,9 @@ def extract_response_content(response) -> ParsedResponse:
             # Refusal-fallback switch marker — audit only, nothing to render.
             continue
         elif block.type == "advisor_tool_result" or block.type.startswith("mcp_"):
+            # Advisor results and MCP blocks (`mcp_tool_use`, `mcp_tool_result` and the
+            # `mcp_tool_listing` the API records for each server) stay in the history
+            # for later requests and are never rendered.
             continue
 
     response_text = "\n\n".join(text_parts) if text_parts else "No response."

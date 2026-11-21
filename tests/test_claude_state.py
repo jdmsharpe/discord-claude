@@ -388,6 +388,28 @@ class TestAdvisorHistorySanitization:
             {"type": "text", "text": "Here is the answer."},
         ]
 
+    def test_copy_drops_mcp_tool_listing_blocks_and_leaves_the_history_unchanged(self):
+        """The summarizer request has no MCP beta header, which `mcp_tool_listing` needs."""
+        listing = {
+            "type": "mcp_tool_listing",
+            "mcp_server_name": "files",
+            "tools": [{"name": "echo", "input_schema": {"type": "object"}}],
+        }
+        typed_listing = MagicMock(type="mcp_tool_listing")
+        text = {"type": "text", "text": "Answer."}
+        messages = [
+            {"role": "user", "content": "hello"},
+            {"role": "assistant", "content": [listing, text]},
+            {"role": "assistant", "content": [typed_listing, text]},
+        ]
+
+        sanitized = _copy_messages_without_advisor_blocks(messages)
+
+        assert sanitized[1]["content"] == [text]
+        assert sanitized[2]["content"] == [text]
+        assert messages[1]["content"] == [listing, text]
+        assert messages[2]["content"] == [typed_listing, text]
+
 
 class TestClaudePruneRuntimeState:
     """Tests for prune_runtime_state — TTL eviction, overflow cap, cascade cleanup."""

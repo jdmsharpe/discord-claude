@@ -176,6 +176,19 @@ def append_fallback_embed(
     )
 
 
+def append_fast_unavailable_embed(embeds: list[Embed], unavailable: bool) -> None:
+    """Append a notice when fast mode had no capacity and the reply ran at standard speed."""
+    if not unavailable:
+        return
+    embeds.append(
+        Embed(
+            title="Fast Mode Unavailable",
+            description="Fast mode was at capacity, so this reply ran at standard speed.",
+            color=Colour.yellow(),
+        )
+    )
+
+
 def append_context_warning_embed(embeds: list[Embed]) -> None:
     """Append a warning embed when context usage exceeds 85% of the window."""
     embeds.append(
@@ -255,6 +268,7 @@ __all__ = [
     "append_compaction_failed_embed",
     "append_context_warning_embed",
     "append_fallback_embed",
+    "append_fast_unavailable_embed",
     "append_pricing_embed",
     "append_response_embeds",
     "append_stop_reason_embed",

@@ -25,6 +25,7 @@ from discord_claude.util import (
     EXTENDED_THINKING_MODELS,
     FAST_MODELS,
     FORCED_TOOL_CHOICE_UNSUPPORTED_MODELS,
+    MCP_CLIENT_BETA,
     MODEL_CONTEXT_WINDOWS,
     PER_MESSAGE_EFFORT_BETA,
     PER_MESSAGE_EFFORT_MODELS,
@@ -56,6 +57,7 @@ from .embeds import (
     append_compaction_failed_embed,
     append_context_warning_embed,
     append_fallback_embed,
+    append_fast_unavailable_embed,
     append_pricing_embed,
     append_response_embeds,
     append_stop_reason_embed,
@@ -349,6 +351,38 @@ def apply_effort_change(conversation: Conversation, level: str) -> str | None:
     return None
 
 
+# Statuses a `speed: "fast"` request gets when fast mode has no capacity: its own rate
+# limit (429) or overload (529).
+FAST_CAPACITY_STATUS_CODES = frozenset({429, 529})
+
+
+def is_fast_capacity_error(error: Exception) -> bool:
+    """True for a plain 429 or 529, the capacity errors a request at standard speed might not get.
+
+    An error with a specific `error_code` names another cause (a spend limit, a ramp
+    limit, compaction unavailable) that sending the request again at standard speed does
+    not address, so it is not a fast-mode capacity error.
+    """
+    return (
+        isinstance(error, anthropic.APIStatusError)
+        and error.status_code in FAST_CAPACITY_STATUS_CODES
+        and error.error_code is None
+    )
+
+
+def sdk_would_retry(error: anthropic.APIError) -> bool:
+    """True for the errors the SDK's default policy retries: connection errors and timeouts,
+    408, 409, 429 and 5xx, unless an `x-should-retry` header says otherwise."""
+    if isinstance(error, anthropic.APIConnectionError):
+        return True
+    if isinstance(error, anthropic.APIStatusError):
+        should_retry = error.response.headers.get("x-should-retry")
+        if should_retry in {"true", "false"}:
+            return should_retry == "true"
+        return error.status_code in {408, 409, 429} or error.status_code >= 500
+    return False
+
+
 THINKING_BLOCK_TYPES = frozenset({"thinking", "redacted_thinking"})
 # The fixed part of the 400 the API returns when a replayed thinking block no longer
 # matches the `system`, `tools` or messages sent before it. The rest of the message varies.
@@ -499,7 +533,10 @@ async def call_api_with_tool_loop(
     if has_advisor:
         betas.append(ADVISOR_BETA)
     if has_mcp:
-        betas.append("mcp-client-2025-11-20")
+        # Sent on every request of an MCP conversation: the history holds the
+        # `mcp_tool_listing` blocks the API returned, and the API needs this header on
+        # every request that carries one.
+        betas.append(MCP_CLIENT_BETA)
     if use_compaction:
         betas.append("compact-2026-01-12")
         edits.append({"type": "compact_20260112"})
@@ -519,6 +556,8 @@ async def call_api_with_tool_loop(
     context_window = MODEL_CONTEXT_WINDOWS.get(model, 200_000)
     compaction_trigger = manual_compaction_trigger(context_window)
     parsed: ParsedResponse | None = None
+    # Set once a fast request has been sent again at standard speed.
+    fast_mode_unavailable = False
 
     async def compact_if_over_trigger() -> None:
         """Manual compaction for models outside COMPACTION_MODELS.
@@ -560,20 +599,62 @@ async def call_api_with_tool_loop(
         """Compact if the final response passed the trigger, then stamp the totals."""
         await compact_if_over_trigger()
         totals.apply_to(result, context_window)
+        result.fast_mode_unavailable = fast_mode_unavailable
         return result
 
-    async def send_request() -> Any:
+    async def send_once(client) -> Any:
         if betas:
-            return await cog.client.beta.messages.create(  # type: ignore[call-overload]
+            return await client.beta.messages.create(  # type: ignore[call-overload]
                 **api_params,
                 betas=betas,
                 context_management={"edits": edits} if edits else None,  # type: ignore[arg-type]
                 cache_control={"type": "ephemeral", "ttl": CACHE_TTL},
             )
-        return await cog.client.messages.create(
+        return await client.messages.create(
             **api_params,
             cache_control={"type": "ephemeral", "ttl": CACHE_TTL},
         )
+
+    async def send_request() -> Any:
+        """Send the request; a fast request that gets a 429 or 529 is sent again without `speed`.
+
+        The fast attempt runs without SDK retries: the SDK waits the `retry-after` the API
+        sends, up to four times, so a saturated fast mode would hold the turn for minutes
+        before the fallback. A plain 429 or 529 is then sent once more at standard speed
+        through the normal client. Any other error the SDK would retry is sent once more
+        through the normal client with `speed` unchanged, which gives a fast request the
+        retries it had before; other errors are raised. Speed is dropped for the rest of
+        this turn, so later requests of the tool loop run at standard speed without another
+        attempt at fast. The request sent again misses the prompt cache, because requests at
+        different speeds share no cached prefix.
+        """
+        nonlocal fast_mode_unavailable
+        if api_params.get("speed") != "fast":
+            return await send_once(cog.client)
+        try:
+            return await send_once(cog.client.with_options(max_retries=0))
+        except anthropic.APIError as error:
+            failure = error
+        if not is_fast_capacity_error(failure) and sdk_would_retry(failure):
+            try:
+                return await send_once(cog.client)
+            except anthropic.APIError as error:
+                failure = error
+        if not is_fast_capacity_error(failure):
+            raise failure
+        cog.logger.warning(
+            "Fast mode returned %s; sending the request again at standard speed: %s",
+            getattr(failure, "status_code", None),
+            failure,
+        )
+        del api_params["speed"]
+        for fallback in api_params.get("fallbacks", []):
+            fallback.pop("speed", None)
+        # A refusal-fallback attempt in `usage.iterations` carries no speed of its own, so
+        # it is billed as fast while the request speed is fast: the request now runs standard.
+        totals.request_speed = None
+        fast_mode_unavailable = True
+        return await send_once(cog.client)
 
     for iteration in range(max_iterations):
         await compact_if_over_trigger()
@@ -582,9 +663,9 @@ async def call_api_with_tool_loop(
         try:
             response = await send_request()
         except anthropic.BadRequestError as error:
-            # `drop_thinking_on_tool_change` covers the tool changes the bot makes. Other
-            # changes produce the same 400 (an MCP server that now lists different tools,
-            # for example), so the request is sent once more without the thinking blocks.
+            # `drop_thinking_on_tool_change` covers the tool changes the bot makes. Changes
+            # it cannot see produce the same 400, so the request is sent once more
+            # without the thinking blocks.
             if THINKING_PREFIX_MISMATCH_TEXT not in str(error) or not strip_thinking_blocks(
                 messages
             ):
@@ -742,6 +823,7 @@ async def handle_new_message_in_conversation(cog, message, conversation: Convers
         append_response_embeds(embeds, response_text)
         append_stop_reason_embed(embeds, parsed.stop_reason, parsed.stop_details)
         append_fallback_embed(embeds, params.model, parsed.served_model)
+        append_fast_unavailable_embed(embeds, parsed.fast_mode_unavailable)
         if parsed.context_compacted:
             append_compaction_embed(embeds)
         elif parsed.compaction_failed:
@@ -1099,6 +1181,7 @@ async def run_chat_command(
         append_response_embeds(embeds, response_text)
         append_stop_reason_embed(embeds, parsed.stop_reason, parsed.stop_details)
         append_fallback_embed(embeds, model, parsed.served_model)
+        append_fast_unavailable_embed(embeds, parsed.fast_mode_unavailable)
         if parsed.context_compacted:
             append_compaction_embed(embeds)
         elif parsed.compaction_failed:

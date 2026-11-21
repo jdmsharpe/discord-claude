@@ -84,11 +84,12 @@ def _extract_daily_total(value: float | tuple[float, datetime]) -> float:
 
 
 def _copy_messages_without_advisor_blocks(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Clone message history while removing advisor-only transcript blocks.
+    """Clone message history while removing transcript blocks that need a request option.
 
     Anthropic requires the advisor tool definition to be present when replaying
-    `advisor_tool_result` blocks. Manual compaction replays history without tools,
-    so we strip those blocks for the summarization pass.
+    `advisor_tool_result` blocks, and the MCP beta header when replaying
+    `mcp_tool_listing` blocks. Manual compaction replays history without tools or
+    betas, so we strip those blocks for the summarization pass.
     """
     sanitized_messages: list[dict[str, Any]] = []
     for message in messages:
@@ -104,7 +105,7 @@ def _copy_messages_without_advisor_blocks(messages: list[dict[str, Any]]) -> lis
             if isinstance(block, dict):
                 block_type = block.get("type")
                 block_name = block.get("name")
-            if block_type == "advisor_tool_result":
+            if block_type in {"advisor_tool_result", "mcp_tool_listing"}:
                 continue
             if block_type == "server_tool_use" and block_name == ADVISOR_TOOL_NAME:
                 continue

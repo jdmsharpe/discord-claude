@@ -359,6 +359,11 @@ COMPACTION_MODELS = {
 # to three named fallback models; a fallbacks="default" routing mode also exists
 # under the server-side-fallback-2026-07-01 header but has not been adopted.
 REFUSAL_FALLBACK_BETA = "server-side-fallback-2026-06-01"
+# MCP connector beta. It includes everything the older `mcp-client-2025-11-20` does, and
+# the API also records each MCP server's tool list in an `mcp_tool_listing` response
+# block. The assistant message must be sent back unchanged, listing blocks included, with
+# this header on every request that carries one.
+MCP_CLIENT_BETA = "mcp-client-2026-09-15"
 REFUSAL_FALLBACK_TARGETS: dict[str, str] = {
     "claude-fable-5-2": "claude-opus-4-8",
     "claude-fable-5-1": "claude-opus-4-8",

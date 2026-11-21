@@ -50,7 +50,7 @@ class FakeMessagesApi:
         self.statuses = []
         self.tools_of_last_answer = None
         # Set to make the next request look as if the tools changed on the server side,
-        # which the bot cannot see in its own request (an MCP server's tool list).
+        # which the bot cannot see in its own request.
         self.invalidate_thinking_once = False
 
     def __call__(self, request):
