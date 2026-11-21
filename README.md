@@ -41,7 +41,7 @@ Start a conversation with Claude.
 - **`attachment`:** An image, PDF, text or code file.
 - **`max_tokens`:** Maximum response length in tokens (default: 16384).
 - **`effort`:** `low`, `medium`, `high`, `xhigh` or `max`. Each model supports a subset, and an unsupported level is refused before the request is sent. When unset, the model's own default applies.
-- **`fast`:** Faster responses on Opus 5.5 and Fable 5.2 at 2x token prices.
+- **`fast`:** Faster responses on Opus 5.5 and Fable 5.2 at 2x token prices; when fast mode is at capacity, the reply runs at standard speed and standard prices.
 - **`thinking_budget`:** Thinking token budget for older models that use one.
 - **`thinking_display`:** `summarized` (default) shows Claude's reasoning in a spoiler. `updates` (Fable 5.2 / 5.1 / 5, Opus 5.5, Sonnet 5.5) shows short progress lines while tools run instead.
 - **`web_search` / `web_fetch` / `code_execution` / `memory`:** Enable built-in tools (default: off).
